@@ -1,0 +1,115 @@
+/* ── Hero action bar: tools equal size, Save/Refresh set apart on the right ── */
+.nx-home-actions { gap: 48px !important; }              /* klare Trennung primary ↔ tools */
+.nx-home-actions-grp { gap: 12px !important; }          /* Buttons innerhalb einer Gruppe */
+.nx-home-tools-wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* Editing tools (+/image/pattern) clearly set apart */
+.nx-home-tools-wrap > .nx-home-actions-grp + .nx-home-actions-grp,
+.nx-home-tools-right {
+  margin-left: 34px; padding-left: 34px;
+  border-left: 1px solid var(--nx-border, var(--background-modifier-border));
+}
+/* all icon-only buttons exactly the same size */
+.nx-home-btn.nx-home-btn-icononly {
+  width: 36px; height: 36px; padding: 0 !important; justify-content: center;
+}
+/* Mark primary actions as clickable in edit mode */
+.nx-home-primary .nx-home-btn.is-editing { cursor: pointer; }
+.nx-home-primary .nx-home-btn.is-editing:hover {
+  outline: 2px solid color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 45%, transparent);
+  outline-offset: -2px;
+}
+/* „+ Aktion" / add-Buttons dezent gestrichelt */
+.nx-home-btn.nx-home-btn-add {
+  border-style: dashed !important; opacity: .85;
+}
+
+/* Keep absolute children (e.g. gears) inside the stat tile, don't escape */
+.nx-home-stat { position: relative; }
+
+/* ── Hero surface without image (style classes) ── */
+.nx-home-hero.nx-herostyle-accent {
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 26%, var(--nx-elevated, var(--background-secondary))),
+    var(--nx-elevated, var(--background-secondary)) 72%) !important;
+}
+.nx-home-hero.nx-herostyle-solid { background: var(--nx-elevated, var(--background-secondary)) !important; }
+.nx-home-hero.nx-herostyle-flat {
+  background: transparent !important;
+  border: 1px solid var(--nx-border, var(--background-modifier-border)) !important;
+}
+
+/* ── Button-Stile (Klasse am Hero) ── */
+.nx-home-hero.nx-btn-round .nx-home-btn { border-radius: 999px !important; }
+.nx-home-hero.nx-btn-noborder .nx-home-btn { border-color: transparent !important; }
+.nx-home-hero.nx-btn-flat .nx-home-btn {
+  border-color: transparent !important;
+  background: color-mix(in srgb, var(--text-normal) 9%, transparent) !important;
+}
+.nx-home-hero.nx-btn-glassy .nx-home-btn {
+  background: rgba(255,255,255,.12) !important;
+  border-color: rgba(255,255,255,.28) !important;
+  backdrop-filter: blur(8px);
+}
+
+/* ── CALLOUTS settings ── */
+.nx-callout-swatch {
+  display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+  margin: 0 8px -1px 0; vertical-align: middle;
+  background: var(--sw, var(--background-modifier-border));
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+}
+.nx-callout-swatch-icon { margin-left: 6px; opacity: .6; }
+.nx-callout-swatch-icon .svg-icon { width: 15px; height: 15px; vertical-align: middle; }
+/* Live preview inside the edit modal */
+.nx-callout-preview {
+  display: flex; align-items: center; gap: 8px;
+  margin: 14px 0 4px; padding: 10px 14px;
+  border-left: 3px solid var(--sw, var(--interactive-accent));
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--sw, var(--interactive-accent)) 8%, transparent);
+  color: var(--sw, var(--text-normal));
+  font-weight: 700;
+}
+.nx-callout-preview-icon .svg-icon { width: 18px; height: 18px; }
+.nx-callout-suggest { display: flex; align-items: center; }
+.nx-callout-suggest-icon { margin-right: 8px; opacity: .8; display: inline-flex; }
+.nx-callout-suggest-icon .svg-icon { width: 16px; height: 16px; vertical-align: middle; }
+.nx-callout-h {
+  margin: 22px 0 2px; font-size: .82em; text-transform: uppercase;
+  letter-spacing: .06em; opacity: .6;
+}
+
+/* ── Vault image picker + slideshow config ── */
+.nx-vaultimg-suggest { display: flex; align-items: center; gap: 10px; }
+.nx-vaultimg-thumb {
+  width: 40px; height: 40px; object-fit: cover; border-radius: 6px; flex: 0 0 auto;
+  background: var(--background-secondary);
+}
+.nx-vaultimg-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-imgcfg-list { margin-bottom: 6px; }
+.nx-home-imgcard-clickable { cursor: pointer; }
+.nx-home-imgcard-slideshow .nx-home-imgcard-img { transition: opacity .35s ease; }
+
+/* ── NexusPopupMenu — card action menu as a centered modal window ── */
+.nx-popmenu-modal { max-width: 460px; }
+.nx-popmenu-modal-title {
+  margin: 0 0 12px; font-size: 1.35em; font-weight: 800;
+  color: var(--nx-accent-fg, var(--text-accent));
+}
+.nx-popmenu-modal-list { display: flex; flex-direction: column; gap: 2px; }
+.nx-popmenu-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 12px; border-radius: var(--nx-r-tile, 8px);
+  cursor: pointer; color: var(--text-normal);
+}
+.nx-popmenu-item:hover { background: var(--background-modifier-hover); }
+.nx-popmenu-item.is-disabled { opacity: .4; cursor: default; }
+.nx-popmenu-item.is-disabled:hover { background: none; }
+.nx-popmenu-item.is-warning { color: var(--text-error); }
+.nx-popmenu-icon { display: inline-flex; flex: 0 0 auto; opacity: .85; }
+.nx-popmenu-icon .svg-icon { width: 17px; height: 17px; }
+.nx-popmenu-label { flex: 1 1 auto; }
+.nx-popmenu-check { display: inline-flex; margin-left: auto; opacity: .8; }
+.nx-popmenu-check .svg-icon { width: 15px; height: 15px; }
+.nx-popmenu-sep { height: 1px; margin: 7px 4px; background: var(--nx-border, var(--background-modifier-border)); }
+

@@ -1,0 +1,50 @@
+/* ── BANNER-MODAL ── */
+.modal.nx-banner-modal-el { width: min(720px, 94vw); max-width: 94vw; }
+.nx-banner-modal { width: 100%; }
+.nx-banner-actions { display: flex; gap: 8px; margin-bottom: 18px; }
+.nx-banner-action {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 12px 8px; border-radius: var(--radius-m, 8px); cursor: pointer;
+  background: var(--background-secondary); color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  transition: background .1s, border-color .1s;
+}
+.nx-banner-action:hover { background: var(--background-modifier-hover); border-color: var(--interactive-accent); }
+.nx-banner-action.is-disabled { opacity: .4; pointer-events: none; }
+.nx-banner-action-icon { display: flex; }
+.nx-banner-action-icon .svg-icon { width: 20px; height: 20px; }
+.nx-banner-action-label { font-size: .82em; }
+
+.nx-banner-cards-label {
+  font-size: .78em; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-faint); margin-bottom: 8px;
+}
+.nx-banner-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px; max-height: 52vh; overflow-y: auto; padding-right: 2px;
+}
+.nx-banner-cards-empty { grid-column: 1 / -1; color: var(--text-muted); font-size: .88em; padding: 8px 0; }
+.nx-banner-card {
+  border-radius: var(--radius-m, 8px); overflow: hidden; cursor: pointer;
+  border: 1px solid var(--background-modifier-border); background: var(--background-secondary);
+  transition: transform .1s, border-color .1s;
+}
+.nx-banner-card:hover { transform: translateY(-2px); border-color: var(--interactive-accent); }
+.nx-banner-card.is-current { border-color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent); }
+.nx-banner-card img { width: 100%; height: 132px; object-fit: cover; display: block; }
+.nx-banner-card-name {
+  font-size: .74em; color: var(--text-muted); padding: 4px 7px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Height handle at the bottom edge of the drag overlay */
+.nx-banner-resize {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 16px;
+  cursor: ns-resize;
+  background: linear-gradient(to top, color-mix(in srgb, var(--interactive-accent) 40%, transparent), transparent);
+}
+.nx-banner-resize::after {
+  content: ""; position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%);
+  width: 44px; height: 3px; border-radius: 3px; background: var(--interactive-accent);
+}
+

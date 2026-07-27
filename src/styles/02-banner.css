@@ -1,0 +1,74 @@
+/* ── BANNER ──
+   As a ::before on the sizer → works in Live Preview AND Reading mode,
+   without CM6 clearing an injected element. Vars come from the view container
+   (.view-content.nx-has-banner), set by the plugin. */
+.nx-has-banner .cm-sizer::before,
+.nx-has-banner .markdown-preview-sizer::before {
+  content: "";
+  display: block;
+  /* Fixed ASPECT RATIO (not a fixed pixel height) → the visible crop stays
+     identical at every pane width, only the absolute size scales with it.
+     --nx-banner-ar comes from main.js (width / height at the pane width the
+     banner was last dragged at). */
+  aspect-ratio: var(--nx-banner-ar, 3.2);
+  /* full width: offset the editor padding with negative margins */
+  margin-left: calc(-1 * var(--nx-banner-bleed-l, 0px));
+  margin-right: calc(-1 * var(--nx-banner-bleed-r, 0px));
+  margin-bottom: 1.2rem;
+  background-image: var(--nx-banner-img);
+  background-size: cover;
+  /* Pixel pan, recomputed live by main.js on every render from the stored
+     PERCENTAGE (banner-y-pct) + the current pane width — kept as a live px
+     value (not a plain CSS %) so it can be shared with the tab-bar seam calc
+     below, which needs to subtract an actual pixel bar height from it. */
+  background-position: center var(--nx-banner-pos-y, 0px);
+  background-repeat: no-repeat;
+}
+.nx-has-banner.nx-banner-fade .cm-sizer::before,
+.nx-has-banner.nx-banner-fade .markdown-preview-sizer::before {
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent 100%);
+}
+
+/* Banner continues behind the tab bar → bar + content = one image.
+   Both use background-size: cover (same scaling); the content is shifted up
+   by the bar height so it joins seamlessly. */
+.nx-has-banner.nx-banner-behind .cm-sizer::before,
+.nx-has-banner.nx-banner-behind .markdown-preview-sizer::before {
+  background-size: cover;
+  /* Pull away the top editor padding so the banner joins the bar directly (no
+     grey bar in between). Additionally raised by 1px → the element edge sits
+     BEHIND the scroller clip instead of exactly on the seam, which kills the
+     subpixel grey bar while scrolling. The +1px in the Y position compensates
+     for this 1px offset → the image stays exactly at the bar. */
+  background-position: center calc(var(--nx-banner-pos-y, 0px) - var(--nx-banner-bar-h, 0px) + 1px);
+  margin-top: calc(-1 * var(--nx-banner-bleed-t, 0px) - 1px);
+}
+.workspace-tab-header-container.nx-bar-has-banner {
+  background-image: linear-gradient(rgba(0, 0, 0, .30), rgba(0, 0, 0, .12)), var(--nx-banner-img);
+  background-repeat: no-repeat, no-repeat;
+  /* Image coupled to the content banner in PIXELS (width + left edge) →
+     identical scaling/alignment independent of the window-frame type.
+     The gradient stays the full bar area (100% 100%). */
+  background-size: 100% 100%, var(--nx-banner-w, 100%) auto;
+  /* Image crop follows scroll AND drag offset → scrolls in sync with the
+     content banner. The gradient stays fixed (100% 100%). */
+  background-position: center, var(--nx-banner-x, center) calc(var(--nx-banner-pos-y, 0px) - var(--nx-banner-scroll, 0px));
+  background-origin: border-box, border-box;
+}
+
+/* Icon button to set/change the banner (top-right of the note) */
+.view-content:has(> .nx-banner-btn),
+.view-content:has(> .nx-bg-btn) { position: relative; }
+.nx-banner-btn {
+  position: absolute; top: 10px; right: 16px; z-index: 20;
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-s, 6px); cursor: pointer; opacity: .5;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--background-primary) 65%, transparent);
+  backdrop-filter: blur(4px);
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.nx-banner-btn:hover { opacity: 1; color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-banner-btn .svg-icon { width: 16px; height: 16px; }
+

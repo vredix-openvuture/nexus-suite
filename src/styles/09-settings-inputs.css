@@ -1,0 +1,163 @@
+/* ── SETTINGS: vertical tabs on the left ── */
+.nx-settings { display: flex; gap: 20px; align-items: flex-start; }
+.nx-settings-nav {
+  flex: 0 0 188px; display: flex; flex-direction: column; gap: 2px;
+  position: sticky; top: 0;
+}
+.nx-settings-tab {
+  display: flex; align-items: center; gap: 10px; padding: 8px 11px;
+  border-radius: var(--radius-m, 8px); cursor: pointer; color: var(--text-muted);
+  transition: background .1s, color .1s;
+}
+.nx-settings-tab:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-settings-tab.is-active { background: color-mix(in srgb, var(--interactive-accent) 16%, transparent); color: var(--text-normal); }
+.nx-settings-tab.is-active .nx-settings-tab-icon { color: var(--interactive-accent); }
+.nx-settings-tab-icon { display: flex; }
+.nx-settings-tab-icon .svg-icon { width: 17px; height: 17px; }
+.nx-settings-tab-label { font-size: .92em; }
+.nx-settings-body { flex: 1; min-width: 0; }
+.nx-settings-body > h3:first-child { margin-top: 0; margin-bottom: 6px; }
+.nx-settings-body .nx-set-enable .setting-item-name { font-weight: 600; }
+.nx-settings-body .nx-set-sub { padding-top: 4px; padding-bottom: 14px; border-top: none; }
+.nx-settings-body .nx-set-sub .setting-item-name { font-size: .85em; color: var(--text-muted); padding-left: 14px; }
+
+/* ── QUICK EDIT (external file) ── */
+/* Hide the editor's tab bar in Quick Edit focus */
+body.nx-quickedit-active .mod-root .workspace-tab-header-container { display: none !important; }
+/* „Save & Exit"-Button */
+.nx-qe-exit {
+  position: fixed; top: 14px; right: 22px; z-index: 100;
+  display: flex; align-items: center; gap: 7px; padding: 8px 15px;
+  border-radius: 999px; cursor: pointer; font-size: .85em; font-weight: 600;
+  background: var(--interactive-accent); color: var(--text-on-accent);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, .4);
+}
+.nx-qe-exit:hover { filter: brightness(1.12); }
+.nx-qe-exit-icon { display: flex; }
+.nx-qe-exit .svg-icon { width: 15px; height: 15px; }
+
+/* ── Multi-line input (Folders/Tags/Properties: one line per entry) ── */
+.nx-multirow-head { border-top: none !important; padding-bottom: 4px; }
+.nx-multirow { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
+.nx-multirow-row { display: flex; align-items: center; gap: 6px; }
+.nx-multirow-input {
+  flex: 1; min-width: 0;
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px; padding: 5px 9px;
+  color: var(--text-normal); font-size: .9em;
+}
+.nx-multirow-input:focus { border-color: var(--interactive-accent); outline: none; }
+.nx-multirow-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex: 0 0 auto;
+  border-radius: 6px; cursor: pointer; color: var(--text-faint);
+}
+.nx-multirow-del:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-multirow-del .svg-icon { width: 15px; height: 15px; }
+
+/* ── Icon field + picker popup ── */
+.nx-iconfield-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 10px; cursor: pointer;
+  border: 1px solid var(--background-modifier-border); border-radius: 6px;
+  background: var(--background-modifier-form-field);
+}
+.nx-iconfield-btn:hover { border-color: var(--interactive-accent); }
+.nx-iconfield-icon { display: inline-flex; }
+.nx-iconfield-icon .svg-icon { width: 18px; height: 18px; }
+.nx-iconfield-name { font-size: .85em; color: var(--text-muted); }
+
+.nx-iconpicker-search {
+  width: 100%; margin: 6px 0 12px; padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border); border-radius: 8px;
+  background: var(--background-modifier-form-field); color: var(--text-normal);
+}
+.nx-iconpicker-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 6px; max-height: 46vh; overflow-y: auto;
+}
+.nx-iconpicker-cell {
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 1; border-radius: 8px; cursor: pointer;
+  color: var(--text-muted); border: 1px solid transparent;
+}
+.nx-iconpicker-cell:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-iconpicker-cell.is-current { border-color: var(--interactive-accent); color: var(--text-normal); }
+.nx-iconpicker-cell .svg-icon { width: 20px; height: 20px; }
+.nx-iconpicker-empty { color: var(--text-muted); padding: 12px; }
+
+/* (Ribbon visibility is set by applyRibbon() via an injected <style id=nx-ribbon-style>
+   — class AND rule from a single call, no reload mismatch.) */
+
+/* ── Structured property filter (property | value | AND/OR) ── */
+.nx-proprows { display: flex; flex-direction: column; gap: 5px; margin: 0 0 12px; }
+.nx-proprow { display: flex; align-items: center; gap: 6px; }
+.nx-proprow-key, .nx-proprow-val {
+  background: var(--background-modifier-form-field);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px; padding: 5px 9px; color: var(--text-normal); font-size: .9em; min-width: 0;
+}
+.nx-proprow-key { flex: 0 0 38%; }
+.nx-proprow-val { flex: 1; }
+.nx-proprow-key:focus, .nx-proprow-val:focus { border-color: var(--interactive-accent); outline: none; }
+.nx-proprow-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex: 0 0 auto; border-radius: 6px; cursor: pointer; color: var(--text-faint);
+}
+.nx-proprow-del:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-proprow-del .svg-icon { width: 15px; height: 15px; }
+.nx-propconn { display: flex; gap: 4px; padding: 1px 0 1px 4px; }
+.nx-propconn-btn {
+  font-size: .68em; letter-spacing: .04em; padding: 2px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--background-modifier-border); background: transparent; color: var(--text-muted);
+}
+.nx-propconn-btn.is-active {
+  background: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+  border-color: var(--interactive-accent); color: var(--text-normal);
+}
+
+/* ── Gruppierter Property-Filter ── */
+.nx-propgroups { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; }
+.nx-propgroup {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px; border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-secondary));
+}
+.nx-propgroup-and { font-size: .68em; letter-spacing: .05em; color: var(--text-faint); padding-left: 4px; }
+.nx-propgroup-or {
+  align-self: center; font-size: .7em; font-weight: 700; letter-spacing: .08em;
+  color: var(--text-on-accent); background: var(--interactive-accent);
+  padding: 2px 14px; border-radius: 999px; margin: 2px 0;
+}
+.nx-propgroup-add {
+  align-self: flex-start; margin-top: 4px; cursor: pointer;
+  font-size: .8em; padding: 5px 12px; border-radius: 8px;
+  border: 1px dashed var(--background-modifier-border); background: transparent; color: var(--text-muted);
+}
+.nx-propgroup-add:hover { border-color: var(--interactive-accent); color: var(--text-normal); }
+
+/* ── Autocomplete-Dropdown (unter dem Input) ── */
+.nx-ac-dropdown {
+  position: fixed; z-index: 999999;
+  max-height: 240px; overflow-y: auto;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.35);
+  padding: 4px;
+}
+.nx-ac-item { padding: 5px 9px; border-radius: 6px; cursor: pointer; font-size: .88em; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx-ac-item:hover, .nx-ac-item.is-sel { background: color-mix(in srgb, var(--interactive-accent) 28%, transparent); }
+
+/* Add-stat tile: compact instead of full stat size */
+.nx-home-stat.nx-home-stat-add {
+  justify-self: start; align-self: center;
+  padding: 7px 13px !important; gap: 7px;
+  background: transparent !important;
+  border: 1px dashed var(--background-modifier-border) !important;
+  color: var(--text-muted);
+}
+.nx-home-stat.nx-home-stat-add .nx-home-stat-icon .svg-icon { width: 15px; height: 15px; }
+.nx-home-stat.nx-home-stat-add .nx-home-stat-label { font-size: .8em; margin-top: 0; }
+

@@ -1,0 +1,196 @@
+'use strict';
+
+/* ============================================================================
+ *  NEXUS SUITE · Constants & data tables
+ *  Extensions, view ids, defaults, weather codes, card defs, palettes, typography rules.
+ * ========================================================================== */
+
+const IMG_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'avif'];
+
+const INK_EXT = IMG_EXT.concat(['pdf']);   // Ink Capture also accepts PDF exports (Saber/Butterfly notebooks)
+
+const INK_DOWNSCALE_EXT = ['png', 'jpg', 'jpeg', 'webp'];   // safe canvas.toBlob formats (no animated gif, no bmp/avif quirks)
+
+const INK_MAX_DIM = 2000;   // px, longest edge — a "scan" never needs to be bigger than this
+
+const QE_DIR = '_nexus-quickedit';   // temp folder for external files
+
+const CAL_VIEW = 'nx-calendar';
+
+const CAL_PAGE_VIEW = 'nx-calendar-page';   // full-page month/week/day calendar (sidebar CAL_VIEW stays)
+
+const TASKS_VIEW = 'nx-tasks';              // project/task board (later milestones)
+
+const HOME_VIEW = 'nx-homepage';
+
+const TIMER_VIEW = 'nx-timers';   // running timers move here when the dashboard is left
+
+const INK_VIEW = 'nx-ink-gallery';
+
+const DEFAULT_SETTINGS = {
+  banner:     { enabled: true,  height: 250, fade: true, folder: 'attachments/banners', behindTabs: true },
+  hider:      { enabled: false, tooltips: false, scrollbars: false, status: false,
+                titlebar: false, vaultname: false, tabbar: false, instructions: false,
+                ribbon: false, explorerButtons: false },
+  columns:    { enabled: true,  gap: '1.5rem', delimiter: '===' },
+  homepage:   { enabled: false, name: '', hero: '', widgets: [], layout: {}, stats: [{ kind: 'total' }, { kind: 'streak' }], ribbon: true, openOnStartup: true,
+                perDevice: false, profiles: {}, profileNames: {} },
+  search:     { enabled: true },
+  typography: { enabled: true,  dashes: true, ellipsis: true, quotes: true, arrows: true, symbols: true },
+  calendar:   { enabled: true,  ribbon: true },
+  tasksCalendar: { enabled: false, ribbon: true, dataFolder: '_nexus',
+    defaultView: 'month', weekStart: 'locale',
+    syncOnStartup: true, syncIntervalMin: 15, conflictPolicy: 'server',   // 'server' | 'ask'
+    accounts: [],        // {id,kind,label,serverUrl,username,principalHref,homeSet,calendars:[{id,href,display,color,component,enabled,ctag,syncToken}]} — NO secrets (localStorage)
+    localCalendars: [],  // {id,name,color}
+    tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local' } },
+  propertyHider: { enabled: true, hidden: [], reveal: false },
+  callouts:   { enabled: true, migrated: false, items: [] },
+  workspaces: { enabled: true, selectMode: 'release' },
+  externalEdit: { enabled: true, focus: true, workspace: 'Focus' },
+  explorer:   { enabled: true,  folderBg: true, intensity: 22 },
+  inkCapture: { enabled: true, ribbon: true, tagOnCapture: true,
+    sources: {
+      paper:     { enabled: true, folder: 'Inbox/Paper' },
+      saber:     { enabled: true, folder: 'Inbox/Saber' },
+      butterfly: { enabled: true, folder: 'Inbox/Butterfly' },
+    },
+    excalidraw: { enabled: true } },
+  quicksketch: { enabled: true, folder: 'Inbox/Quicksketch', ratio: '16:9',
+    paper: 'paper',       // native | paper | white | black — solid fill + matching grid colour; per-note override via frontmatter `sketch-bg`
+    paperStyle: true,     // subtle paper-grain texture overlay (independent of paper colour)
+    invertOnDark: true,   // on a dark paper (black), lift only near-black ink so drawings stay readable
+    bg: '#f7f6f2', ink: '#2f2f2f',
+    palette: ['#2f2f2f', '#1e6fd9', '#d92f2f', '#1f9e57', '#e0a800'],   // ACTIVE colours (alias of palettes[activePalette].colors)
+    palettes: [{ name: 'Default', colors: ['#2f2f2f', '#1e6fd9', '#d92f2f', '#1f9e57', '#e0a800'] }],   // named palettes, max 8 colours each
+    activePalette: 0,
+    penSizes: { fountain: 3, ballpoint: 2, pencil: 2.5, brush: 5, calligraphy: 3.5, marker: 10 },   // on-screen px, remembered per pen
+    penConfig: {},                                         // per-pen behaviour overrides (streamline/thinning/taper/speedThin/cap/noStack)
+    sizeFavorites: [1.5, 3, 8],                            // quick-set px favorites
+    shapeSnap: true,                                       // hold pen still after drawing → snap to line/rect/ellipse/triangle
+    autoGrow: false,                                       // extend canvas downward while drawing near the bottom
+    // bgSize 27 ≈ 5 mm squares like real DIN-A4 grid paper: canvas width 1600
+    // units ≙ 297 mm (A4 landscape) → 5 mm ≙ ~26.9 units.
+    bgType: 'none', bgSize: 27, bgOpacity: 0.12, bgColor: '#334155' },
+  ribbon:     { mode: 'hover' },   // 'hover' | 'always' | 'hidden'
+  theme:      { palette: 'nexus', gap: null, radius: null, homeGap: null, homePad: null, homeCols: 24, homeRow: 40 },
+};
+
+/* WMO weather codes → short text (open-meteo) */
+
+/* WMO weather codes → short text (open-meteo) */
+const WMO = { 0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Rime fog', 51: 'Drizzle', 53: 'Drizzle', 55: 'Drizzle', 56: 'Freezing rain', 57: 'Freezing rain', 61: 'Rain', 63: 'Rain', 65: 'Heavy rain', 66: 'Freezing rain', 67: 'Freezing rain', 71: 'Snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains', 80: 'Showers', 81: 'Showers', 82: 'Heavy showers', 85: 'Snow showers', 86: 'Snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm' };
+
+const WMO_ICON = { 0: 'sun', 1: 'sun', 2: 'cloud-sun', 3: 'cloud', 45: 'cloud-fog', 48: 'cloud-fog', 51: 'cloud-drizzle', 53: 'cloud-drizzle', 55: 'cloud-drizzle', 61: 'cloud-rain', 63: 'cloud-rain', 65: 'cloud-rain-wind', 71: 'cloud-snow', 73: 'cloud-snow', 75: 'cloud-snow', 80: 'cloud-rain', 81: 'cloud-rain', 82: 'cloud-rain-wind', 95: 'cloud-lightning', 96: 'cloud-lightning', 99: 'cloud-lightning' };
+
+/* Homepage cards: metadata + default config (filter/size). Runtime merge
+   via view._cfg(id) → new fields always get defaults, even after saving. */
+
+/* Homepage cards: metadata + default config (filter/size). Runtime merge
+   via view._cfg(id) → new fields always get defaults, even after saving. */
+const CARD_DEFS = {
+  projects: { icon: 'folder-kanban',  title: 'Active projects',    def: { w: 6, h: 8, folder: 'Projects', tags: '', statuses: ['active'], sort: 'due', count: 6 } },
+  meetings: { icon: 'calendar-clock', title: 'Meetings',           def: { w: 6, h: 8, folder: 'Meetings', mode: 'auto', count: 5 } },
+  reading:  { icon: 'book-open',      title: 'Currently reading',  def: { w: 6, h: 13, folder: 'Books', tags: '', states: ['reading'], planned: true, coverField: 'cover', count: 12 } },
+  ideas:    { icon: 'lightbulb',      title: 'Ideas',              def: { w: 6, h: 8, folder: 'Ideas', statuses: ['in-review', 'new'], count: 6 } },
+  recent:   { icon: 'history',        title: 'Recently edited',    def: { w: 9, h: 11, exclude: '', count: 8 } },
+};
+
+/* Default primary actions of the homepage (kind + label + icon). Kinds:
+   journal | newNote | search | calendar | command(arg=cmdId) | note(arg=Name) | url(arg) */
+
+/* Default primary actions of the homepage (kind + label + icon). Kinds:
+   journal | newNote | search | calendar | command(arg=cmdId) | note(arg=Name) | url(arg) */
+const NX_DEFAULT_ACTIONS = [
+  { kind: 'journal',  label: "Today's journal", icon: 'sun' },
+  { kind: 'newNote',  label: 'New note',        icon: 'file-plus' },
+  { kind: 'search',   label: 'Search',          icon: 'search' },
+  { kind: 'calendar', label: 'Calendar',        icon: 'calendar' },
+];
+
+/* Obsidian's built-in callout types with their default lucide icons (for preview
+   + recognition in the Callouts manager). id = canonical type; aliases share the
+   same styling in Obsidian and are only needed to avoid listing them as "custom". */
+
+/* Obsidian's built-in callout types with their default lucide icons (for preview
+   + recognition in the Callouts manager). id = canonical type; aliases share the
+   same styling in Obsidian and are only needed to avoid listing them as "custom". */
+const NX_BUILTIN_CALLOUTS = [
+  { id: 'note',     icon: 'pencil',          aliases: [] },
+  { id: 'abstract', icon: 'clipboard-list',  aliases: ['summary', 'tldr'] },
+  { id: 'info',     icon: 'info',            aliases: [] },
+  { id: 'todo',     icon: 'check-circle-2',  aliases: [] },
+  { id: 'tip',      icon: 'flame',           aliases: ['hint', 'important'] },
+  { id: 'success',  icon: 'check',           aliases: ['check', 'done'] },
+  { id: 'question', icon: 'help-circle',     aliases: ['help', 'faq'] },
+  { id: 'warning',  icon: 'alert-triangle',  aliases: ['caution', 'attention'] },
+  { id: 'failure',  icon: 'x',               aliases: ['fail', 'missing'] },
+  { id: 'danger',   icon: 'zap',             aliases: ['error'] },
+  { id: 'bug',      icon: 'bug',             aliases: [] },
+  { id: 'example',  icon: 'list',            aliases: [] },
+  { id: 'quote',    icon: 'quote',           aliases: ['cite'] },
+];
+
+const NX_BUILTIN_IDS = new Set(NX_BUILTIN_CALLOUTS.map(b => b.id));
+
+/* Greeting styles for the homepage (h = hour, n = name). */
+
+/* Greeting styles for the homepage (h = hour, n = name). */
+const NX_GREETINGS = {
+  classic:   (h, n) => (h < 5 ? 'Good night' : h < 11 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening') + (n ? ', ' + n : ''),
+  formal:    (h, n) => (h < 11 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening') + (n ? ', ' + n : '') + '.',
+  buddy:     (h, n) => (h < 11 ? 'Morning' : h < 18 ? 'Hey' : 'Evening') + (n ? ', ' + n : '') + "! How's it going?",
+  funny:     (h, n) => ['Hiya', 'Well hello', 'Hey hey', 'Yo'][h % 4] + (n ? ', ' + n : '') + ' 🐸',
+  commander: (h, n) => 'Commander' + (n ? ' ' + n : '') + ' — systems ready.',
+  zen:       (h, n) => 'Welcome' + (n ? ', ' + n : '') + '. Take a breath.',
+  motivate:  (h, n) => "Let's go" + (n ? ', ' + n : '') + "! You've got this. 💪",
+  hacker:    (h, n) => 'root@' + (n || 'nexus') + ':~$ welcome',
+};
+
+/* Fixed color palettes → override the wallust --wl-* slots (color3 = accent,
+   color0 = dark base, color5 = border source). "dynamic" = wallust snippet
+   (only follows the wallpaper when the Velumeron desktop shell is running).
+
+   "nexus" = the theme's own signature palette and the DEFAULT: "Ember & Prussian"
+   — a molten Rain-Boots orange accent (color3) over a deep Aubergine ground
+   (color0), with a cool Prussian-Blue second hue on the borders (color5) as a
+   complementary counterpoint. Madder Lake + Claret fill the warm red/wine slots.
+   A fiery sunset-over-blue signature, straight off the reference swatch card.
+   Works on ANY machine, with or without the desktop shell. (The light-text tones
+   foreground/color15 are light warm tints of the same family — a dark theme
+   needs a legible light ink; the identity hues are the five swatch colours 1:1.)
+
+   The five entries after it are sibling signature palettes offered as options
+   in the dropdown (same colour math, different combination). Their identity
+   lives in color0 (base) · color3 (accent) · color5 (second hue) · color15. */
+const PALETTES = {
+  nexus:      { background: '#26121b', foreground: '#f0d9cd', color0: '#26121b', color1: '#ce3737', color2: '#c9863f', color3: '#fb6734', color4: '#1b3854', color5: '#1b3854', color6: '#3d6d8c', color7: '#e7d2c7', color8: '#8a6a63', color9: '#e5544a', color10: '#d8a24a', color11: '#fb8b4e', color12: '#4d7ea0', color13: '#6b1a34', color14: '#5a86a4', color15: '#ffe7dc' },
+  azure:      { background: '#0a0e16', foreground: '#e6edf6', color0: '#0a0e16', color1: '#ff6b6b', color2: '#56d364', color3: '#4a9eff', color4: '#7cb0ff', color5: '#ff6b6b', color6: '#56c9d3', color7: '#d4dcea', color8: '#5f6b80', color9: '#ff8a8a', color10: '#7ee08c', color11: '#ffc266', color12: '#9cc2ff', color13: '#ff9db0', color14: '#7adbe4', color15: '#f4f8ff' },
+  teal:       { background: '#08110f', foreground: '#e4efea', color0: '#08110f', color1: '#f2766b', color2: '#5fd39a', color3: '#2dd4bf', color4: '#38bdf8', color5: '#f0a830', color6: '#34d3c3', color7: '#d0e2db', color8: '#5e7168', color9: '#ff8f84', color10: '#7fe0b0', color11: '#f7c05a', color12: '#66cffb', color13: '#4de0cd', color14: '#7ee4d6', color15: '#eefaf6' },
+  emerald:    { background: '#0a0f0b', foreground: '#e8f0e5', color0: '#0a0f0b', color1: '#ef6f6f', color2: '#34d399', color3: '#34d399', color4: '#56b6e0', color5: '#e8b84b', color6: '#45cfa8', color7: '#d3e2ce', color8: '#63745f', color9: '#ff8a8a', color10: '#63e0a8', color11: '#f2ca63', color12: '#78c8ea', color13: '#9ee0b4', color14: '#6fddc0', color15: '#f1faee' },
+  slate:      { background: '#0d0f13', foreground: '#e7ebf1', color0: '#0d0f13', color1: '#f0787f', color2: '#63d59a', color3: '#22d3ee', color4: '#5aa8e0', color5: '#7c8aa0', color6: '#3fd3d3', color7: '#d2d8e0', color8: '#646b78', color9: '#ff9098', color10: '#82e0b0', color11: '#e0b866', color12: '#86bcf0', color13: '#59e0e0', color14: '#7ce0e0', color15: '#f3f7fb' },
+  sunset:     { background: '#120a0c', foreground: '#f6e8e1', color0: '#120a0c', color1: '#ff6b6b', color2: '#9fc86a', color3: '#ff8c42', color4: '#6fb0d8', color5: '#ff5e8a', color6: '#f0a860', color7: '#ecd8cf', color8: '#7a5f60', color9: '#ff8a8a', color10: '#b9d98a', color11: '#ffb05e', color12: '#90bce0', color13: '#ff8ab0', color14: '#ffc27a', color15: '#fff0e7' },
+  dracula:    { background: '#282a36', foreground: '#f8f8f2', color0: '#282a36', color1: '#ff5555', color2: '#50fa7b', color3: '#bd93f9', color4: '#8be9fd', color5: '#ff79c6', color6: '#8be9fd', color7: '#f8f8f2', color8: '#6272a4', color9: '#ff6e6e', color10: '#69ff94', color11: '#d6acff', color12: '#a4ffff', color13: '#ff92df', color14: '#a4ffff', color15: '#ffffff' },
+  gruvbox:    { background: '#282828', foreground: '#ebdbb2', color0: '#282828', color1: '#cc241d', color2: '#98971a', color3: '#d79921', color4: '#458588', color5: '#b16286', color6: '#689d6a', color7: '#a89984', color8: '#928374', color9: '#fb4934', color10: '#b8bb26', color11: '#fabd2f', color12: '#83a598', color13: '#d3869b', color14: '#8ec07c', color15: '#ebdbb2' },
+  solarized:  { background: '#002b36', foreground: '#93a1a1', color0: '#073642', color1: '#dc322f', color2: '#859900', color3: '#268bd2', color4: '#268bd2', color5: '#2aa198', color6: '#2aa198', color7: '#eee8d5', color8: '#586e75', color9: '#cb4b16', color10: '#586e75', color11: '#657b83', color12: '#839496', color13: '#6c71c4', color14: '#93a1a1', color15: '#fdf6e3' },
+  nord:       { background: '#2e3440', foreground: '#d8dee9', color0: '#2e3440', color1: '#bf616a', color2: '#a3be8c', color3: '#88c0d0', color4: '#81a1c1', color5: '#5e81ac', color6: '#8fbcbb', color7: '#e5e9f0', color8: '#4c566a', color9: '#bf616a', color10: '#a3be8c', color11: '#ebcb8b', color12: '#81a1c1', color13: '#b48ead', color14: '#8fbcbb', color15: '#eceff4' },
+  catppuccin: { background: '#1e1e2e', foreground: '#cdd6f4', color0: '#1e1e2e', color1: '#f38ba8', color2: '#a6e3a1', color3: '#cba6f7', color4: '#89b4fa', color5: '#f5c2e7', color6: '#94e2d5', color7: '#cdd6f4', color8: '#585b70', color9: '#f38ba8', color10: '#a6e3a1', color11: '#f9e2af', color12: '#89b4fa', color13: '#f5c2e7', color14: '#94e2d5', color15: '#a6adc8' },
+  everforest: { background: '#2d353b', foreground: '#d3c6aa', color0: '#2d353b', color1: '#e67e80', color2: '#a7c080', color3: '#dbbc7f', color4: '#7fbbb3', color5: '#d699b6', color6: '#83c092', color7: '#d3c6aa', color8: '#859289', color9: '#e67e80', color10: '#a7c080', color11: '#dbbc7f', color12: '#7fbbb3', color13: '#d699b6', color14: '#83c092', color15: '#d3c6aa' },
+  tokyonight: { background: '#1a1b26', foreground: '#c0caf5', color0: '#1a1b26', color1: '#f7768e', color2: '#9ece6a', color3: '#7aa2f7', color4: '#7dcfff', color5: '#bb9af7', color6: '#7dcfff', color7: '#c0caf5', color8: '#414868', color9: '#f7768e', color10: '#9ece6a', color11: '#e0af68', color12: '#7aa2f7', color13: '#bb9af7', color14: '#7dcfff', color15: '#c0caf5' },
+};
+
+/* Render markdown (new + old API) */
+
+const ST_SYMBOL_RULES = [
+  { m: '--',   r: '–', grp: 'dashes' },
+  { m: '–-',   r: '—', grp: 'dashes' },   // en-dash + hyphen → em-dash
+  { m: '...',  r: '…', grp: 'ellipsis' },
+  { m: '->',   r: '→', grp: 'arrows' },
+  { m: '<-',   r: '←', grp: 'arrows' },
+  { m: '=>',   r: '⇒', grp: 'arrows' },
+  { m: '(c)',  r: '©', grp: 'symbols' },
+  { m: '(r)',  r: '®', grp: 'symbols' },
+  { m: '(tm)', r: '™', grp: 'symbols' },
+];
+
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, QE_DIR, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, PALETTES, ST_SYMBOL_RULES };

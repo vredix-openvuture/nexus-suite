@@ -1,0 +1,29 @@
+/* ── CALENDAR ── */
+.nx-cal { user-select: none; font-size: 0.85em; }
+.nx-cal-inner { padding: 18px 18px 22px; }  /* eigener Wrapper: Theme neutralisiert .view-content */
+.nx-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.nx-cal-title { font-weight: 600; font-size: 1.15em; }
+.nx-cal-title .nx-cal-year { color: var(--text-accent); margin-left: .3em; }
+.nx-cal-nav { display: flex; gap: 2px; }
+.nx-cal-nav button {
+  background: transparent; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 3px 8px; border-radius: var(--radius-s, 6px); line-height: 1.2;
+}
+.nx-cal-nav button:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.nx-cal-grid .nx-cal-dow { text-align: center; color: var(--text-faint); font-size: .8em; padding: 2px 0 6px; }
+.nx-cal-day {
+  height: 2.4em; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-m, 8px); cursor: pointer; position: relative;
+  color: var(--text-normal);
+}
+.nx-cal-day:hover { background: var(--background-modifier-hover); }
+.nx-cal-day.nx-adjacent { color: var(--text-faint); }
+.nx-cal-day.nx-today { color: var(--text-on-accent); background: var(--interactive-accent); font-weight: 700; }
+.nx-cal-day.nx-has-note::after {
+  content: ""; position: absolute; bottom: 2px; width: 3px; height: 3px;
+  border-radius: 50%; background: var(--text-accent);
+}
+.nx-cal-day.nx-today.nx-has-note::after { background: var(--text-on-accent); }
+
+

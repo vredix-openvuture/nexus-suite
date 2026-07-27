@@ -1,0 +1,557 @@
+/* Slate toggle — a visible corner button on every note (flips nexus: slate).
+   Sits left of the banner/background buttons (right 16 / 52 → this at 88). */
+.view-content:has(> .nx-slate-btn) { position: relative; }
+.nx-slate-btn {
+  position: absolute; top: 10px; right: 88px; z-index: 20;
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-s, 6px); cursor: pointer; opacity: .5;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--background-primary) 65%, transparent);
+  backdrop-filter: blur(4px);
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.nx-slate-btn:hover { opacity: 1; color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-slate-btn.is-active { opacity: 1; color: var(--interactive-accent); }
+.nx-slate-btn .svg-icon { width: 16px; height: 16px; }
+
+/* ── PROTOKOLL — native note (title/properties/banner) + endless sketch area
+      injected below the content, into the note's SCROLL container
+      (frontmatter nexus: protokoll). ── */
+/* NOTE: title + properties keep Obsidian's normal margins (don't strip the
+   editor width) — only the SKETCH breaks out to full width (see .nx-pk-inline). */
+/* The empty editor body reserves a viewport-tall min-height that pushed the
+   sketch far down — collapse it on protokoll notes. */
+.nx-pk-note .cm-content,
+.nx-pk-note .cm-sizer,
+.nx-pk-note .cm-editor { min-height: 0 !important; }
+/* Empty editor still reserved height — kill its bottom padding + stop it from
+   growing to fill, so the sketch sits right under the properties. */
+.nx-pk-note .cm-content { padding-bottom: 0 !important; flex-grow: 0 !important; }
+
+/* The sketch IS the body → hide the note's markdown TEXT in Slate mode (keep the
+   title, the properties widget, and the sketch). Toggling to plain .md removes
+   the .nx-pk-note class, so the text comes back. */
+/* Hide ALL non-metadata children, not just .cm-line: in Live Preview a fenced
+   block (```columns```, ```quicksketch```, …) renders as a .cm-embed-block that
+   is NOT a .cm-line — the old .cm-line-only rule left it visible, and its
+   reserved height pushed the sketch to the very bottom (the "Abstand" bug). */
+.nx-pk-note .cm-content > *:not(:has(.metadata-container)):not(:has(.metadata-properties)):not(.nx-pk-inline) { display: none !important; }
+.nx-pk-note .markdown-reading-view .markdown-preview-sizer > *:not(.mod-header):not(.inline-title):not(.metadata-container):not(.markdown-preview-pusher):not(.nx-pk-inline) { display: none !important; }
+
+/* The injected sketch area. It lives INSIDE the (margined) content container,
+   but the sketch should span the full width while title/properties keep their
+   normal margins — so break out of the container with the classic full-bleed
+   (width:100vw centred on the viewport). overflow-x:hidden on the scroller clips
+   any sub-pixel spill. */
+.nx-pk-inline {
+  position: relative;
+  width: 100vw;
+  max-width: 100vw;
+  margin-left: calc(50% - 50vw);
+  box-sizing: border-box;
+  padding: 6px 0 40px;   /* canvas goes edge-to-edge; toolbar gets its own inset */
+  z-index: 1;
+  /* NB: no overflow here — it would make this the sticky bar's scroll container
+     (which doesn't scroll) and the toolbar would scroll away with the note.
+     Horizontal spill is clipped on the note scroller instead. */
+}
+.nx-pk-inline .nx-pk-bar {
+  position: sticky;
+  top: 0;   /* dock flush at the top — no gap above where the canvas could show through */
+  z-index: 5;
+  border-radius: 0;              /* flat strip — the canvas below is borderless/full-page */
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+}
+/* The corner buttons (slate toggle / banner / bg) would otherwise collide with the
+   top-docked bar, so in a slate note they drop just below it — floating over the
+   canvas top-right (well contrasted on the paper). */
+.nx-pk-note > .nx-slate-btn,
+.nx-pk-note > .nx-banner-btn,
+.nx-pk-note > .nx-bg-btn { top: 52px; }
+/* The editor leaves a small top inset above the scroll viewport, so even docked at
+   top:0 a sliver of canvas peeks over the bar. Once docked (JS flag), extend the
+   bar's own colour up to fill it → the toolbar reads as flush with the top.
+   NB: box-shadow (not a ::before) because the bar has overflow:hidden, which would
+   clip a pseudo-element sitting above it; box-shadow escapes the clip. */
+.nx-pk-inline .nx-pk-bar.nx-pk-stuck { box-shadow: 0 -40px 0 var(--background-primary); }
+/* NO overflow:hidden / border-radius here — a rounded, clipping ancestor kicks
+   the desynchronized live canvas off its fast path (live ink would only appear
+   on pen-up). Plain border only. */
+.nx-pk-inline .nx-pk-pad {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 360px;
+  /* No border — the canvas IS the page (looks like the whole note is the
+     native writing surface), edge to edge. */
+}
+/* Clip horizontal spill on the actual SCROLL containers only. (Putting
+   overflow-x on .view-content turned it into a scroll container → overflow-y
+   became auto → the fixed corner buttons scrolled with it.) */
+.nx-pk-note .cm-scroller,
+.nx-pk-note .markdown-preview-view { overflow-x: hidden !important; }
+
+/* ── QUICK SKETCH — draw-on-canvas code block (```quicksketch```) ── */
+.nx-sketch {
+  margin: 0.6em 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  overflow: hidden;
+  /* The SVG owns the paper (white/black fill, or transparent for "native"), so the
+     wrapper stays transparent — a native pad then shows the note's own background.
+     For white/black the paper rect covers this anyway. */
+  background: transparent;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+/* View mode: the card chrome dissolves, so the canvas sits flush in the note. */
+.nx-sketch.is-view {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* Kill Obsidian's per-block hover chrome (edit "</>" button + frame) on our
+   sketch blocks — the pad IS the editor, so the code-edit affordance is noise.
+   :has() targets the Live-Preview embed / reading-view wrapper that holds our
+   surface. */
+.cm-preview-code-block:has(.nx-sketch),
+.cm-embed-block:has(.nx-sketch),
+.markdown-rendered .el-pre:has(.nx-sketch) {
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.cm-preview-code-block:has(.nx-sketch):hover,
+.cm-embed-block:has(.nx-sketch):hover { box-shadow: none !important; }
+.cm-preview-code-block:has(.nx-sketch) .edit-block-button,
+.cm-embed-block:has(.nx-sketch) .edit-block-button,
+.markdown-rendered .el-pre:has(.nx-sketch) .edit-block-button { display: none !important; }
+
+/* Toolbar collapse: a grid-rows 1fr↔0fr wrapper animates the height smoothly to
+   zero without needing to know it, so leaving edit mode folds the bar away. */
+.nx-sketch-bar-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.28s ease;
+}
+.nx-sketch.is-view .nx-sketch-bar-wrap { grid-template-rows: 0fr; }
+
+/* Toolbar — slim bar above the pad. ONE non-wrapping row: the tool group (left)
+   and action group (right) hold their width; only the colour strip in the
+   middle flexes and scrolls sideways when a palette is large. */
+.nx-sketch-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  flex-wrap: nowrap;
+  min-height: 0;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+.nx-sketch.is-view .nx-sketch-bar { opacity: 0; border-bottom-color: transparent; }
+
+.nx-sketch-bar > .nx-sk-grp-tools,
+.nx-sketch-bar > .nx-sk-grp-actions { flex: 0 0 auto; }
+.nx-sketch-bar > .nx-sk-colors {
+  flex: 0 1 auto;                         /* centred by the flex spacers; shrinks + scrolls when a palette is large */
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;                 /* Firefox — the strip scrolls, no bar */
+}
+.nx-sketch-bar > .nx-sk-colors::-webkit-scrollbar { display: none; }
+.nx-sketch-bar > .nx-sk-colors > * { flex: 0 0 auto; }
+.nx-sk-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.nx-sk-btn:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+/* Active = accent-coloured icon on a subtle tint (NOT a solid accent blob). */
+.nx-sk-btn.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); color: var(--interactive-accent); }
+.nx-sk-btn .svg-icon { width: 17px; height: 17px; }
+.nx-sk-done { color: var(--text-accent); }
+
+.nx-sk-grp { display: flex; align-items: center; gap: 3px; }
+.nx-sk-spacer { flex: 1 1 8px; min-width: 6px; }
+.nx-sk-sep { width: 1px; align-self: stretch; margin: 3px 5px; background: var(--background-modifier-border); }
+
+/* Size favourites — each shows a dot in its actual brush width. Tap to use,
+   press-and-hold for a slider. */
+.nx-sk-favs { display: flex; align-items: center; gap: 2px; }
+.nx-sk-fav {
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; cursor: pointer;
+  touch-action: none;   /* let press-and-hold work on touch without scrolling */
+}
+.nx-sk-fav:hover { background: var(--background-modifier-hover); }
+.nx-sk-fav.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-sk-fav-dot { width: var(--d, 6px); height: var(--d, 6px); border-radius: 50%; background: var(--text-normal); }
+
+/* Colour swatches. Small, and the active ring is an INSET shadow drawn inside
+   the dot — outset rings/outlines get shaved off by the strip's overflow clip
+   (needed for horizontal scroll), inset ones never can. */
+.nx-sk-colors { gap: 7px; padding-block: 2px; }
+.nx-sk-color {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--c);
+  cursor: pointer;
+  box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nx-sk-color.is-active { box-shadow: inset 0 0 0 2px var(--interactive-accent), inset 0 0 0 3px var(--background-primary); }
+.nx-sk-color-custom { background: var(--background-primary); color: var(--text-muted); }
+.nx-sk-color-custom .svg-icon { width: 12px; height: 12px; }
+
+/* Popovers (pen type / custom colour / background). Sit ABOVE the full-size
+   overlay (which uses --layer-modal) so toolbar popovers stay clickable there. */
+.nx-sk-pop {
+  position: fixed;
+  z-index: calc(var(--layer-modal, 100) + 50);
+  min-width: 190px;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+}
+.nx-sk-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 8px; }
+
+.nx-sk-pen-row { display: flex; flex-direction: column; gap: 2px; }
+.nx-sk-pen { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
+.nx-sk-pen:hover { background: var(--background-modifier-hover); }
+.nx-sk-pen.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-sk-pen-ic { display: flex; color: var(--text-normal); }
+.nx-sk-pen-ic .svg-icon { width: 16px; height: 16px; }
+.nx-sk-pen-lbl { font-size: 13px; }
+
+.nx-sk-colorinput { width: 100%; height: 34px; border: none; background: none; cursor: pointer; padding: 0; }
+.nx-sk-savecol { width: 100%; margin-top: 8px; }
+
+.nx-sk-bgtypes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 10px; }
+.nx-sk-bgtype { text-align: center; padding: 6px 4px; font-size: 12px; border-radius: 6px; cursor: pointer; background: var(--background-secondary); }
+.nx-sk-bgtype:hover { background: var(--background-modifier-hover); }
+.nx-sk-bgtype.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
+.nx-sk-bgtoggle { display: block; margin-bottom: 10px; }
+.nx-sk-slider { margin-top: 8px; }
+.nx-sk-slider-lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
+.nx-sk-slider input[type="range"] { width: 100%; accent-color: var(--interactive-accent); }
+/* Value lives in the label's flex row (right side). NEVER floated — a float here
+   dropped out of flow and overlapped the rows beneath (the marker-menu bug). */
+.nx-sk-slider-val { color: var(--text-normal); }
+.nx-sk-slider-val-block { display: block; text-align: center; margin-top: 8px; color: var(--text-muted); }
+
+/* Drawing-pen chooser popover: a row of pen chips + the selected pen's settings. */
+.nx-sk-penpop { min-width: 222px; }
+.nx-sk-penrow { display: flex; gap: 5px; margin-bottom: 6px; }
+.nx-sk-penchip {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 8px; cursor: pointer; color: var(--text-muted);
+}
+.nx-sk-penchip:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-sk-penchip.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-sk-penchip .svg-icon { width: 18px; height: 18px; }
+.nx-sk-pensettings { margin-top: 2px; }
+
+/* Graceful fallback when the interactive editor fails to mount (e.g. an
+   unexpected mobile error) — the saved drawing still shows as a static image. */
+.nx-sketch-fallback { padding: 0; }
+.nx-sketch-fallback-img { display: block; width: 100%; height: auto; border-radius: var(--radius-m, 8px); }
+.nx-sketch-fallback-msg { font-size: 11px; color: var(--text-muted); padding: 6px 10px; }
+
+/* Size fine-tune row: − slider + (exact 0.1 steps on the buttons). */
+.nx-sk-sizerow { display: flex; align-items: center; gap: 8px; }
+.nx-sk-sizerow input[type="range"] { flex: 1 1 auto; accent-color: var(--interactive-accent); }
+.nx-sk-stepbtn {
+  width: 26px; height: 26px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; cursor: pointer;
+  font-size: 16px; line-height: 1;
+  background: var(--background-secondary); color: var(--text-normal);
+}
+.nx-sk-stepbtn:hover { background: var(--background-modifier-hover); }
+
+/* Pen behaviour popover extras (marker tip / overlap row). */
+.nx-sk-cfgrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--text-muted); }
+
+/* Palette switcher popover. */
+.nx-sk-palpop { min-width: 230px; }
+.nx-sk-palrow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 7px; border-radius: 6px; cursor: pointer;
+}
+.nx-sk-palrow:hover { background: var(--background-modifier-hover); }
+.nx-sk-palrow.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-sk-palname { flex: 1 1 auto; min-width: 0; font-size: 12px; background: transparent; border: none; border-bottom: 1px dashed var(--background-modifier-border); color: var(--text-normal); padding: 1px 2px; }
+.nx-sk-palname-ro { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-sk-palrow-sw { display: flex; gap: 3px; flex: 0 0 auto; }
+.nx-sk-paldot { width: 11px; height: 11px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px var(--background-modifier-border) inset; }
+.nx-sk-paldel { display: flex; color: var(--text-muted); cursor: pointer; flex: 0 0 auto; }
+.nx-sk-paldel:hover { color: var(--text-error); }
+.nx-sk-paldel .svg-icon { width: 12px; height: 12px; }
+
+/* Clear confirm popover. */
+.nx-sk-confirm { min-width: 210px; }
+.nx-sk-confirm-msg { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
+.nx-sk-confirm-row { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Palette editor in the settings tab. */
+.nx-sk-palette-edit { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.nx-sk-palette-chip {
+  position: relative;
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  background: var(--c);
+  box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
+}
+.nx-sk-palette-rm {
+  position: absolute; top: -6px; right: -6px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--background-primary);
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text-muted);
+}
+.nx-sk-palette-rm .svg-icon { width: 11px; height: 11px; }
+.nx-sk-palette-rm:hover { color: var(--text-error); }
+
+/* The pad. aspect-ratio (set inline from the sketch's logical W/H) keeps it
+   distortion-free at any width. No max-height cap — the user controls the size
+   by dragging the resize strip. touch-action:none is what lets a pen/finger
+   draw instead of scrolling the page — the crux of mobile support. */
+.nx-sketch-pad {
+  position: relative;
+  width: 100%;
+}
+/* "native" paper: the SVG is transparent, so the pad paints the note's own
+   background here (deterministic — not whatever container sits behind it). */
+.nx-sketch-pad.nx-sk-nativebg { background: var(--background-primary); }
+.nx-sketch-surface {
+  display: block;
+  width: 100%;
+  height: auto;          /* sized from the SVG's viewBox ratio — robust on every WebView */
+  touch-action: none;
+  cursor: crosshair;
+}
+.nx-sk-live { pointer-events: none; }
+/* Low-latency live layer: the in-progress stroke is painted here (desynchronized
+   2d context, see sketch.js) and committed to the SVG on release. */
+.nx-sk-livecanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+/* View mode: no drawing (engine `locked` flag) and no resize strip — but
+   pointer events stay ON so pinch-zoom/pan gestures work while reading.
+   One-finger drags still scroll the note (the engine forwards them to the
+   scroller when not zoomed in). */
+.nx-sketch.is-view .nx-sketch-surface { cursor: default; }
+.nx-sketch.is-view .nx-sketch-resize { display: none; }
+/* View mode: uniform rounded corners on all sides (no edge fade). */
+.nx-sketch.is-view .nx-sketch-pad {
+  border-radius: var(--radius-m, 8px);
+  overflow: hidden;
+}
+
+/* "Enter edit" affordance — pencil that appears on hover in view mode. */
+.nx-sketch-enter {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--background-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  color: var(--text-normal);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+.nx-sketch.is-view:hover .nx-sketch-enter { opacity: 1; transform: none; pointer-events: auto; }
+.nx-sketch.is-edit .nx-sketch-enter { display: none; }
+.nx-sketch-enter:hover { color: var(--interactive-accent); }
+.nx-sketch-enter .svg-icon { width: 16px; height: 16px; }
+
+/* Resize strip along the bottom edge — drag to grow the canvas downward. */
+.nx-sketch-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 12px;
+  cursor: ns-resize;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nx-sketch-resize::before {
+  content: "";
+  width: 44px;
+  height: 4px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  transition: background 0.12s ease;
+}
+.nx-sketch-resize:hover::before { background: var(--interactive-accent); }
+
+/* ⋯ overflow menu (compact bar): background · auto-grow · palettes · clear · done. */
+.nx-sk-menu { min-width: 210px; padding: 6px; }
+.nx-sk-menuitem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-normal);
+  font-size: 13px;
+}
+.nx-sk-menuitem:hover { background: var(--background-modifier-hover); }
+.nx-sk-menuitem.is-active { color: var(--interactive-accent); }
+.nx-sk-menuitem-ic { display: flex; color: var(--text-muted); }
+.nx-sk-menuitem.is-active .nx-sk-menuitem-ic { color: var(--interactive-accent); }
+.nx-sk-menuitem-ic .svg-icon { width: 16px; height: 16px; }
+.nx-sk-menuitem-lbl { flex: 1 1 auto; min-width: 0; }
+.nx-sk-menu-sep { height: 1px; margin: 5px 4px; background: var(--background-modifier-border); }
+
+/* ── FULL-SIZE EDITOR ──────────────────────────────────────────────────────
+   The whole window becomes the canvas. The SAME NexusSketchSurface is
+   re-parented in here (see _openSketchFullscreen), so nothing about the drawing
+   state changes — only where the pad lives. */
+.nx-sketch-fs {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-modal, 100);
+  display: flex;
+  flex-direction: column;
+  background: var(--background-primary);
+  /* Keep the toolbar out from under the phone/tablet status bar + gesture areas
+     (Android/iOS safe-area insets; harmless 0 on desktop). */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* Android WebView often reports safe-area insets as 0 even under the status
+   bar — guarantee a floor on mobile so the toolbar always clears it. */
+body.is-mobile .nx-sketch-fs { padding-top: max(env(safe-area-inset-top, 0px), 32px); }
+/* The full-size bar reuses .nx-sketch-bar but must stay opaque + visible (it's
+   outside any .nx-sketch is-view/is-edit wrapper). */
+.nx-sketch-fs-bar {
+  flex: 0 0 auto;
+  opacity: 1 !important;
+}
+.nx-sketch-fs-stage {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 20px 16px 60px;
+}
+/* Paper sits centred with a comfortable reading width; grows downward via the
+   resize strip / auto-grow and the stage scrolls.
+   NO overflow:hidden / border-radius here — a clipping (rounded) ancestor kicks
+   the desynchronized live canvas off its direct-compositing fast path, so live
+   ink wouldn't appear until the pen lifts. A plain box-shadow is fine. */
+.nx-sketch-fs-stage .nx-sketch-pad {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.18);
+}
+
+/* ── COLOUR PICKER — hue ring + inner saturation/value square + opacity ──────
+   Tap a selected swatch again (or the custom "+") to open it. Emits #rrggbb
+   when fully opaque, else rgba(...). */
+.nx-cp { width: 216px; }
+.nx-cp-wheel {
+  position: relative;
+  width: 216px;
+  height: 216px;
+  margin: 2px auto 12px;
+  touch-action: none;
+}
+/* Hue ring: full conic wheel, its centre masked out to a band. */
+.nx-cp-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(hsl(0,100%,50%), hsl(60,100%,50%), hsl(120,100%,50%), hsl(180,100%,50%), hsl(240,100%,50%), hsl(300,100%,50%), hsl(360,100%,50%));
+  -webkit-mask: radial-gradient(circle at center, transparent 0 71px, #000 72px);
+          mask: radial-gradient(circle at center, transparent 0 71px, #000 72px);
+  cursor: crosshair;
+}
+/* Saturation/value square inscribed in the ring's inner circle. */
+.nx-cp-sv {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 104px; height: 104px;
+  transform: translate(-50%, -50%);
+  border-radius: 8px;
+  cursor: crosshair;
+  touch-action: none;
+  background:
+    linear-gradient(to top, #000, transparent),
+    linear-gradient(to right, #fff, var(--cp-hue, #f00));
+  box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
+}
+.nx-cp-ring-thumb, .nx-cp-sv-thumb {
+  position: absolute;
+  width: 14px; height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+.nx-cp-alpha {
+  position: relative;
+  height: 16px;
+  border-radius: 8px;
+  margin: 0 2px 10px;
+  touch-action: none;
+  cursor: pointer;
+  /* checkerboard so translucency reads */
+  background-image:
+    linear-gradient(to right, transparent, var(--cp-solid, #f00)),
+    linear-gradient(45deg, #bbb 25%, transparent 25%, transparent 75%, #bbb 75%),
+    linear-gradient(45deg, #bbb 25%, #fff 25%, #fff 75%, #bbb 75%);
+  background-size: 100% 100%, 10px 10px, 10px 10px;
+  background-position: 0 0, 0 0, 5px 5px;
+  box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
+}
+.nx-cp-alpha-thumb {
+  position: absolute;
+  top: 50%; width: 6px; height: 22px;
+  margin-top: -11px; margin-left: -3px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+.nx-cp-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.nx-cp-preview { width: 26px; height: 26px; border-radius: 6px; box-shadow: 0 0 0 1px var(--background-modifier-border) inset; flex: 0 0 auto; }
+.nx-cp-hex { flex: 1 1 auto; min-width: 0; font-family: var(--font-monospace); font-size: 12px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 6px; color: var(--text-normal); padding: 4px 6px; }

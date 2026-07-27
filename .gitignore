@@ -1,0 +1,13 @@
+# Build-Artefakte: entstehen aus src/ via esbuild und wandern nur in GitHub-
+# Releases (dort holt BRAT sie ab). Im Repo wuerden sie bei jedem Build
+# riesige, nutzlose Diffs erzeugen.
+main.js
+styles.css
+*.map
+
+# Persoenliche Plugin-Einstellungen dieses Vaults - nichts fuer die Oeffentlichkeit.
+data.json
+
+node_modules/
+_pre-split-backup/
+.hotreload

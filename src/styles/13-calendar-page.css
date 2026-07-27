@@ -1,0 +1,98 @@
+/* ============================================================================
+ *  NEXUS SUITE — Tasks & Calendar (full-page calendar + event/account modals)
+ * ========================================================================== */
+
+.nx-calpage { padding: 0 !important; }
+.nx-calpage-inner { padding: 18px 22px 40px; max-width: 1200px; margin: 0 auto; }
+
+/* ── header ── */
+.nx-cp-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 16px; }
+.nx-cp-title { display: flex; align-items: baseline; gap: 8px; font-size: 1.5rem; font-weight: 700; color: var(--nx-fg-bright, var(--text-normal)); }
+.nx-cp-title .nx-cp-sub { font-size: .95rem; font-weight: 500; color: var(--text-muted); }
+.nx-cp-nav { display: flex; align-items: center; gap: 4px; }
+.nx-cp-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 30px; min-width: 30px; padding: 0 8px; cursor: pointer;
+  border-radius: var(--nx-r-tile, 8px); border: 1px solid var(--background-modifier-border);
+  background: var(--nx-chip-side, var(--background-secondary)); color: var(--text-normal);
+}
+.nx-cp-btn:hover { background: var(--background-modifier-hover); }
+.nx-cp-today { font-size: .85rem; font-weight: 600; }
+.nx-cp-primary { background: var(--interactive-accent); color: var(--text-on-accent); border-color: transparent; }
+.nx-cp-primary:hover { background: var(--interactive-accent-hover); }
+.nx-cp-seg { display: inline-flex; border-radius: var(--nx-r-tile, 8px); overflow: hidden; border: 1px solid var(--background-modifier-border); }
+.nx-cp-segbtn { padding: 5px 12px; font-size: .85rem; cursor: pointer; border: none; background: transparent; color: var(--text-muted); }
+.nx-cp-segbtn.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
+.nx-cp-actions { display: flex; gap: 6px; margin-left: auto; }
+.nx-cp-btn.is-spinning svg { animation: nx-cp-spin .8s linear infinite; }
+@keyframes nx-cp-spin { to { transform: rotate(360deg); } }
+
+/* ── month grid ── */
+.nx-cp-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.nx-cp-dow { text-align: right; padding: 2px 6px; font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.nx-cp-day {
+  min-height: 92px; padding: 4px; cursor: pointer; overflow: hidden;
+  border-radius: var(--nx-r-tile, 8px); border: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 3%, var(--background-primary));
+  display: flex; flex-direction: column; gap: 3px;
+}
+.nx-cp-day:hover { border-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 40%, var(--background-modifier-border)); }
+.nx-cp-day.nx-adjacent { opacity: .45; }
+.nx-cp-day.nx-today { border-color: var(--interactive-accent); box-shadow: inset 0 0 0 1px var(--interactive-accent); }
+.nx-cp-daynum { align-self: flex-end; font-size: .8rem; font-weight: 600; color: var(--text-muted); padding: 1px 4px; border-radius: 6px; }
+.nx-cp-daynum:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-cp-day.nx-today .nx-cp-daynum { color: var(--interactive-accent); }
+.nx-cp-day.nx-has-note .nx-cp-daynum::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--interactive-accent); margin-right: 4px; vertical-align: middle; }
+.nx-cp-events { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+
+/* ── event chip ── */
+.nx-cp-chip {
+  --chip: var(--nx-accent, var(--interactive-accent));
+  display: flex; align-items: center; gap: 4px; cursor: pointer;
+  padding: 1px 6px; border-radius: 5px; font-size: .74rem; line-height: 1.35;
+  background: color-mix(in srgb, var(--chip) 22%, transparent);
+  border-left: 2px solid var(--chip); color: var(--nx-fg-bright, var(--text-normal));
+}
+.nx-cp-chip:hover { background: color-mix(in srgb, var(--chip) 34%, transparent); }
+.nx-cp-chip.is-allday { background: color-mix(in srgb, var(--chip) 30%, transparent); }
+.nx-cp-chip-time { font-variant-numeric: tabular-nums; font-weight: 600; opacity: .85; flex: 0 0 auto; }
+.nx-cp-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-cp-more { font-size: .7rem; color: var(--text-muted); padding-left: 4px; }
+
+/* ── week ── */
+.nx-cp-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.nx-cp-wcol { display: flex; flex-direction: column; gap: 4px; min-height: 60vh; padding: 4px; border-radius: var(--nx-r-tile, 8px); border: 1px solid var(--background-modifier-border); background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 3%, var(--background-primary)); }
+.nx-cp-wcol.nx-today { border-color: var(--interactive-accent); }
+.nx-cp-wcol-head { display: flex; align-items: baseline; justify-content: space-between; cursor: pointer; padding: 2px 4px; border-radius: 6px; }
+.nx-cp-wcol-head:hover { background: var(--background-modifier-hover); }
+.nx-cp-wdow { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.nx-cp-wnum { font-size: 1rem; font-weight: 700; }
+.nx-cp-wcol-head.nx-has-note .nx-cp-wnum::after { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--interactive-accent); margin-left: 4px; vertical-align: middle; }
+
+/* ── day / agenda ── */
+.nx-cp-agenda { display: flex; flex-direction: column; gap: 14px; max-width: 640px; }
+.nx-cp-agenda-note { display: flex; }
+.nx-cp-note-ic { display: inline-flex; margin-right: 6px; }
+.nx-cp-agenda-sec { display: flex; flex-direction: column; gap: 6px; }
+.nx-cp-agenda-h { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.nx-cp-arow { display: flex; align-items: center; gap: 10px; }
+.nx-cp-atime { flex: 0 0 88px; font-variant-numeric: tabular-nums; font-size: .82rem; color: var(--text-muted); text-align: right; }
+.nx-cp-arow .nx-cp-chip { flex: 1; font-size: .9rem; padding: 5px 10px; }
+.nx-cp-empty { color: var(--text-muted); font-style: italic; padding: 20px 0; }
+
+/* ── event + account modals ── */
+.nx-event-modal .nx-event-times { display: flex; flex-direction: column; }
+.nx-event-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+.nx-event-ro { display: flex; gap: 10px; margin: 4px 0; }
+.nx-event-ro-k { flex: 0 0 90px; color: var(--text-muted); font-size: .85rem; }
+.nx-event-ro-v { color: var(--text-normal); }
+.nx-event-ro-desc { margin-top: 10px; padding: 10px; border-radius: 8px; background: var(--background-secondary); white-space: pre-wrap; }
+.nx-event-ro-hint { margin-top: 14px; font-size: .8rem; color: var(--text-muted); }
+
+.nx-set-list { display: flex; flex-direction: column; margin: 4px 0 8px; }
+.nx-account-cals { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.nx-account-cal { display: flex; align-items: center; gap: 8px; padding: 4px 2px; }
+.nx-account-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--interactive-accent); flex: 0 0 auto; }
+.nx-account-calname { flex: 1; }
+.nx-account-badge { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 1px 6px; border-radius: 5px; background: var(--background-secondary); }
+.nx-account-empty { color: var(--text-muted); font-style: italic; padding: 6px 2px; font-size: .88rem; }

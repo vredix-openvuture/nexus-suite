@@ -1,0 +1,10 @@
+{
+  "id": "nexus-suite",
+  "name": "Nexus Suite",
+  "version": "0.15.0",
+  "minAppVersion": "1.6.0",
+  "description": "All-in-one: Banner, Hider, Columns, Homepage, Search, Smart Typography and Calendar — modular, toggle each on or off.",
+  "author": "vredix",
+  "authorUrl": "https://github.com/vredix-openvuture",
+  "isDesktopOnly": false
+}

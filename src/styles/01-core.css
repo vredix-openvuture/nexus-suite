@@ -1,0 +1,37 @@
+/* ============================================================================
+ *  NEXUS SUITE  —  Styles for all modules
+ * ========================================================================== */
+
+/* ── HIDER ── (classes toggled on <body> via settings) ── */
+body.nx-hide-tooltips .tooltip { display: none !important; }
+body.nx-hide-scrollbars ::-webkit-scrollbar { display: none !important; }
+body.nx-hide-status .status-bar { display: none !important; }
+body.nx-hide-titlebar .titlebar-button-container.mod-left,
+body.nx-hide-titlebar .titlebar-button.mod-min,
+body.nx-hide-titlebar .titlebar-button.mod-max,
+body.nx-hide-titlebar .titlebar-button.mod-close { display: none !important; }
+body.nx-hide-vaultname .workspace-drawer-vault-name,
+body.nx-hide-vaultname .workspace-sidedock-vault-profile { display: none !important; }
+body.nx-hide-tabbar .workspace-tab-header-container { display: none !important; }
+body.nx-hide-instructions .prompt-instructions,
+body.nx-hide-instructions .suggestion-hotkey { display: none !important; }
+body.nx-hide-sidebar-ribbon .side-dock-ribbon.mod-left,
+body.nx-hide-sidebar-ribbon .workspace-ribbon { display: none !important; }
+body.nx-hide-explorer-buttons .workspace-leaf-content[data-type="file-explorer"] .nav-buttons-container,
+body.nx-hide-explorer-buttons .workspace-leaf-content[data-type="file-explorer"] .nav-header { display: none !important; }
+
+/* ── COLUMNS ── */
+.nx-columns {
+  display: flex;
+  gap: var(--nx-col-gap, 1.5rem);
+  align-items: flex-start;
+}
+.nx-columns > .nx-column {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.nx-columns > .nx-column > :first-child { margin-top: 0; }
+@media (max-width: 700px) {
+  .nx-columns { flex-direction: column; }
+}
+

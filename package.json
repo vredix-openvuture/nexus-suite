@@ -1,0 +1,14 @@
+{
+  "name": "nexus-suite",
+  "version": "0.1.0",
+  "description": "All-in-one Obsidian plugin — modular build via esbuild (bundles src/ into one main.js + styles.css).",
+  "private": true,
+  "scripts": {
+    "dev": "node esbuild.config.mjs watch",
+    "watch": "node esbuild.config.mjs watch",
+    "build": "node esbuild.config.mjs production"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}
