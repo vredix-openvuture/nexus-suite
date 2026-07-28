@@ -12,12 +12,13 @@ const { ItemView, moment, setIcon, Notice } = require('obsidian');
 const { CAL_PAGE_VIEW, NX_MODULES } = require('../constants.js');
 const { getDailyNoteSettings, openDailyNote } = require('../lib/helpers.js');
 const calstore = require('../lib/calstore.js');
+const tasks = require('../lib/tasks.js');
 const { NexusEventModal } = require('../modals/event.js');
 
 const MAX_CHIPS = 4;   // per day cell in month view before "+N"
 
 /* stable per-calendar key for the visibility toggle (matches the event modal) */
-function calKey(c) { return c.kind === 'local' ? 'local:' + c.calendarId : 'remote:' + c.accountId + ':' + c.calendarId; }
+function calKey(c) { return c.kind === 'tasks' ? 'tasks:due' : c.kind === 'local' ? 'local:' + c.calendarId : 'remote:' + c.accountId + ':' + c.calendarId; }
 
 class NexusCalendarPageView extends ItemView {
   constructor(leaf, plugin) {
@@ -34,7 +35,8 @@ class NexusCalendarPageView extends ItemView {
   async onOpen() {
     await this.reload();
     const dir = calstore.dataDir(this.plugin) + '/calendar';
-    const touch = (f) => { if (f && f.path && f.path.startsWith(dir)) this.reload(); };
+    const items = tasks.itemsFolder(this.plugin) + '/';
+    const touch = (f) => { if (f && f.path && (f.path.startsWith(dir) || f.path.startsWith(items))) this.reload(); };
     this.registerEvent(this.app.vault.on('modify', touch));
     this.registerEvent(this.app.vault.on('create', touch));
     this.registerEvent(this.app.vault.on('delete', touch));
@@ -42,7 +44,32 @@ class NexusCalendarPageView extends ItemView {
 
   async reload() {
     try { this.calendars = await calstore.loadCalendars(this.plugin); } catch (e) { this.calendars = []; }
+    try { const t = this._loadDueTasks(); if (t) this.calendars.push(t); } catch (e) {}
     this.render();
+  }
+
+  /* Tasks with a due date → a synthetic "Tasks" calendar so they show on their
+     due day (toggleable via the calendar panel like any calendar). */
+  _loadDueTasks() {
+    const app = this.app, itemsFolder = tasks.itemsFolder(this.plugin), events = [];
+    for (const f of app.vault.getMarkdownFiles()) {
+      if (!f.path.startsWith(itemsFolder + '/')) continue;
+      const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter || {};
+      if (fm['nexus-type'] !== 'task' || !fm.due) continue;
+      const due = String(fm.due), timed = /T\d/.test(due);
+      const when = timed ? { dt: due.slice(0, 19), utc: /Z$/.test(due) } : { d: due.slice(0, 10) };
+      events.push({
+        uid: 'task-' + f.basename, summary: fm.title || f.basename, allDay: !timed,
+        start: when, end: when, isTask: true, done: (fm.status === 'completed' || fm.done === true), notePath: f.path,
+      });
+    }
+    if (!events.length) return null;
+    return { kind: 'tasks', calendarId: '__tasks__', display: 'Tasks (due)', color: '#e0a800', component: 'VTODO', events };
+  }
+
+  _openTask(ev) {
+    const f = this.app.vault.getAbstractFileByPath(ev.notePath);
+    if (f) this.app.workspace.getLeaf(false).openFile(f);
   }
 
   /* ── visible range for the current mode ── */
@@ -164,11 +191,13 @@ class NexusCalendarPageView extends ItemView {
   }
 
   _chip(parent, occ) {
-    const chip = parent.createDiv('nx-cp-chip' + (occ.allDay ? ' is-allday' : ''));
+    const ev = occ.event;
+    const chip = parent.createDiv('nx-cp-chip' + (occ.allDay ? ' is-allday' : '') + (ev.isTask ? ' is-task' : '') + (ev.isTask && ev.done ? ' is-done' : ''));
     if (occ.color) chip.style.setProperty('--chip', occ.color);
-    if (!occ.allDay) chip.createSpan({ cls: 'nx-cp-chip-time', text: occ.start.format('H:mm') });
-    chip.createSpan({ cls: 'nx-cp-chip-text', text: occ.event.summary });
-    chip.onclick = (e) => { e.stopPropagation(); this._openEvent(occ); };
+    if (ev.isTask) chip.createSpan({ cls: 'nx-cp-chip-check', text: ev.done ? '☑' : '☐' });
+    else if (!occ.allDay) chip.createSpan({ cls: 'nx-cp-chip-time', text: occ.start.format('H:mm') });
+    chip.createSpan({ cls: 'nx-cp-chip-text', text: ev.summary });
+    chip.onclick = (e) => { e.stopPropagation(); if (ev.isTask) this._openTask(ev); else this._openEvent(occ); };
     return chip;
   }
 

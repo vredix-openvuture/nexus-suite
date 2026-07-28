@@ -70,6 +70,10 @@
 .nx-cp-chip:hover { background: color-mix(in srgb, var(--chip) 34%, transparent); }
 .nx-cp-chip.is-allday { background: color-mix(in srgb, var(--chip) 30%, transparent); }
 .nx-cp-chip-time { font-variant-numeric: tabular-nums; font-weight: 600; opacity: .85; flex: 0 0 auto; }
+.nx-cp-chip.is-task { background: color-mix(in srgb, var(--chip) 14%, transparent); border-left-style: dashed; }
+.nx-cp-chip-check { flex: 0 0 auto; font-size: .82rem; line-height: 1; opacity: .9; }
+.nx-cp-chip.is-done .nx-cp-chip-text { text-decoration: line-through; opacity: .55; }
+.nx-cp-chip.is-done { opacity: .75; }
 .nx-cp-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nx-cp-more { font-size: .7rem; color: var(--text-muted); padding-left: 4px; }
 
