@@ -16,6 +16,9 @@ const { NexusEventModal } = require('../modals/event.js');
 
 const MAX_CHIPS = 4;   // per day cell in month view before "+N"
 
+/* stable per-calendar key for the visibility toggle (matches the event modal) */
+function calKey(c) { return c.kind === 'local' ? 'local:' + c.calendarId : 'remote:' + c.accountId + ':' + c.calendarId; }
+
 class NexusCalendarPageView extends ItemView {
   constructor(leaf, plugin) {
     super(leaf);
@@ -63,12 +66,41 @@ class NexusCalendarPageView extends ItemView {
     this._head(inner);
 
     if (!this.calendars.length) this._emptyHint(inner);
+    if (this._calPanelOpen) this._calPanel(inner);
 
+    const hidden = new Set(this.plugin.settings.tasksCalendar.hiddenCalendars || []);
+    const visible = this.calendars.filter(c => !hidden.has(calKey(c)));
     const [rs, re] = this.range();
-    const occs = calstore.expandRange(this.calendars, rs, re);
+    const occs = calstore.expandRange(visible, rs, re);
     if (this.mode === 'month') this._month(inner, occs);
     else if (this.mode === 'week') this._week(inner, occs);
     else this._day(inner, occs);
+  }
+
+  _calPanel(inner) {
+    const panel = inner.createDiv('nx-cp-calpanel');
+    const head = panel.createDiv('nx-cp-calpanel-h');
+    head.createSpan({ text: 'Calendars' });
+    const close = head.createEl('button', { cls: 'nx-cp-calpanel-x', text: '×' });
+    close.onclick = () => { this._calPanelOpen = false; this.render(); };
+    if (!this.calendars.length) { panel.createDiv({ cls: 'nx-cp-calpanel-empty', text: 'No calendars yet.' }); return; }
+    const hidden = new Set(this.plugin.settings.tasksCalendar.hiddenCalendars || []);
+    this.calendars.forEach(c => {
+      const row = panel.createDiv('nx-cp-calrow');
+      const cb = row.createEl('input', { type: 'checkbox' });
+      cb.checked = !hidden.has(calKey(c));
+      const dot = row.createSpan('nx-cp-caldot'); if (c.color) dot.style.background = c.color;
+      row.createSpan({ cls: 'nx-cp-calname', text: c.display + (c.kind === 'remote' ? '' : '  ·  local') });
+      const toggle = async () => {
+        const h = new Set(this.plugin.settings.tasksCalendar.hiddenCalendars || []);
+        if (cb.checked) h.delete(calKey(c)); else h.add(calKey(c));
+        this.plugin.settings.tasksCalendar.hiddenCalendars = Array.from(h);
+        await this.plugin.saveSettings();
+        this.render();
+      };
+      cb.onchange = () => { toggle(); };
+      row.onclick = (e) => { if (e.target !== cb) { cb.checked = !cb.checked; toggle(); } };
+    });
   }
 
   _emptyHint(inner) {
@@ -111,6 +143,9 @@ class NexusCalendarPageView extends ItemView {
 
     // actions
     const act = head.createDiv('nx-cp-actions');
+    const calsBtn = act.createEl('button', { cls: 'nx-cp-btn' + (this._calPanelOpen ? ' is-active' : ''), attr: { 'aria-label': 'Calendars' } });
+    setIcon(calsBtn, 'list-checks');
+    calsBtn.onclick = () => { this._calPanelOpen = !this._calPanelOpen; this.render(); };
     const add = act.createEl('button', { cls: 'nx-cp-btn nx-cp-primary', attr: { 'aria-label': 'New event' } });
     setIcon(add, 'plus'); add.createSpan({ text: ' Event' });
     add.onclick = () => this._newEvent();

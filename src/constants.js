@@ -47,6 +47,7 @@ const DEFAULT_SETTINGS = {
     syncOnStartup: true, syncIntervalMin: 15, conflictPolicy: 'server',   // 'server' | 'ask'
     accounts: [],        // {id,kind,label,serverUrl,username,principalHref,homeSet,calendars:[{id,href,display,color,component,enabled,ctag,syncToken}]} — NO secrets (localStorage)
     localCalendars: [],  // {id,name,color}
+    hiddenCalendars: [], // per-calendar visibility toggle (calKey strings that are HIDDEN)
     tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local' } },
   propertyHider: { enabled: true, hidden: [], reveal: false },
   callouts:   { enabled: true, migrated: false, items: [] },

@@ -3,7 +3,19 @@
  * ========================================================================== */
 
 .nx-calpage { padding: 0 !important; height: 100%; }
-.nx-calpage-inner { padding: 18px 22px 24px; max-width: 1200px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; }
+.nx-calpage-inner { padding: 18px 22px 24px; max-width: 1200px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; position: relative; }
+
+/* ── calendar visibility panel (popover, top-right) ── */
+.nx-cp-calpanel { position: absolute; top: 54px; right: 22px; z-index: 50; width: 262px; max-height: 62vh; overflow-y: auto; padding: 10px; border-radius: var(--nx-radius, 12px); background: var(--nx-elevated, var(--background-secondary)); border: 1px solid var(--background-modifier-border); box-shadow: 0 14px 36px -12px #000; }
+.nx-cp-calpanel-h { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: 8px; }
+.nx-cp-calpanel-x { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 1.15rem; line-height: 1; padding: 0 4px; }
+.nx-cp-calpanel-x:hover { color: var(--text-normal); }
+.nx-cp-calpanel-empty { color: var(--text-muted); font-size: .85rem; font-style: italic; padding: 4px; }
+.nx-cp-calrow { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 6px; cursor: pointer; }
+.nx-cp-calrow:hover { background: var(--background-modifier-hover); }
+.nx-cp-calrow input { flex: 0 0 auto; }
+.nx-cp-caldot { width: 11px; height: 11px; border-radius: 3px; background: var(--interactive-accent); flex: 0 0 auto; }
+.nx-cp-calname { font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── header ── */
 .nx-cp-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 16px; }
