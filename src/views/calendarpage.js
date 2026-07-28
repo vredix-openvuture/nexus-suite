@@ -62,11 +62,28 @@ class NexusCalendarPageView extends ItemView {
     const inner = root.createDiv('nx-calpage-inner');
     this._head(inner);
 
+    if (!this.calendars.length) this._emptyHint(inner);
+
     const [rs, re] = this.range();
     const occs = calstore.expandRange(this.calendars, rs, re);
     if (this.mode === 'month') this._month(inner, occs);
     else if (this.mode === 'week') this._week(inner, occs);
     else this._day(inner, occs);
+  }
+
+  _emptyHint(inner) {
+    const s = this.plugin.settings.tasksCalendar;
+    const box = inner.createDiv('nx-cp-empty-hint');
+    let msg, action;
+    if (!s.enabled) { msg = 'The Tasks & Calendar module is off — turn on “Enabled” in settings.'; action = 'settings'; }
+    else if (!(s.accounts || []).length && !(s.localCalendars || []).length) { msg = 'No calendars yet. Add a CalDAV account or a local calendar in settings, then sync.'; action = 'settings'; }
+    else { msg = 'No calendar data yet — run a sync (desktop).'; action = 'sync'; }
+    box.createDiv({ cls: 'nx-cp-empty-msg', text: msg });
+    const b = box.createEl('button', { cls: 'nx-cp-btn nx-cp-primary', text: action === 'sync' ? 'Sync now' : 'Open settings' });
+    b.onclick = async () => {
+      if (action === 'sync') { await this.plugin.syncTaskCal(); this.reload(); }
+      else { try { this.app.setting.open(); this.app.setting.openTabById('nexus-suite'); } catch (e) {} }
+    };
   }
 
   _head(inner) {
@@ -128,8 +145,9 @@ class NexusCalendarPageView extends ItemView {
   /* ── MONTH ── */
   _month(inner, occs) {
     const { format, folder } = getDailyNoteSettings(this.app);
+    const dowrow = inner.createDiv('nx-cp-dowrow');
+    moment.weekdaysMin(true).forEach(d => dowrow.createDiv({ cls: 'nx-cp-dow', text: d }));
     const grid = inner.createDiv('nx-cp-month');
-    moment.weekdaysMin(true).forEach(d => grid.createDiv({ cls: 'nx-cp-dow', text: d }));
     const [start, end] = this.range();
     const today = moment().format('YYYY-MM-DD');
     const day = start.clone();
