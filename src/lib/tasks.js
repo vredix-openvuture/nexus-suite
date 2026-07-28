@@ -118,9 +118,10 @@ async function setTaskDone(plugin, k, done) {
   if (!st) return { missing: true };
   let repeated = false, newDue = st.due;
   await app.fileManager.processFrontMatter(st.file, fm => {
-    // Local repeat advances the due date here; for remote providers (Vikunja)
-    // the SERVER owns the repeat — we just mark done and let sync push it.
-    if (done && fm.repeat && (fm['nexus-provider'] || 'local') === 'local') {
+    // Repeat advances the due date here for local AND CalDAV (plain VTODO has no
+    // server-side recurrence roll-over). Vikunja is the exception — its server
+    // owns the repeat, so there we just mark done and let sync push it.
+    if (done && fm.repeat && (fm['nexus-provider'] || 'local') !== 'vikunja') {
       newDue = advanceDue(fm.due, fm.repeat);
       fm.due = newDue;
       fm.status = 'needs-action';

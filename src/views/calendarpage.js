@@ -103,15 +103,12 @@ class NexusCalendarPageView extends ItemView {
   }
 
   _newEvent() {
-    const locals = this.plugin.settings.tasksCalendar.localCalendars || [];
-    if (!locals.length) { new Notice('Create a local calendar first (Settings → ' + NX_MODULES.tasksCalendar.name + ').'); return; }
-    new NexusEventModal(this.plugin, { start: { dt: this.cursor.format('YYYY-MM-DD') + 'T09:00:00', utc: false, tzid: null } }, () => this.reload()).open();
+    if (!this.calendars.length) { new Notice('Add a local calendar or sync a CalDAV account first (Settings → ' + NX_MODULES.tasksCalendar.name + ').'); return; }
+    new NexusEventModal(this.plugin, { start: { dt: this.cursor.format('YYYY-MM-DD') + 'T09:00:00', utc: false, tzid: null } }, () => this.reload(), this.calendars, null).open();
   }
 
   _openEvent(occ) {
-    const cal = occ.cal;
-    if (cal.kind === 'local') new NexusEventModal(this.plugin, occ.event, () => this.reload(), cal.calendarId).open();
-    else new NexusEventModal(this.plugin, occ.event, null, null, true).open();   // remote: read-only (M1)
+    new NexusEventModal(this.plugin, occ.event, () => this.reload(), this.calendars, occ.cal).open();
   }
 
   _chip(parent, occ) {

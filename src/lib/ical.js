@@ -229,9 +229,27 @@ function serializeEvent(ev, moment) {
   return L.map(foldLine).join('\r\n') + '\r\n';
 }
 
+/* ── Serialize a VTODO (canonical task → ICS) for CalDAV PUT ── */
+function serializeTodo(task, moment) {
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Nexus Suite//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VTODO'];
+  L.push('UID:' + (task.uid || ('nx-' + Date.now())));
+  L.push('DTSTAMP:' + nowStamp(moment));
+  L.push('SUMMARY:' + escapeText(task.title || ''));
+  if (task.description) L.push('DESCRIPTION:' + escapeText(task.description));
+  if (task.due) L.push('DUE;VALUE=DATE:' + String(task.due).slice(0, 10).replace(/-/g, ''));
+  L.push('STATUS:' + (task.done ? 'COMPLETED' : 'NEEDS-ACTION'));
+  L.push('PERCENT-COMPLETE:' + (task.done ? 100 : 0));
+  if (task.priority) L.push('PRIORITY:' + task.priority);
+  if (task.repeat) L.push('RRULE:' + task.repeat);
+  if (task.done) L.push('COMPLETED:' + nowStamp(moment));
+  L.push('SEQUENCE:' + (task.sequence != null ? task.sequence : 0));
+  L.push('END:VTODO', 'END:VCALENDAR');
+  return L.map(foldLine).join('\r\n') + '\r\n';
+}
+
 module.exports = {
   unfold, parseLine, parse, parseResource,
   normalizeEvent, normalizeTodo,
   parseWhen, whenToMoment,
-  escapeText, unescapeText, serializeEvent, foldLine,
+  escapeText, unescapeText, serializeEvent, serializeTodo, foldLine,
 };

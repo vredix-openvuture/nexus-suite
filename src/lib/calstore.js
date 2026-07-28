@@ -143,6 +143,34 @@ async function deleteLocalEvent(plugin, localCalId, uid) {
   await writeJSON(plugin, path, c);
 }
 
+/* ── Remote event write-through (DESKTOP): PUT/DELETE + update the cache ──
+     Immediate, ETag-guarded write. If-Match on update → 412 means the server
+     moved under us (conflict) → caller re-pulls. New events use If-None-Match:*. */
+async function writeRemoteEvent(plugin, cal, ev, client) {
+  if (!ev.uid) ev.uid = 'nx-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const ics = ical.serializeEvent(ev, moment);
+  const isNew = !ev.href;
+  const url = ev.href || (cal.href.replace(/\/$/, '') + '/' + encodeURIComponent(ev.uid) + '.ics');
+  const res = await client.putResource(url, ics, isNew ? null : (ev.etag || ''));
+  if (res.status === 412) return { conflict: true };
+  if (res.status < 200 || res.status >= 300) return { error: 'HTTP ' + res.status };
+  ev.href = url; if (res.etag) ev.etag = res.etag;
+  const path = remoteDir(plugin, cal.accountId) + '/' + calId(cal.calendarId) + '.json';
+  const c = await readJSON(plugin, path);
+  if (c) {
+    const i = c.events.findIndex(e => e.uid === ev.uid);
+    if (i >= 0) c.events[i] = ev; else c.events.push(ev);
+    await writeJSON(plugin, path, c);
+  }
+  return { ok: true, etag: ev.etag };
+}
+async function deleteRemoteEvent(plugin, cal, ev, client) {
+  if (ev.href) { try { await client.deleteResource(ev.href, ev.etag || ''); } catch (e) {} }
+  const path = remoteDir(plugin, cal.accountId) + '/' + calId(cal.calendarId) + '.json';
+  const c = await readJSON(plugin, path);
+  if (c) { c.events = c.events.filter(e => e.uid !== ev.uid); await writeJSON(plugin, path, c); }
+}
+
 /* ── Aggregate occurrences in [rangeStart, rangeEnd) across all calendars ── */
 function expandRange(calendars, rangeStart, rangeEnd) {
   const out = [];
@@ -203,5 +231,6 @@ module.exports = {
   dataDir, pluginDir, remoteDir, localDir, calId, migrate,
   syncAccount, loadCalendars,
   createLocalCalendar, saveLocalEvent, deleteLocalEvent,
+  writeRemoteEvent, deleteRemoteEvent,
   expandRange, readJSON, writeJSON,
 };
