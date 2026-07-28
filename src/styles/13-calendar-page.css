@@ -2,8 +2,9 @@
  *  NEXUS SUITE — Tasks & Calendar (full-page calendar + event/account modals)
  * ========================================================================== */
 
-.nx-calpage { padding: 0 !important; height: 100%; }
-.nx-calpage-inner { padding: 18px 22px 24px; max-width: 1200px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; position: relative; }
+.nx-calpage { padding: 0 !important; height: 100%; display: flex; flex-direction: column; }
+/* full width + full height: no max-width cap, real flexbox fill (min-height:0 lets the grid shrink/grow) */
+.nx-calpage-inner { padding: 18px 22px 24px; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
 
 /* ── calendar visibility panel (popover, top-right) ── */
 .nx-cp-calpanel { position: absolute; top: 54px; right: 22px; z-index: 50; width: 262px; max-height: 62vh; overflow-y: auto; padding: 10px; border-radius: var(--nx-radius, 12px); background: var(--nx-elevated, var(--background-secondary)); border: 1px solid var(--background-modifier-border); box-shadow: 0 14px 36px -12px #000; }
