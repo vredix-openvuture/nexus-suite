@@ -118,7 +118,9 @@ async function setTaskDone(plugin, k, done) {
   if (!st) return { missing: true };
   let repeated = false, newDue = st.due;
   await app.fileManager.processFrontMatter(st.file, fm => {
-    if (done && fm.repeat) {
+    // Local repeat advances the due date here; for remote providers (Vikunja)
+    // the SERVER owns the repeat — we just mark done and let sync push it.
+    if (done && fm.repeat && (fm['nexus-provider'] || 'local') === 'local') {
       newDue = advanceDue(fm.due, fm.repeat);
       fm.due = newDue;
       fm.status = 'needs-action';
@@ -171,6 +173,52 @@ async function onProjectNoteModify(plugin, file) {
   }
 }
 
+async function ensureItemsFolder(plugin) { await ensureFolder(plugin, itemsFolder(plugin)); }
+
+/* ── upsert a project note by title (stamps a provider + remote id) ── */
+async function upsertProject(plugin, opts) {
+  const name = sanitize(opts.title);
+  let file = plugin.app.vault.getAbstractFileByPath(projectPath(plugin, name));
+  if (!file) file = await createProject(plugin, name, opts.parentName);
+  else if (opts.parentName) await _linkSubproject(plugin, opts.parentName, name);
+  if (opts.provider || opts.remoteId != null) {
+    plugin._taskWriting = true;
+    try { await plugin.app.fileManager.processFrontMatter(file, fm => {
+      if (opts.provider) fm['nexus-provider'] = opts.provider;
+      if (opts.remoteId != null) fm['nexus-id'] = opts.remoteId;
+      if (opts.account) fm['nexus-account'] = opts.account;
+    }); } finally { plugin._taskWriting = false; }
+  }
+  return name;
+}
+
+/* ── rewrite a project note's "## Tasks" section from a list of checklist lines ── */
+async function rebuildChecklist(plugin, projectName, lines) {
+  const app = plugin.app;
+  const file = app.vault.getAbstractFileByPath(projectPath(plugin, projectName));
+  if (!file) return;
+  const text = await app.vault.read(file);
+  const src = text.split('\n');
+  const out = [];
+  let i = 0, replaced = false;
+  while (i < src.length) {
+    if (/^##\s+Tasks\s*$/.test(src[i])) {
+      out.push('## Tasks');
+      lines.forEach(l => out.push(l));
+      i++;
+      while (i < src.length && !/^##\s+/.test(src[i])) i++;   // skip old section body
+      replaced = true;
+      continue;
+    }
+    out.push(src[i]); i++;
+  }
+  if (!replaced) { out.push('## Tasks'); lines.forEach(l => out.push(l)); }
+  const next = out.join('\n');
+  if (next === text) return;
+  plugin._taskWriting = true;
+  try { await app.vault.modify(file, next); } finally { plugin._taskWriting = false; }
+}
+
 /* ── list all project notes (for pickers) ── */
 function listProjects(plugin) {
   const folder = projectsFolder(plugin);
@@ -184,4 +232,5 @@ module.exports = {
   createProject, createTask, addTaskToProject, setTaskDone, taskState,
   onProjectNoteModify, listProjects, advanceDue,
   projectPath, taskPath, projectsFolder, itemsFolder,
+  ensureItemsFolder, upsertProject, rebuildChecklist,
 };

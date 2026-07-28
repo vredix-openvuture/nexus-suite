@@ -2,9 +2,23 @@
    Pattern via background-size tiling (more even than repeating-gradient),
    period = integer line height --nx-bg-line. Very subtle. */
 .nx-bg-lined, .nx-bg-grid, .nx-bg-dotted {
-  --nx-bg-color: color-mix(in srgb, var(--text-normal) 4.5%, transparent);  /* very subtle */
+  /* Strength comes from the settings (applyNoteBgStrength sets --nx-bg-strength
+     on <body>): mixed out of --text-normal, one fixed percentage cannot read
+     well across every palette. */
+  --nx-bg-color: color-mix(in srgb, var(--text-normal) var(--nx-bg-strength, 4.5%), transparent);
   --nx-bg-fade: 130px;   /* length of the fade in/out at top & bottom */
 }
+
+/* Inline −/+ stepper inside the note-style menu */
+.nx-bgstep { display: flex; align-items: center; gap: 8px; }
+.nx-bgstep-val { font-variant-numeric: tabular-nums; min-width: 92px; }
+.nx-bgstep-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 21px; height: 21px; border-radius: 5px; cursor: pointer;
+  font-size: 1.05em; line-height: 1; user-select: none;
+  color: var(--text-muted); background: var(--background-modifier-hover);
+}
+.nx-bgstep-btn:hover { color: var(--text-normal); background: var(--background-modifier-border); }
 /* First background layer = a blend gradient in the editor background color that
    softly fades the pattern at top & bottom (sits behind the text, does NOT
    fade the text). Beneath it, the actual pattern layers. */

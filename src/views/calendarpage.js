@@ -9,7 +9,7 @@
  * ========================================================================== */
 
 const { ItemView, moment, setIcon, Notice } = require('obsidian');
-const { CAL_PAGE_VIEW } = require('../constants.js');
+const { CAL_PAGE_VIEW, NX_MODULES } = require('../constants.js');
 const { getDailyNoteSettings, openDailyNote } = require('../lib/helpers.js');
 const calstore = require('../lib/calstore.js');
 const { NexusEventModal } = require('../modals/event.js');
@@ -25,7 +25,7 @@ class NexusCalendarPageView extends ItemView {
     this.calendars = [];
   }
   getViewType() { return CAL_PAGE_VIEW; }
-  getDisplayText() { return 'Calendar'; }
+  getDisplayText() { return NX_MODULES.tasksCalendar.name; }
   getIcon() { return 'calendar-check'; }
 
   async onOpen() {
@@ -104,7 +104,7 @@ class NexusCalendarPageView extends ItemView {
 
   _newEvent() {
     const locals = this.plugin.settings.tasksCalendar.localCalendars || [];
-    if (!locals.length) { new Notice('Nexus: create a local calendar first (Settings → Tasks & Calendar).'); return; }
+    if (!locals.length) { new Notice('Create a local calendar first (Settings → ' + NX_MODULES.tasksCalendar.name + ').'); return; }
     new NexusEventModal(this.plugin, { start: { dt: this.cursor.format('YYYY-MM-DD') + 'T09:00:00', utc: false, tzid: null } }, () => this.reload()).open();
   }
 

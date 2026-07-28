@@ -40,14 +40,18 @@
 
 /* The injected sketch area. It lives INSIDE the (margined) content container,
    but the sketch should span the full width while title/properties keep their
-   normal margins — so break out of the container with the classic full-bleed
-   (width:100vw centred on the viewport). overflow-x:hidden on the scroller clips
-   any sub-pixel spill. */
+   normal margins — so it breaks out sideways.
+   NOT with the classic 100vw full-bleed: 100vw is the WINDOW, and the moment a
+   sidebar opens the editor pane is narrower than that, so the strip ran wider
+   than the pane and its right end (the action buttons) was clipped away.
+   --nx-pk-w / --nx-pk-off are measured off the note's own scroll container
+   (syncGeom() in main.js) → the strip is exactly as wide as the pane, whatever
+   the sidebars do. Without JS they fall back to plain content width. */
 .nx-pk-inline {
   position: relative;
-  width: 100vw;
-  max-width: 100vw;
-  margin-left: calc(50% - 50vw);
+  width: var(--nx-pk-w, 100%);
+  max-width: none;
+  margin-left: var(--nx-pk-off, 0px);
   box-sizing: border-box;
   padding: 6px 0 40px;   /* canvas goes edge-to-edge; toolbar gets its own inset */
   z-index: 1;
@@ -57,7 +61,14 @@
 }
 .nx-pk-inline .nx-pk-bar {
   position: sticky;
-  top: 0;   /* dock flush at the top — no gap above where the canvas could show through */
+  /* Obsidian pads the scroll container itself
+     (.cm-scroller / .markdown-preview-view { padding: var(--file-margins) }),
+     and a sticky element docks at the SCROLLPORT — i.e. at the padding box, not
+     the pane's top edge. With top:0 the note kept scrolling through that padding
+     strip above the bar: the "gap". Pulling the dock up by exactly that padding
+     closes it structurally — no is-it-stuck flag, no box-shadow filler that
+     could go stale. --nx-pk-top is the measured padding-top. */
+  top: calc(-1 * var(--nx-pk-top, 0px));
   z-index: 5;
   border-radius: 0;              /* flat strip — the canvas below is borderless/full-page */
   padding-left: 16px !important;
@@ -65,16 +76,14 @@
 }
 /* The corner buttons (slate toggle / banner / bg) would otherwise collide with the
    top-docked bar, so in a slate note they drop just below it — floating over the
-   canvas top-right (well contrasted on the paper). */
+   canvas top-right (well contrasted on the paper). Derived from the bar's MEASURED
+   height: the old hard-coded 52px was less than padding + bar height, so the
+   buttons sat on the bar's right end. */
 .nx-pk-note > .nx-slate-btn,
 .nx-pk-note > .nx-banner-btn,
-.nx-pk-note > .nx-bg-btn { top: 52px; }
-/* The editor leaves a small top inset above the scroll viewport, so even docked at
-   top:0 a sliver of canvas peeks over the bar. Once docked (JS flag), extend the
-   bar's own colour up to fill it → the toolbar reads as flush with the top.
-   NB: box-shadow (not a ::before) because the bar has overflow:hidden, which would
-   clip a pseudo-element sitting above it; box-shadow escapes the clip. */
-.nx-pk-inline .nx-pk-bar.nx-pk-stuck { box-shadow: 0 -40px 0 var(--background-primary); }
+.nx-pk-note > .nx-bg-btn {
+  top: calc(var(--nx-pk-top, 20px) + var(--nx-pk-barh, 42px) + 10px);
+}
 /* NO overflow:hidden / border-radius here — a rounded, clipping ancestor kicks
    the desynchronized live canvas off its fast path (live ink would only appear
    on pen-up). Plain border only. */
@@ -330,6 +339,27 @@
 }
 .nx-sk-palette-rm .svg-icon { width: 11px; height: 11px; }
 .nx-sk-palette-rm:hover { color: var(--text-error); }
+/* The chip IS the colour input: a native picker stretched over it, invisible.
+   Clicking anywhere on the swatch opens the OS picker — no separate control. */
+.nx-sk-palette-chip { cursor: pointer; }
+.nx-sk-palette-pick {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: none; padding: 0; background: none;
+}
+.nx-sk-palette-add {
+  position: relative;
+  width: 30px; height: 30px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-faint); cursor: pointer;
+  border: 1px dashed var(--background-modifier-border);
+}
+.nx-sk-palette-add:hover { color: var(--text-normal); border-color: var(--interactive-accent); }
+.nx-sk-palette-add .svg-icon { width: 14px; height: 14px; }
+.nx-sk-palette-full {
+  align-self: center; font-size: .72em; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.nx-pal-active .setting-item-name { color: var(--text-accent); }
 
 /* The pad. aspect-ratio (set inline from the sketch's logical W/H) keeps it
    distortion-free at any width. No max-height cap — the user controls the size

@@ -9,6 +9,7 @@ const { Modal, Setting, moment, setIcon } = require('obsidian');
 const { CARD_DEFS, NX_GREETINGS } = require('../constants.js');
 const { getDailyNoteSettings } = require('../lib/helpers.js');
 const { nxAutocomplete, nxIconField, nxMultiRow, nxPropGroups, nxPropRulesToGroups, nxPropsToRules } = require('../lib/inputs.js');
+const { KIND_LABEL, KIND_ORDER } = require('../lib/orphans.js');
 
 class NexusCardConfigModal extends Modal {
   constructor(plugin, view, id) { super(plugin.app); this.plugin = plugin; this.view = view; this.id = id; }
@@ -134,6 +135,109 @@ class NexusQuicknoteConfigModal extends Modal {
     new Setting(contentEl).setName('Template (note path)').setDesc('Optional. Tokens: {{content}} {{date}} {{time}} {{title}}').addText(t => t.setPlaceholder('Templates/Quicknote.md').setValue(it.template || '').onChange(async v => { it.template = v; await save(); }));
     contentEl.createEl('p', { cls: 'setting-item-description', text: 'Filename is automatic: YYYY-MM-DD_HH-mm' });
     new Setting(contentEl).addButton(b => b.setButtonText('Remove card').setWarning().onClick(async () => { const ws = this.view._widgets(); const i = ws.indexOf(it); if (i >= 0) ws.splice(i, 1); await this.plugin.saveSettings(); this.view.render(); this.close(); }));
+  }
+  onClose() { this.contentEl.empty(); }
+}
+
+/* Orphan finder: what counts as "unreferenced", which files to look at, and
+   (for notes) which of them are even candidates. Re-renders on every change so
+   the note-only sections appear/disappear with the "Notes" file type. */
+class NexusOrphanConfigModal extends Modal {
+  constructor(plugin, view, item) { super(plugin.app); this.plugin = plugin; this.view = view; this.item = item; }
+  onOpen() { this.contentEl.addClass('nx-cardcfg'); this.render(); }
+  render() {
+    const { contentEl } = this; contentEl.empty();
+    contentEl.createEl('h3', { text: 'Orphan finder' });
+    const it = this.item;
+    const save = async () => { await this.plugin.saveSettings(); this.view.render(); };
+    const kinds = Array.isArray(it.kinds) ? it.kinds : (it.kinds = ['image']);
+    const hasNotes = kinds.includes('note');
+
+    new Setting(contentEl).setName('Title').addText(t => t.setValue(it.title || 'Orphans').onChange(async v => { it.title = v; await save(); }));
+    nxIconField(this.app, contentEl, 'Icon', 'Pick from list', () => it.icon, v => { it.icon = v; save(); }, 'unlink');
+
+    // ── What to look at ──
+    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'File types' });
+    const wrap = contentEl.createDiv('nx-cardcfg-group');
+    const row = wrap.createDiv('nx-cardcfg-checks');
+    KIND_ORDER.forEach(k => {
+      const lbl = row.createEl('label', { cls: 'nx-cardcfg-check' });
+      const cb = lbl.createEl('input', { type: 'checkbox' });
+      cb.checked = kinds.includes(k);
+      lbl.createSpan({ text: KIND_LABEL[k] });
+      cb.onchange = async () => {
+        const set = new Set(it.kinds);
+        cb.checked ? set.add(k) : set.delete(k);
+        it.kinds = KIND_ORDER.filter(x => set.has(x));      // keep a stable order
+        await save(); this.render();
+      };
+    });
+
+    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Scope' });
+    nxMultiRow(contentEl, 'Folders', 'One folder per line; empty = whole vault', it.folders, ',', 'attachments', v => { it.folders = v; save(); }, () => this.plugin._allFolders());
+    nxMultiRow(contentEl, 'Exclude folders', 'Never listed, e.g. Archive', it.exclude, ',', 'Archive', v => { it.exclude = v; save(); }, () => this.plugin._allFolders());
+
+    // ── What counts as a reference ──
+    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'What counts as "linked"' });
+    if (hasNotes) new Setting(contentEl).setName('Notes are orphaned when').setDesc('Attachments are always judged by incoming links only.')
+      .addDropdown(dd => dd
+        .addOption('incoming', 'Nothing links to them')
+        .addOption('isolated', 'Fully isolated (no in- and no outgoing links)')
+        .setValue(it.mode || 'incoming').onChange(async v => { it.mode = v; await save(); }));
+    new Setting(contentEl).setName('Count frontmatter paths')
+      .setDesc('banner:, cover:, image: … — plain paths that Obsidian does not index as links.')
+      .addToggle(t => t.setValue(it.countFrontmatter !== false).onChange(async v => { it.countFrontmatter = v; await save(); }));
+    new Setting(contentEl).setName('Count canvas references')
+      .setDesc('File nodes and links inside .canvas boards.')
+      .addToggle(t => t.setValue(it.countCanvas !== false).onChange(async v => { it.countCanvas = v; await save(); }));
+
+    // ── Which notes are candidates at all ──
+    if (hasNotes) {
+      contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Note filter (markdown only)' });
+      new Setting(contentEl).setName('Tags').addDropdown(dd => dd
+        .addOption('any', 'Any — tagged or not')
+        .addOption('none', 'Only notes without any tag')
+        .addOption('some', 'Only notes that have tags')
+        .setValue(it.tagState || 'any').onChange(async v => { it.tagState = v; await save(); this.render(); }));
+      if ((it.tagState || 'any') !== 'none') {
+        nxMultiRow(contentEl, 'Must have one of', 'One tag per line; empty = ignore', it.tags, ',', 'projekt', v => { it.tags = v; save(); }, () => this.plugin._allTags());
+        nxMultiRow(contentEl, 'Must not have', 'One tag per line; empty = ignore', it.tagsNot, ',', 'archiv', v => { it.tagsNot = v; save(); }, () => this.plugin._allTags());
+      }
+      new Setting(contentEl).setName('Frontmatter').addDropdown(dd => dd
+        .addOption('any', 'Any — with or without')
+        .addOption('none', 'Only notes with no/empty frontmatter')
+        .addOption('some', 'Only notes that have frontmatter')
+        .setValue(it.fmState || 'any').onChange(async v => { it.fmState = v; await save(); this.render(); }));
+      if ((it.fmState || 'any') !== 'none') {
+        if (!Array.isArray(it.propGroups)) it.propGroups = [];
+        if (!Array.isArray(it.propGroupsNot)) it.propGroupsNot = [];
+        nxPropGroups(this.plugin, contentEl, 'Properties — must match', 'Within a group: AND. Between groups: OR. Empty = ignore.', it.propGroups, arr => { it.propGroups = arr; save(); });
+        nxPropGroups(this.plugin, contentEl, 'Properties — must NOT match', 'Notes matching this are skipped.', it.propGroupsNot, arr => { it.propGroupsNot = arr; save(); });
+      }
+      new Setting(contentEl).setName('Name contains').setDesc('Title substring · date tokens in <…>')
+        .addText(t => { t.setValue(it.name || ''); t.onChange(async v => { it.name = v; await save(); }); nxAutocomplete(t.inputEl, () => this.plugin._allNames(), v => { it.name = v; save(); }); });
+    }
+
+    // ── Display ──
+    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Display' });
+    new Setting(contentEl).setName('Layout').addDropdown(dd => dd
+      .addOption('list', 'List').addOption('grid', 'Thumbnail grid')
+      .setValue(it.display || 'list').onChange(async v => { it.display = v; await save(); }));
+    new Setting(contentEl).setName('Sort by').addDropdown(dd => dd
+      .addOption('size', 'Size').addOption('modified', 'Last modified').addOption('created', 'Created')
+      .addOption('name', 'Name').addOption('path', 'Path')
+      .setValue(it.sort || 'size').onChange(async v => { it.sort = v; await save(); }));
+    new Setting(contentEl).setName('Direction').addDropdown(dd => dd
+      .addOption('desc', 'Descending').addOption('asc', 'Ascending')
+      .setValue(it.sortDir || 'desc').onChange(async v => { it.sortDir = v; await save(); }));
+    new Setting(contentEl).setName('Show folder path').addToggle(t => t.setValue(it.showPath !== false).onChange(async v => { it.showPath = v; await save(); }));
+    new Setting(contentEl).setName('Limit (max shown)').setDesc('The header always counts every match.')
+      .addText(t => { t.inputEl.type = 'number'; t.setValue(String(it.count || 25)); t.onChange(async v => { const n = parseInt(v, 10); if (!isNaN(n)) { it.count = Math.max(1, n); await save(); } }); });
+
+    new Setting(contentEl).addButton(b => b.setButtonText('Remove card').setWarning().onClick(async () => {
+      const ws = this.view._widgets(); const i = ws.indexOf(it); if (i >= 0) ws.splice(i, 1);
+      await this.plugin.saveSettings(); this.view.render(); this.close();
+    }));
   }
   onClose() { this.contentEl.empty(); }
 }
@@ -335,4 +439,4 @@ class NexusHabitConfigModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-module.exports = { NexusCardConfigModal, NexusHabitConfigModal, NexusListConfigModal, NexusQuicknoteConfigModal, NexusStatConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };
+module.exports = { NexusCardConfigModal, NexusHabitConfigModal, NexusListConfigModal, NexusOrphanConfigModal, NexusQuicknoteConfigModal, NexusStatConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };

@@ -6,13 +6,13 @@
  * ========================================================================== */
 
 const { ItemView, moment } = require('obsidian');
-const { CAL_VIEW } = require('../constants.js');
+const { CAL_VIEW, NX_MODULES } = require('../constants.js');
 const { getDailyNoteSettings, openDailyNote } = require('../lib/helpers.js');
 
 class NexusCalendarView extends ItemView {
   constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this.cursor = moment().startOf('month'); }
   getViewType() { return CAL_VIEW; }
-  getDisplayText() { return 'Calendar'; }
+  getDisplayText() { return NX_MODULES.calendar.name; }
   getIcon() { return 'calendar'; }
   async onOpen() { this.render(); }
 

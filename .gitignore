@@ -11,3 +11,6 @@ data.json
 node_modules/
 _pre-split-backup/
 .hotreload
+
+# Geparkte Features: liegen nur lokal, sind nicht Teil des Releases.
+.ideas/

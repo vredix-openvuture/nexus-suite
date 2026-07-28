@@ -13,7 +13,8 @@ const INK_DOWNSCALE_EXT = ['png', 'jpg', 'jpeg', 'webp'];   // safe canvas.toBlo
 
 const INK_MAX_DIM = 2000;   // px, longest edge — a "scan" never needs to be bigger than this
 
-const QE_DIR = '_nexus-quickedit';   // temp folder for external files
+/* NB: Quick Edit (QE_DIR / externalEdit) was parked on 2026-07-27 —
+   see .ideas/quickedit/ for the full feature and how to bring it back. */
 
 const CAL_VIEW = 'nx-calendar';
 
@@ -28,17 +29,20 @@ const TIMER_VIEW = 'nx-timers';   // running timers move here when the dashboard
 const INK_VIEW = 'nx-ink-gallery';
 
 const DEFAULT_SETTINGS = {
-  banner:     { enabled: true,  height: 250, fade: true, folder: 'attachments/banners', behindTabs: true },
+  banner:     { enabled: true,  height: 250, fade: true, folder: 'attachments/banners', behindTabs: true,
+                nameTemplate: '{{name}}', defaultGroup: '', collapsed: {}, bgStrength: 4.5 },
   hider:      { enabled: false, tooltips: false, scrollbars: false, status: false,
                 titlebar: false, vaultname: false, tabbar: false, instructions: false,
                 ribbon: false, explorerButtons: false },
   columns:    { enabled: true,  gap: '1.5rem', delimiter: '===' },
   homepage:   { enabled: false, name: '', hero: '', widgets: [], layout: {}, stats: [{ kind: 'total' }, { kind: 'streak' }], ribbon: true, openOnStartup: true,
                 perDevice: false, profiles: {}, profileNames: {} },
-  search:     { enabled: true },
+  /* fields = which parts of a note the search looks at; the weights that rank
+     them live in modals/search.js (FIELDS). */
+  search:     { enabled: true, fields: { title: true, tags: true, headings: true, props: true, text: true } },
   typography: { enabled: true,  dashes: true, ellipsis: true, quotes: true, arrows: true, symbols: true },
   calendar:   { enabled: true,  ribbon: true },
-  tasksCalendar: { enabled: false, ribbon: true, dataFolder: '_nexus',
+  tasksCalendar: { enabled: false, ribbon: true, dataLocation: 'plugin', dataFolder: '_nexus',
     defaultView: 'month', weekStart: 'locale',
     syncOnStartup: true, syncIntervalMin: 15, conflictPolicy: 'server',   // 'server' | 'ask'
     accounts: [],        // {id,kind,label,serverUrl,username,principalHref,homeSet,calendars:[{id,href,display,color,component,enabled,ctag,syncToken}]} — NO secrets (localStorage)
@@ -47,14 +51,34 @@ const DEFAULT_SETTINGS = {
   propertyHider: { enabled: true, hidden: [], reveal: false },
   callouts:   { enabled: true, migrated: false, items: [] },
   workspaces: { enabled: true, selectMode: 'release' },
-  externalEdit: { enabled: true, focus: true, workspace: 'Focus' },
+  /* NB: tasksCalendar.dataLocation ('plugin' | 'vault') decides where the
+     calendar cache + local calendars live — see calstore.dataDir(). */
   explorer:   { enabled: true,  folderBg: true, intensity: 22 },
+  /* Folder notes — defaults mirror the folder-notes plugin's own so an
+     existing vault of "{{folder_name}}" notes keeps working unchanged. */
+  folderNotes: { enabled: true, noteName: '{{folder_name}}', fileType: 'md', storage: 'inside',
+    openTrigger: 'click',        // click | ctrl | alt | off
+    openInNewTab: false, focusExistingTab: false, collapseOnClick: false,
+    hideInExplorer: true, underline: true, bold: false, italic: false, openFromPath: true,
+    autoCreate: false, templatePath: '',
+    syncRename: true, syncDelete: false, confirmDelete: true, confirmRename: true,
+    excludeFolders: [], supportedTypes: ['md', 'canvas', 'base'] },
+  icons:      { enabled: true, map: {} },
+  board:      { enabled: true, statusProperty: 'status' },
+  tagTools:   { enabled: true },
+  /* Writing aids. Each sub-feature has its own switch — the `enabled` flag
+     only gates them all at once. */
+  focus:      { enabled: false, dim: true, scope: 'line', dimOpacity: 45,
+                typewriter: false, typewriterOffset: 50,
+                sound: false, soundStyle: 'soft', soundVolume: 25, bell: false },
+  sprint:     { enabled: true, minutes: 15, words: 300, useTime: true, useWords: true,
+                statusBar: true, focusDuringSprint: false, doneMessage: '' },
+  editorial:  { enabled: true, margin: true, marginWidth: 200, pullquote: true,
+                dropcap: false, ornament: true, ornamentGlyph: '❦' },
   inkCapture: { enabled: true, ribbon: true, tagOnCapture: true,
-    sources: {
-      paper:     { enabled: true, folder: 'Inbox/Paper' },
-      saber:     { enabled: true, folder: 'Inbox/Saber' },
-      butterfly: { enabled: true, folder: 'Inbox/Butterfly' },
-    },
+    /* Only "paper" is fixed — that's the in-app camera capture. Every other
+       source is whatever app the user exports from; they name it themselves. */
+    sources: [{ id: 'paper', label: 'Paper (camera)', folder: 'Inbox/Paper', enabled: true }],
     excalidraw: { enabled: true } },
   quicksketch: { enabled: true, folder: 'Inbox/Quicksketch', ratio: '16:9',
     paper: 'paper',       // native | paper | white | black — solid fill + matching grid colour; per-note override via frontmatter `sketch-bg`
@@ -181,6 +205,43 @@ const PALETTES = {
 
 /* Render markdown (new + old API) */
 
+/* ── MODULE NAMES ───────────────────────────────────────────────────────────
+   Each module is named after what it does, in plain words. The `sub` line adds
+   the detail the name has no room for — it never just restates the name.
+
+   ONLY the display side lives here. Module KEYS (settings.hider, …), command
+   ids and CSS classes stay as they are — renaming those would break assigned
+   hotkeys and everything already stored in data.json. */
+const NX_MODULES = {
+  homepage:      { name: 'Dashboard',    sub: 'Rendered start page with cards, stats and quick actions' },
+  theme:         { name: 'Theme',        sub: 'Colour palette, spacing and corner radius' },
+  explorer:      { name: 'Explorer',     sub: 'Folder cards and the ribbon in the file tree' },
+  folderNotes:   { name: 'Folder Notes', sub: 'A note that belongs to a folder, opened by clicking it' },
+  icons:         { name: 'Icons',        sub: 'An icon for any folder or file in the explorer' },
+  hider:         { name: 'Interface',    sub: 'Hide parts of the Obsidian interface' },
+  banner:        { name: 'Banner',       sub: 'Image at the top of a note, plus the note background' },
+  callouts:      { name: 'Callouts',     sub: 'Icon and colour per callout type' },
+  columns:       { name: 'Columns',      sub: 'Side-by-side text via a code block' },
+  typography:    { name: 'Typography',   sub: 'Replaces -- ... -> while you type' },
+  propertyHider: { name: 'Properties',   sub: 'Hide individual frontmatter properties' },
+  tagTools:      { name: 'Tags',         sub: 'Rename, merge and remove tags across the vault' },
+  quicksketch:   { name: 'Quick Sketch', sub: 'Draw in a note with pen, touch or mouse' },
+  inkCapture:    { name: 'Ink Capture',  sub: 'Scans and handwriting from other apps' },
+  calendar:      { name: 'Calendar',     sub: 'Month view over your daily notes' },
+  tasksCalendar: { name: 'CalDAV',       sub: 'Server accounts, local calendars, events and tasks' },
+  search:        { name: 'Search',       sub: 'Weighted search over title, tags, headings, properties, text' },
+  workspaces:    { name: 'Workspaces',   sub: 'Save and switch pane layouts' },
+  focus:         { name: 'Focus',        sub: 'Dims everything but the line you are writing' },
+  sprint:        { name: 'Sprint',       sub: 'Timed writing against a word goal' },
+  editorial:     { name: 'Editorial',    sub: 'Margin notes, pull quotes, drop caps, ornaments' },
+  board:         { name: 'Dashboard',    sub: 'A folder as a card dashboard inside a normal note' },
+};
+
+/* Pen ids in toolbar order — shared by the settings tab, the size-favourite
+   migration and the sketch toolbar so they can never drift apart. */
+const PEN_IDS = ['fountain', 'ballpoint', 'pencil', 'brush', 'calligraphy', 'marker'];
+const PEN_LABELS = { fountain: 'Fountain', ballpoint: 'Ballpoint', pencil: 'Pencil', brush: 'Brush', calligraphy: 'Calligraphy', marker: 'Marker' };
+
 const ST_SYMBOL_RULES = [
   { m: '--',   r: '–', grp: 'dashes' },
   { m: '–-',   r: '—', grp: 'dashes' },   // en-dash + hyphen → em-dash
@@ -193,4 +254,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, QE_DIR, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, PALETTES, ST_SYMBOL_RULES };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES };

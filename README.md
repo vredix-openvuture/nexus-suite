@@ -1,8 +1,28 @@
 # Nexus Suite
 
-An all-in-one Obsidian plugin that replaces seven separate ones — banner, hider,
-columns, homepage, search, smart typography and calendar — plus Ink Capture and
-Quick Sketch. Every module is a toggle, so you only run what you use.
+One Obsidian plugin instead of a dozen. Every module is a toggle, so you only
+run what you use.
+
+| Module | What it does | Replaces |
+|---|---|---|
+| **Dashboard** | Rendered start page: cards, stats, quick actions | homepage plugins |
+| **Theme** | Colour palette, spacing, corner radius | style-settings |
+| **Explorer** | Folder cards and ribbon in the file tree | — |
+| **Folder Notes** | A note per folder + folder-overview blocks | folder-notes |
+| **Icons** | An icon for any folder or file | icon-folder |
+| **Interface** | Hides parts of the Obsidian chrome | hider |
+| **Banner** | Image at the top of a note, grouped picker | pexels-banner |
+| **Callouts** | Icon and colour per callout type | callout-manager |
+| **Columns** | Side-by-side text via a code block | columns |
+| **Typography** | Replaces `--` `...` `->` while you type | smart-typography |
+| **Properties** | Hides individual frontmatter properties | — |
+| **Tags** | Rename, merge and remove tags vault-wide | tag-wrangler |
+| **Quick Sketch** | Low-latency vector drawing in a note | — |
+| **Ink Capture** | Scans and handwriting into the vault | — |
+| **Calendar** | Month view over your daily notes | calendar |
+| **CalDAV** | Server accounts, local calendars, events, tasks | — |
+| **Search** | Weighted over title, tags, headings, properties, text | omnisearch |
+| **Workspaces** | Save and switch pane layouts | — |
 
 Built for a card-based vault layout and designed to work on mobile as well as
 desktop (the bundle is a single file, no runtime `require` of sibling modules).

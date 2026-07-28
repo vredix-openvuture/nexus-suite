@@ -96,3 +96,17 @@
 .nx-account-calname { flex: 1; }
 .nx-account-badge { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 1px 6px; border-radius: 5px; background: var(--background-secondary); }
 .nx-account-empty { color: var(--text-muted); font-style: italic; padding: 6px 2px; font-size: .88rem; }
+
+/* ── conflict modal ── */
+.nx-conflict-sub { color: var(--text-muted); font-size: .88rem; margin: 0 0 10px; }
+.nx-conflict-list { display: flex; flex-direction: column; gap: 12px; max-height: 60vh; overflow-y: auto; }
+.nx-conflict-card { border: 1px solid var(--background-modifier-border); border-radius: var(--nx-r-tile, 8px); padding: 10px 12px; }
+.nx-conflict-title { font-weight: 650; margin-bottom: 2px; }
+.nx-conflict-reason { font-size: .72rem; color: var(--text-muted); margin-bottom: 8px; }
+.nx-conflict-grid { display: grid; grid-template-columns: 90px 1fr 1fr; gap: 3px 10px; align-items: baseline; }
+.nx-conflict-h { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.nx-conflict-k { font-size: .8rem; color: var(--text-muted); }
+.nx-conflict-v { font-size: .85rem; padding: 1px 6px; border-radius: 5px; }
+.nx-conflict-v.nx-server { background: color-mix(in srgb, var(--wl-color5, #1b3854) 22%, transparent); }
+.nx-conflict-v.nx-mine { background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%, transparent); }
+.nx-conflict-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }

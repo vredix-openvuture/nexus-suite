@@ -133,4 +133,37 @@ function nxRgbToHex(rgb) {
 
 /* Edit ONE callout (type id + icon + base/light/dark color) with a live preview. */
 
-module.exports = { renderMd, getDailyNoteSettings, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToRgb, nxRgbToHex };
+/* ---- Vault suggestion sources (autocomplete in the card config modals) ----
+   Shared so the plugin object and the homepage view answer identically. */
+function nxAllFolders(app) {
+  const out = [];
+  for (const f of app.vault.getAllLoadedFiles()) if (f.children && f.path && f.path !== '/') out.push(f.path);
+  return out.sort((a, b) => a.localeCompare(b));
+}
+function nxAllTags(app) {
+  const t = app.metadataCache.getTags ? app.metadataCache.getTags() : {};
+  return Object.keys(t).map(x => x.replace(/^#/, '')).sort((a, b) => a.localeCompare(b));
+}
+function nxAllNames(app) {
+  return app.vault.getMarkdownFiles().map(f => f.basename).sort((a, b) => a.localeCompare(b));
+}
+function nxAllPropKeys(app) {
+  const set = new Set();
+  for (const f of app.vault.getMarkdownFiles()) {
+    const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+    if (fm) for (const k of Object.keys(fm)) if (k !== 'position') set.add(k);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+function nxPropValues(app, key) {
+  if (!key) return [];
+  const set = new Set();
+  for (const f of app.vault.getMarkdownFiles()) {
+    const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+    if (fm && key in fm) (Array.isArray(fm[key]) ? fm[key] : [fm[key]])
+      .forEach(x => { if (x != null && String(x).trim()) set.add(String(x)); });
+  }
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+module.exports = { renderMd, getDailyNoteSettings, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToRgb, nxRgbToHex, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxPropValues };

@@ -6,17 +6,29 @@
  *  carries them to the tablet, which renders WITHOUT any network). Aggregates
  *  events for a visible range by running each cached event through recur.expand.
  *
- *  Layout under <dataFolder>/ (default _nexus):
+ *  Layout under the data dir:
  *    calendar/remote/<accountId>/<calendarId>.json   server mirror (desktop-owned)
  *    calendar/local/<calendarId>.json                local calendars (offline)
+ *
+ *  The data dir defaults to .nexus-calendar INSIDE the plugin folder: it sticks
+ *  to the plugin, stays out of the file explorer / search / graph, and survives
+ *  updates (BRAT and manual installs only replace main.js, styles.css and
+ *  manifest.json). Still syncs, as long as the sync covers .obsidian. Anyone
+ *  who deliberately excludes .obsidian from sync can switch it back to a normal
+ *  vault folder in the settings.
  * ========================================================================== */
 
 const { moment } = require('obsidian');
 const ical = require('./ical.js');
 const recur = require('./recur.js');
 
+function pluginDir(plugin) {
+  return plugin.app.vault.configDir + '/plugins/' + ((plugin.manifest && plugin.manifest.id) || 'nexus-suite');
+}
 function dataDir(plugin) {
-  return ((plugin.settings.tasksCalendar && plugin.settings.tasksCalendar.dataFolder) || '_nexus').replace(/\/+$/, '');
+  const tc = (plugin.settings && plugin.settings.tasksCalendar) || {};
+  if ((tc.dataLocation || 'plugin') === 'plugin') return pluginDir(plugin) + '/.nexus-calendar';
+  return (tc.dataFolder || '_nexus').replace(/\/+$/, '');
 }
 function remoteDir(plugin, accId) { return dataDir(plugin) + '/calendar/remote/' + accId; }
 function localDir(plugin) { return dataDir(plugin) + '/calendar/local'; }
@@ -157,8 +169,38 @@ function expandRange(calendars, rangeStart, rangeEnd) {
   return out;
 }
 
+/* One-way move of an existing `calendar/` tree into the current data dir.
+   COPY, never delete: the local calendars in here are user data, not a cache,
+   and a half-finished move on a flaky adapter must not be able to lose them.
+   Runs once — it bails as soon as the destination exists. */
+async function migrate(plugin, fromRoot) {
+  const ad = plugin.app.vault.adapter;
+  const from = (fromRoot || '').replace(/\/+$/, '') + '/calendar';
+  const to = dataDir(plugin) + '/calendar';
+  if (!from || from === to) return false;
+  try {
+    if (!(await ad.exists(from))) return false;
+    if (await ad.exists(to)) return false;
+  } catch (e) { return false; }
+  const copyTree = async (src, dst) => {
+    await ensureFolder(plugin, dst);
+    let listing;
+    try { listing = await ad.list(src); } catch (e) { return; }
+    for (const f of (listing.files || [])) {
+      const name = f.split('/').pop();
+      try { await ad.write(dst + '/' + name, await ad.read(f)); } catch (e) {}
+    }
+    for (const d of (listing.folders || [])) {
+      const name = d.split('/').pop();
+      await copyTree(d, dst + '/' + name);
+    }
+  };
+  try { await copyTree(from, to); } catch (e) { return false; }
+  return true;
+}
+
 module.exports = {
-  dataDir, remoteDir, localDir, calId,
+  dataDir, pluginDir, remoteDir, localDir, calId, migrate,
   syncAccount, loadCalendars,
   createLocalCalendar, saveLocalEvent, deleteLocalEvent,
   expandRange, readJSON, writeJSON,

@@ -72,3 +72,47 @@
 .nx-banner-btn:hover { opacity: 1; color: var(--text-normal); background: var(--background-modifier-hover); }
 .nx-banner-btn .svg-icon { width: 16px; height: 16px; }
 
+/* ── The three corner buttons ON TOP OF an image ──────────────────────────────
+   Over the note's own background a muted, half-transparent pill reads fine. Over
+   a BANNER it doesn't: the pill is tinted with --background-primary and the icon
+   with --text-muted, so on a bright or busy photo both wash out into the picture
+   (and on a dark photo they sink into it). A photo has no predictable colour, so
+   the buttons stop deriving theirs from the theme and bring their own contrast:
+   a dark scrim, a white icon, and a drop-shadow that keeps the strokes readable
+   even where the scrim sits on a light area. Only while a banner is present —
+   plain notes keep the discreet look. Same treatment on the slate canvas, where
+   the buttons likewise float over paper instead of over chrome. */
+.nx-has-banner > .nx-banner-btn,
+.nx-has-banner > .nx-bg-btn,
+.nx-has-banner > .nx-slate-btn,
+.nx-pk-note > .nx-banner-btn,
+.nx-pk-note > .nx-bg-btn,
+.nx-pk-note > .nx-slate-btn {
+  opacity: .9;
+  color: #fff;
+  background: rgba(18, 16, 22, .5);
+  backdrop-filter: blur(8px) saturate(.9);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+.nx-has-banner > .nx-banner-btn:hover,
+.nx-has-banner > .nx-bg-btn:hover,
+.nx-has-banner > .nx-slate-btn:hover,
+.nx-pk-note > .nx-banner-btn:hover,
+.nx-pk-note > .nx-bg-btn:hover,
+.nx-pk-note > .nx-slate-btn:hover {
+  opacity: 1; color: #fff;
+  background: rgba(18, 16, 22, .74);
+}
+.nx-has-banner > .nx-banner-btn .svg-icon,
+.nx-has-banner > .nx-bg-btn .svg-icon,
+.nx-has-banner > .nx-slate-btn .svg-icon,
+.nx-pk-note > .nx-banner-btn .svg-icon,
+.nx-pk-note > .nx-bg-btn .svg-icon,
+.nx-pk-note > .nx-slate-btn .svg-icon {
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .55));
+}
+/* Active slate toggle stays accent-coloured, but on the accent's bright variant
+   so it survives the dark scrim. */
+.nx-has-banner > .nx-slate-btn.is-active,
+.nx-pk-note > .nx-slate-btn.is-active { color: var(--text-accent); }
+

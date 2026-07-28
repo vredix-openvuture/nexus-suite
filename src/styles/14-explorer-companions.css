@@ -1,0 +1,82 @@
+/* ── FOLDER NOTES ─────────────────────────────────────────────────────────
+   The markers are body-class gated so a setting flip is instant, without
+   re-walking the explorer. .nx-fn-has-note / .nx-fn-is-note are put on the
+   rows by refreshExplorer(). */
+
+/* Hide the note that belongs to a folder — it's reachable via the folder. */
+body.nx-fn-hide .nav-file-title.nx-fn-is-note { display: none !important; }
+
+/* A folder that owns a note reads as clickable. Underline via text-decoration
+   (not a border) so it hugs the text, not the row. */
+body.nx-fn-underline .nav-folder-title.nx-fn-has-note .nav-folder-title-content {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--text-accent) 55%, transparent);
+}
+body.nx-fn-bold .nav-folder-title.nx-fn-has-note .nav-folder-title-content { font-weight: 700; }
+body.nx-fn-italic .nav-folder-title.nx-fn-has-note .nav-folder-title-content { font-style: italic; }
+
+/* Breadcrumb segments that lead to a folder note */
+.view-header-breadcrumb.nx-fn-crumb {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--text-accent) 55%, transparent);
+}
+.view-header-breadcrumb.nx-fn-crumb:hover { color: var(--text-accent); }
+
+/* ── FOLDER OVERVIEW code block ── */
+.nx-fo { margin: 0.4em 0; }
+.nx-fo-title { font-weight: 600; font-size: 1.05em; margin-bottom: 6px; color: var(--text-normal); }
+.nx-fo-list { list-style: none; margin: 0; padding-left: 0; }
+.nx-fo-list .nx-fo-list { padding-left: 18px; }
+.nx-fo-list.is-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 14px;
+}
+.nx-fo-item { margin: 0; }
+.nx-fo-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; min-width: 0; }
+.nx-fo-icon { display: inline-flex; flex-shrink: 0; color: var(--text-faint); }
+.nx-fo-icon .svg-icon { width: 15px; height: 15px; }
+.nx-fo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-normal); }
+.nx-fo-name.is-link { cursor: pointer; color: var(--link-color, var(--text-accent)); }
+.nx-fo-name.is-link:hover { text-decoration: underline; }
+.nx-fo-empty { color: var(--text-faint); font-style: italic; font-size: .9em; }
+
+/* ── EXPLORER ICONS ───────────────────────────────────────────────────────
+   Sits between the collapse arrow and the name. Emoji entries are plain text,
+   lucide ids render as an svg — both share the same box so rows stay aligned. */
+.nx-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; width: 17px; height: 17px; margin-right: 5px;
+  font-size: 14px; line-height: 1;
+  color: var(--nx-accent-fg, var(--text-accent));
+}
+.nx-icon .svg-icon { width: 15px; height: 15px; }
+.nav-folder-title.is-active .nx-icon,
+.nav-file-title.is-active .nx-icon { color: inherit; }
+
+/* Settings: the icon assignment list */
+.nx-iconlist-row { display: flex; align-items: center; gap: 9px; }
+.nx-iconlist-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex-shrink: 0; font-size: 15px;
+  color: var(--text-accent);
+}
+.nx-iconlist-icon .svg-icon { width: 17px; height: 17px; }
+.nx-iconlist-path {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .88em; color: var(--text-muted);
+}
+
+/* ── TAG RENAME DIALOG ── */
+.nx-tagren-input {
+  width: 100%; margin: 4px 0 8px; padding: 8px 11px;
+  border-radius: 8px; border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field); color: var(--text-normal);
+}
+.nx-tagren-hint { font-size: .84em; color: var(--text-muted); min-height: 1.3em; }
+.nx-tagren-hint.is-warn { color: #d9a521; }
+.nx-tagren-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.nx-tagren-bar button { padding: 6px 14px; border-radius: 6px; cursor: pointer; }

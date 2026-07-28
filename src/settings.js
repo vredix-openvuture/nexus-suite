@@ -7,15 +7,21 @@
 
 const { Notice, PluginSettingTab, Setting, setIcon } = require('obsidian');
 const { NexusCalloutModal } = require('./modals/callout.js');
+const { SEARCH_FIELDS } = require('./modals/search.js');
+const { NexusWorkspaceModal } = require('./modals/workspace.js');
 const { NexusAccountModal } = require('./modals/account.js');
 const { NexusTaskModal } = require('./modals/task.js');
-const { NexusNameModal } = require('./modals/misc.js');
+const { NexusConfirmModal, NexusNameModal } = require('./modals/misc.js');
+const { NexusTagRenameModal } = require('./modals/tags.js');
+const { nxAllTagCounts, nxFilesWithTag, nxRenameTag } = require('./lib/tagtools.js');
+const { FN_TYPES } = require('./lib/foldernotes.js');
+const { nxAutocomplete, nxMultiRow } = require('./lib/inputs.js');
 const calstore = require('./lib/calstore.js');
 const tasks = require('./lib/tasks.js');
-const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, PALETTES } = require('./constants.js');
+const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
-  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'banner'; }
+  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
   save() { return this.plugin.saveSettings(); }
 
   /* Enable toggle at the top of each tab */
@@ -31,8 +37,21 @@ class NexusSettingsTab extends PluginSettingTab {
     const s = this.plugin.settings.tasksCalendar;
     this.head(e, s);
 
-    new Setting(e).setName('Data folder').setDesc('Where the event cache + local calendars are stored (inside the vault → synced).')
-      .addText(t => t.setValue(s.dataFolder).onChange(async v => { s.dataFolder = (v || '').trim() || '_nexus'; await this.save(); }));
+    new Setting(e).setName('Data location')
+      .setDesc('Where the event cache and your local calendars live. The plugin folder keeps them out of the file explorer, search and graph, and plugin updates never touch it — but it only syncs if your sync includes .obsidian.')
+      .addDropdown(dd => dd
+        .addOption('plugin', 'Plugin folder (.nexus-calendar)')
+        .addOption('vault', 'A folder in the vault')
+        .setValue(s.dataLocation || 'plugin')
+        .onChange(async v => { s.dataLocation = v; await this.save(); this.display(); }));
+    if ((s.dataLocation || 'plugin') === 'vault') {
+      new Setting(e).setName('Data folder').setClass('nx-set-sub')
+        .addText(t => t.setPlaceholder('_nexus').setValue(s.dataFolder)
+          .onChange(async v => { s.dataFolder = (v || '').trim() || '_nexus'; await this.save(); }));
+    } else {
+      e.createEl('p', { cls: 'setting-item-description',
+        text: 'Current path: ' + calstore.dataDir(this.plugin) });
+    }
     new Setting(e).setName('Default view').addDropdown(d => d.addOption('month', 'Month').addOption('week', 'Week').addOption('day', 'Day')
       .setValue(s.defaultView).onChange(async v => { s.defaultView = v; await this.save(); }));
     new Setting(e).setName('Sync on startup').addToggle(t => t.setValue(s.syncOnStartup).onChange(async v => { s.syncOnStartup = v; await this.save(); }));
@@ -57,7 +76,7 @@ class NexusSettingsTab extends PluginSettingTab {
     renderAccounts();
     new Setting(e)
       .addButton(b => b.setButtonText('Add account').setCta().onClick(() => new NexusAccountModal(this.plugin, null, renderAccounts).open()))
-      .addButton(b => b.setButtonText('Sync now').onClick(() => { new Notice('Nexus: syncing…'); this.plugin.syncTaskCal().then(() => { new Notice('Nexus: sync done.'); renderAccounts(); }); }));
+      .addButton(b => b.setButtonText('Sync now').onClick(() => { new Notice('Nexus: syncing…'); this.plugin.syncTaskCal().then(r => { new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000); renderAccounts(); }); }));
 
     // ── Local calendars ──
     e.createEl('h4', { text: 'Local calendars', cls: 'nx-callout-h' });
@@ -98,39 +117,73 @@ class NexusSettingsTab extends PluginSettingTab {
     const nav = wrap.createDiv('nx-settings-nav');
     const body = wrap.createDiv('nx-settings-body');
 
-    const tabs = [
-      { id: 'banner',        label: 'Banner',           icon: 'image',            fn: (e) => this.tBanner(e) },
-      { id: 'hider',         label: 'Hider',            icon: 'eye-off',          fn: (e) => this.tHider(e) },
-      { id: 'columns',       label: 'Columns',          icon: 'columns-2',        fn: (e) => this.tColumns(e) },
-      { id: 'homepage',      label: 'Homepage',         icon: 'home',             fn: (e) => this.tHomepage(e) },
-      { id: 'search',        label: 'Search',            icon: 'search',           fn: (e) => this.tSearch(e) },
-      { id: 'typography',    label: 'Smart Typography', icon: 'type',             fn: (e) => this.tTypography(e) },
-      { id: 'calendar',      label: 'Calendar',         icon: 'calendar',         fn: (e) => this.tCalendar(e) },
-      { id: 'tasksCalendar', label: 'Tasks & Calendar', icon: 'calendar-check',    fn: (e) => this.tTasksCalendar(e) },
-      { id: 'propertyHider', label: 'Property Hider',   icon: 'list',             fn: (e) => this.tPropHider(e) },
-      { id: 'callouts',      label: 'Callouts',         icon: 'message-square-quote', fn: (e) => this.tCallouts(e) },
-      { id: 'workspaces',    label: 'Workspaces',       icon: 'layout-dashboard', fn: (e) => this.tWorkspaces(e) },
-      { id: 'externalEdit',  label: 'Quick Edit',       icon: 'file-edit',        fn: (e) => this.tExternal(e) },
-      { id: 'explorer',      label: 'Explorer',         icon: 'folder-tree',      fn: (e) => this.tExplorer(e) },
-      { id: 'inkCapture',    label: 'Ink Capture',      icon: 'camera',           fn: (e) => this.tInkCapture(e) },
-      { id: 'quicksketch',   label: 'Quick Sketch',     icon: 'pencil-line',      fn: (e) => this.tSketch(e) },
-      { id: 'theme',         label: 'Theme',            icon: 'palette',          fn: (e) => this.tTheme(e) },
+    /* Ordered by what you reach for first and grouped by what the feature acts
+       on: the dashboard and the look of the app, then what happens inside a
+       note, then drawing/capture, then planning, then the odd tools. */
+    const groups = [
+      { title: 'Start & look', tabs: [
+        { id: 'homepage',      icon: 'home',             fn: (e) => this.tHomepage(e) },
+        { id: 'theme',         icon: 'palette',          fn: (e) => this.tTheme(e) },
+        { id: 'explorer',      icon: 'folder-tree',      fn: (e) => this.tExplorer(e) },
+        { id: 'folderNotes',   icon: 'folder-open',      fn: (e) => this.tFolderNotes(e) },
+        { id: 'icons',         icon: 'shapes',           fn: (e) => this.tIcons(e) },
+        { id: 'board',         icon: 'layout-grid',      fn: (e) => this.tBoard(e) },
+        { id: 'hider',         icon: 'eye-off',          fn: (e) => this.tHider(e) },
+      ] },
+      { title: 'In the note', tabs: [
+        { id: 'banner',        icon: 'image',            fn: (e) => this.tBanner(e) },
+        { id: 'callouts',      icon: 'message-square-quote', fn: (e) => this.tCallouts(e) },
+        { id: 'columns',       icon: 'columns-2',        fn: (e) => this.tColumns(e) },
+        { id: 'typography',    icon: 'type',             fn: (e) => this.tTypography(e) },
+        { id: 'focus',         icon: 'crosshair',        fn: (e) => this.tFocus(e) },
+        { id: 'editorial',     icon: 'pilcrow',          fn: (e) => this.tEditorial(e) },
+        { id: 'propertyHider', icon: 'list',             fn: (e) => this.tPropHider(e) },
+        { id: 'tagTools',      icon: 'tags',             fn: (e) => this.tTagTools(e) },
+      ] },
+      { title: 'Drawing', tabs: [
+        { id: 'quicksketch',   icon: 'pencil-line',      fn: (e) => this.tSketch(e) },
+        { id: 'inkCapture',    icon: 'camera',           fn: (e) => this.tInkCapture(e) },
+      ] },
+      { title: 'Planning', tabs: [
+        { id: 'calendar',      icon: 'calendar',         fn: (e) => this.tCalendar(e) },
+        { id: 'tasksCalendar', icon: 'calendar-check',   fn: (e) => this.tTasksCalendar(e) },
+      ] },
+      { title: 'Tools', tabs: [
+        { id: 'search',        icon: 'search',           fn: (e) => this.tSearch(e) },
+        { id: 'workspaces',    icon: 'layout-dashboard', fn: (e) => this.tWorkspaces(e) },
+        { id: 'sprint',        icon: 'timer',            fn: (e) => this.tSprint(e) },
+      ] },
     ];
+    const tabs = groups.flatMap(g => g.tabs);
     if (!tabs.find(t => t.id === this.active)) this.active = tabs[0].id;
+
+    // Names come from NX_MODULES, never from a literal in here — one table,
+    // so nav, panel heading and command palette can't drift apart.
+    const meta = (id) => NX_MODULES[id] || { name: id, sub: '' };
 
     const renderBody = () => {
       body.empty();
       const t = tabs.find(x => x.id === this.active);
-      body.createEl('h3', { text: t.label });
+      const m = meta(t.id);
+      const head = body.createDiv('nx-settings-head');
+      head.createEl('h3', { text: m.name });
+      // The proper name alone doesn't say what the module does — the subtitle
+      // carries that, so nothing has to be memorised.
+      if (m.sub) head.createDiv({ cls: 'nx-settings-head-sub', text: m.sub });
       t.fn(body);
       nav.querySelectorAll('.nx-settings-tab').forEach(el => el.toggleClass('is-active', el.getAttribute('data-id') === this.active));
     };
-    tabs.forEach(t => {
-      const btn = nav.createDiv('nx-settings-tab');
-      btn.setAttribute('data-id', t.id);
-      setIcon(btn.createDiv('nx-settings-tab-icon'), t.icon);
-      btn.createDiv({ cls: 'nx-settings-tab-label', text: t.label });
-      btn.onclick = () => { this.active = t.id; renderBody(); };
+    groups.forEach(g => {
+      nav.createDiv({ cls: 'nx-settings-navgroup', text: g.title });
+      g.tabs.forEach(t => {
+        const m = meta(t.id);
+        const btn = nav.createDiv('nx-settings-tab');
+        btn.setAttribute('data-id', t.id);
+        btn.setAttribute('aria-label', m.name + (m.sub ? ' — ' + m.sub : ''));
+        setIcon(btn.createDiv('nx-settings-tab-icon'), t.icon);
+        btn.createDiv({ cls: 'nx-settings-tab-label', text: m.name });
+        btn.onclick = () => { this.active = t.id; renderBody(); };
+      });
     });
     renderBody();
   }
@@ -144,8 +197,68 @@ class NexusSettingsTab extends PluginSettingTab {
       .onChange(async v => { s.fade = v; await this.save(); this.plugin.refreshBanner(); }));
     new Setting(e).setName('Behind the tab bar').setDesc('The image continues behind the tab bar (bar + banner = one image).')
       .addToggle(t => t.setValue(s.behindTabs).onChange(async v => { s.behindTabs = v; await this.save(); this.plugin.refreshBanner(); }));
+
+    // ── Note style (same palette button as the banner icon) ──
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Note background' });
+    new Setting(e).setName('Pattern strength')
+      .setDesc('How visible the lined / grid / dotted pattern is. It is mixed out of the text colour, so the right value depends on your palette. Also adjustable per note via −/+ in the palette menu.')
+      .addSlider(sl => { sl.setLimits(0.5, 30, 0.5).setValue(s.bgStrength == null ? 4.5 : s.bgStrength).setDynamicTooltip();
+        sl.onChange(async v => { s.bgStrength = v; await this.save(); this.plugin.applyNoteBgStrength(); }); })
+      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default (4.5 %)').onClick(async () => {
+        s.bgStrength = 4.5; await this.save(); this.plugin.applyNoteBgStrength(); this.display();
+      }));
+
+    // ── Where imported images land ──
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Storage' });
     new Setting(e).setName('Banner folder').setDesc('Target folder in the vault where imported images are copied.')
-      .addText(t => t.setPlaceholder('attachments/banners').setValue(s.folder).onChange(async v => { s.folder = v; await this.save(); }));
+      .addText(t => t.setPlaceholder('attachments/banners').setValue(s.folder)
+        .onChange(async v => { s.folder = (v || '').trim().replace(/^\/|\/$/g, ''); await this.save(); }));
+    new Setting(e).setName('Default file name')
+      .setDesc('Pre-filled in the import dialog. Tokens: {{name}} (original file name), {{note}}, {{date}}, {{time}}.')
+      .addText(t => t.setPlaceholder('{{name}}').setValue(s.nameTemplate || '{{name}}')
+        .onChange(async v => { s.nameTemplate = v; await this.save(); }));
+    new Setting(e).setName('Default group').setDesc('Pre-selected in the import dialog.')
+      .addDropdown(dd => {
+        dd.addOption('', 'Ungrouped');
+        this.plugin.bannerGroups().forEach(g => dd.addOption(g, g));
+        dd.setValue(s.defaultGroup || '');
+        dd.onChange(async v => { s.defaultGroup = v; await this.save(); });
+      });
+
+    // ── Groups = subfolders. Renaming goes through fileManager, so the
+    //    [[banner]] links in every note follow along. ──
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Groups' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A group is a subfolder of the banner folder. Right-click an image in the banner picker to move it between groups. Deleting a group keeps its images — they move back to the top level.' });
+    const groups = this.plugin.bannerGroups();
+    const counts = {};
+    this.plugin.bannerImages().forEach(f => { const g = this.plugin.bannerGroupOf(f); counts[g] = (counts[g] || 0) + 1; });
+    if (!groups.length) e.createEl('p', { cls: 'setting-item-description', text: '— no groups yet —' });
+    groups.forEach(g => {
+      const set = new Setting(e).setName(g).setDesc((counts[g] || 0) + ' image(s)');
+      set.addExtraButton(b => b.setIcon('pencil').setTooltip('Rename').onClick(async () => {
+        const name = await new NexusNameModal(this.app, 'Rename group', g).openAndGet();
+        if (name && name.trim() && await this.plugin.renameBannerGroup(g, name.trim())) this.display();
+      }));
+      set.addExtraButton(b => b.setIcon('trash-2').setTooltip('Delete group (images move to the top level)').onClick(async () => {
+        const affected = this.plugin.bannerGroupImages(g).length;   // incl. subgroups
+        const ok = await new NexusConfirmModal(this.app, 'Delete group "' + g + '"?',
+          affected + ' image(s) — this group and any subgroups — move back to "' +
+          (this.plugin.bannerRoot() || 'the vault root') + '". No image is deleted.',
+          'Delete group').openAndGet();
+        if (!ok) return;
+        await this.plugin.deleteBannerGroup(g);
+        this.display();
+      }));
+    });
+    new Setting(e).addButton(b => b.setButtonText('New group').setCta().onClick(async () => {
+      const name = await new NexusNameModal(this.app, 'New group name', '').openAndGet();
+      const clean = (name || '').trim().replace(/^\/|\/$/g, '');
+      if (!clean) return;
+      await this.plugin.ensureBannerGroup(clean);
+      this.display();
+    }));
+
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Image icon top-right: choose · system import · move/height (drag) · remove. Palette icon next to it: note style — background (grid/lined/dotted) & font (normal/mono/handwritten).' });
   }
@@ -244,6 +357,299 @@ class NexusSettingsTab extends PluginSettingTab {
       e.createEl('p', { cls: 'setting-item-description',
         text: 'Note: The Nexus theme is not currently active — folder cards & ribbon style only become visible with the Nexus theme.' });
   }
+  tBoard(e) {
+    const s = this.plugin.settings.board;
+    this.head(e, s);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A ```nexus-board``` block turns an ordinary note into the dashboard of one subject: EVERY note of that folder as a card. It never filters — a hand-built overview shows what you remembered to add, this shows the folder, so nothing goes missing.' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Two arrangements of the same set: a sorted grid, or the same cards in columns by working state (drag them, or click the dot on a card). Everything else is set per dashboard through its gear — those settings are written back into the code block and travel with the note.' });
+    new Setting(e).setName('Default state property')
+      .setDesc('Pre-filled for new dashboards. Written into the note itself, so other cards and the search can use it too.')
+      .addText(t => { t.setPlaceholder('status').setValue(s.statusProperty || 'status');
+        t.onChange(async v => { s.statusProperty = v.trim() || 'status'; await this.save(); });
+        nxAutocomplete(t.inputEl, () => this.plugin._allPropKeys(), v => { s.statusProperty = v; this.save(); }); });
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Block reference' });
+    const pre = e.createEl('pre', { cls: 'nx-board-help' });
+    pre.setText([
+      '```nexus-board',
+      'folder: SCHOOL/Biology    # empty = the folder this note is in',
+      'mode: grid                # grid | board',
+      'sort: name                # name | modified | created | state',
+      'dir: asc                  # asc | desc',
+      'size: medium              # small | medium | large',
+      'status: status            # frontmatter property holding the state',
+      'states: Offen, In Arbeit, Ausbessern, Erledigt',
+      'props: due                # extra frontmatter shown as a badge',
+      'show: excerpt, tags, links, orphans, state, graph',
+      'height: 260               # graph height in px',
+      '```',
+    ].join('\n'));
+  }
+
+  tFocus(e) {
+    const s = this.plugin.settings.focus;
+    const apply = () => { if (this.plugin.focus) this.plugin.focus.apply(); };
+    this.head(e, s, apply);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Only affects editing, not reading view. Command "Toggle focus mode" flips it without coming here — worth a hotkey.' });
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Dimming' });
+    new Setting(e).setName('Dim everything else')
+      .addToggle(t => t.setValue(s.dim !== false).onChange(async v => { s.dim = v; await this.save(); apply(); }));
+    new Setting(e).setName('What stays lit')
+      .setDesc('Sentence-level would need a CodeMirror extension, which this plugin deliberately avoids — line and paragraph work through the DOM.')
+      .addDropdown(dd => dd.addOption('line', 'The current line').addOption('paragraph', 'The current paragraph')
+        .setValue(s.scope || 'line').onChange(async v => { s.scope = v; await this.save(); apply(); }));
+    new Setting(e).setName('How far the rest fades').setDesc('Lower = dimmer surroundings.')
+      .addSlider(sl => { sl.setLimits(5, 90, 5).setValue(s.dimOpacity == null ? 45 : s.dimOpacity).setDynamicTooltip();
+        sl.onChange(async v => { s.dimOpacity = v; await this.save(); apply(); }); })
+      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default (45 %)')
+        .onClick(async () => { s.dimOpacity = 45; await this.save(); apply(); this.display(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Typewriter scrolling' });
+    new Setting(e).setName('Keep the current line at a fixed height')
+      .setDesc('The text scrolls under the cursor instead of the cursor wandering down the screen.')
+      .addToggle(t => t.setValue(!!s.typewriter).onChange(async v => { s.typewriter = v; await this.save(); apply(); }));
+    new Setting(e).setName('Height').setDesc('0 = top of the editor, 100 = bottom.')
+      .addSlider(sl => { sl.setLimits(15, 85, 5).setValue(s.typewriterOffset == null ? 50 : s.typewriterOffset).setDynamicTooltip();
+        sl.onChange(async v => { s.typewriterOffset = v; await this.save(); apply(); }); });
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Keystroke sound' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Synthesised live, not played from a file — nothing is bundled and it works on mobile too.' });
+    new Setting(e).setName('Sound while typing')
+      .addToggle(t => t.setValue(!!s.sound).onChange(async v => { s.sound = v; await this.save(); }));
+    new Setting(e).setName('Character')
+      .addDropdown(dd => dd.addOption('soft', 'Soft — muted thud').addOption('mechanical', 'Mechanical — sharp click')
+        .setValue(s.soundStyle || 'soft').onChange(async v => { s.soundStyle = v; await this.save(); }));
+    new Setting(e).setName('Volume')
+      .addSlider(sl => { sl.setLimits(0, 100, 5).setValue(s.soundVolume == null ? 25 : s.soundVolume).setDynamicTooltip();
+        sl.onChange(async v => { s.soundVolume = v; await this.save(); }); })
+      .addExtraButton(b => b.setIcon('play').setTooltip('Try it')
+        .onClick(() => { if (this.plugin.focus) { const was = s.sound; s.sound = true; this.plugin.focus.click(); s.sound = was; } }));
+    new Setting(e).setName('Bell on Enter').setDesc('Like the carriage return of a typewriter.')
+      .addToggle(t => t.setValue(!!s.bell).onChange(async v => { s.bell = v; await this.save(); }));
+  }
+
+  tSprint(e) {
+    const s = this.plugin.settings.sprint;
+    this.head(e, s);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Command "Start a writing sprint" opens the dialog; the values here are what it starts with. Only words you ADD during the sprint count — deleting takes them away again, and switching notes keeps adding to the same total.' });
+    new Setting(e).setName('Default duration')
+      .addText(t => { t.inputEl.type = 'number'; t.setValue(String(s.minutes || 15));
+        t.onChange(async v => { const n = parseInt(v, 10); if (n > 0) { s.minutes = n; await this.save(); } }); });
+    new Setting(e).setName('Default word goal')
+      .addText(t => { t.inputEl.type = 'number'; t.setValue(String(s.words || 300));
+        t.onChange(async v => { const n = parseInt(v, 10); if (n > 0) { s.words = n; await this.save(); } }); });
+    new Setting(e).setName('Use the clock by default')
+      .addToggle(t => t.setValue(s.useTime !== false).onChange(async v => { s.useTime = v; await this.save(); }));
+    new Setting(e).setName('Use the word goal by default')
+      .addToggle(t => t.setValue(s.useWords !== false).onChange(async v => { s.useWords = v; await this.save(); }));
+    new Setting(e).setName('Show progress in the status bar').setDesc('Click it to stop the sprint early.')
+      .addToggle(t => t.setValue(s.statusBar !== false).onChange(async v => { s.statusBar = v; await this.save(); if (this.plugin.sprint) this.plugin.sprint.paint(); }));
+    new Setting(e).setName('Turn on focus mode for the sprint').setDesc('Restores whatever it was afterwards.')
+      .addToggle(t => t.setValue(!!s.focusDuringSprint).onChange(async v => { s.focusDuringSprint = v; await this.save(); }));
+    new Setting(e).setName('Closing words').setDesc('Shown in the summary when a sprint ends (optional).')
+      .addText(t => t.setPlaceholder('Well run.').setValue(s.doneMessage || '')
+        .onChange(async v => { s.doneMessage = v; await this.save(); }));
+  }
+
+  tEditorial(e) {
+    const s = this.plugin.settings.editorial;
+    const apply = () => { if (this.plugin.editorial) this.plugin.editorial.apply(); };
+    this.head(e, s, apply);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'All four are ordinary callouts, so a note keeps making sense without this plugin — it just renders as a plain callout instead of breaking. Commands insert them at the cursor.' });
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Margin note' });
+    e.createEl('p', { cls: 'setting-item-description', text: '> [!margin] — sits in the whitespace beside the text, and drops back inline on a narrow window.' });
+    new Setting(e).setName('Enabled')
+      .addToggle(t => t.setValue(s.margin !== false).onChange(async v => { s.margin = v; await this.save(); apply(); }));
+    new Setting(e).setName('Width')
+      .addSlider(sl => { sl.setLimits(120, 320, 10).setValue(s.marginWidth == null ? 200 : s.marginWidth).setDynamicTooltip();
+        sl.onChange(async v => { s.marginWidth = v; await this.save(); apply(); }); });
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Pull quote' });
+    e.createEl('p', { cls: 'setting-item-description', text: '> [!pullquote] — a sentence lifted out, centred and large. Quote marks are drawn, not typed.' });
+    new Setting(e).setName('Enabled')
+      .addToggle(t => t.setValue(s.pullquote !== false).onChange(async v => { s.pullquote = v; await this.save(); apply(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Ornamental divider' });
+    e.createEl('p', { cls: 'setting-item-description', text: '> [!ornament] — a hairline with a glyph on it. Type a character after the type to use that one instead.' });
+    new Setting(e).setName('Enabled')
+      .addToggle(t => t.setValue(s.ornament !== false).onChange(async v => { s.ornament = v; await this.save(); apply(); }));
+    new Setting(e).setName('Glyph')
+      .addText(t => t.setPlaceholder('❦').setValue(s.ornamentGlyph || '❦')
+        .onChange(async v => { s.ornamentGlyph = v.trim() || '❦'; await this.save(); apply(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Drop cap' });
+    new Setting(e).setName('Enlarge the first letter of a note')
+      .setDesc('Reading view only. In Live Preview the editor\'s first line may be a property block or a heading, and CSS cannot tell those from prose — the cap would land on the wrong character.')
+      .addToggle(t => t.setValue(!!s.dropcap).onChange(async v => { s.dropcap = v; await this.save(); apply(); }));
+  }
+
+  tFolderNotes(e) {
+    const s = this.plugin.settings.folderNotes;
+    const refresh = () => { if (this.plugin.folderNotes) this.plugin.folderNotes.refreshExplorer(); };
+    this.head(e, s, refresh);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A folder can own a note — clicking the folder opens it. Ink Capture builds on this: every capture folder gets its sidecar as a folder note.' });
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Naming & location' });
+    new Setting(e).setName('Note name').setDesc('Tokens: {{folder_name}}, {{date}}.')
+      .addText(t => t.setPlaceholder('{{folder_name}}').setValue(s.noteName)
+        .onChange(async v => { s.noteName = v.trim() || '{{folder_name}}'; await this.save(); refresh(); }));
+    new Setting(e).setName('File type').setDesc('Type used when CREATING a note; all enabled types below are recognised when looking one up.')
+      .addDropdown(dd => dd.addOption('md', 'Markdown (.md)').addOption('canvas', 'Canvas (.canvas)').addOption('base', 'Base (.base)')
+        .setValue(s.fileType || 'md').onChange(async v => { s.fileType = v; await this.save(); refresh(); }));
+    const types = Array.isArray(s.supportedTypes) ? s.supportedTypes : (s.supportedTypes = ['md', 'canvas', 'base']);
+    const tw = e.createDiv('nx-cardcfg-group');
+    tw.createDiv({ cls: 'nx-cardcfg-group-label', text: 'Recognised as a folder note' });
+    const trow = tw.createDiv('nx-cardcfg-checks');
+    FN_TYPES.forEach(k => {
+      const lbl = trow.createEl('label', { cls: 'nx-cardcfg-check' });
+      const cb = lbl.createEl('input', { type: 'checkbox' });
+      cb.checked = types.includes(k);
+      lbl.createSpan({ text: '.' + k });
+      cb.onchange = async () => {
+        const set = new Set(s.supportedTypes);
+        cb.checked ? set.add(k) : set.delete(k);
+        if (!set.size) { set.add('md'); new Notice('Nexus: at least .md has to stay on.'); }
+        s.supportedTypes = FN_TYPES.filter(x => set.has(x));
+        await this.save(); refresh(); this.display();
+      };
+    });
+    new Setting(e).setName('Storage').setDesc('Inside the folder is the usual convention; next to it keeps folders free of files.')
+      .addDropdown(dd => dd.addOption('inside', 'Inside the folder').addOption('parent', 'Next to the folder')
+        .setValue(s.storage || 'inside').onChange(async v => { s.storage = v; await this.save(); refresh(); }));
+    new Setting(e).setName('Template').setDesc('Note used as the body for new folder notes. Tokens: {{folder_name}}, {{title}}, {{date}}, {{time}}.')
+      .addText(t => { t.setPlaceholder('Templates/Folder.md').setValue(s.templatePath || '');
+        t.onChange(async v => { s.templatePath = v.trim(); await this.save(); });
+        nxAutocomplete(t.inputEl, () => this.plugin._allNames(), v => { s.templatePath = v; this.save(); }); });
+    new Setting(e).setName('Create automatically for new folders')
+      .addToggle(t => t.setValue(!!s.autoCreate).onChange(async v => { s.autoCreate = v; await this.save(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Opening' });
+    new Setting(e).setName('Open on').setDesc('Which click on the folder opens its note. The collapse arrow always just collapses.')
+      .addDropdown(dd => dd.addOption('click', 'Plain click').addOption('ctrl', 'Ctrl / Cmd + click')
+        .addOption('alt', 'Alt + click').addOption('off', 'Never (context menu only)')
+        .setValue(s.openTrigger || 'click').onChange(async v => { s.openTrigger = v; await this.save(); }));
+    new Setting(e).setName('Collapse the folder as well')
+      .setDesc('Off: opening the note leaves the folder as it is. On: it also expands/collapses.')
+      .addToggle(t => t.setValue(!!s.collapseOnClick).onChange(async v => { s.collapseOnClick = v; await this.save(); }));
+    new Setting(e).setName('Open in a new tab')
+      .addToggle(t => t.setValue(!!s.openInNewTab).onChange(async v => { s.openInNewTab = v; await this.save(); }));
+    new Setting(e).setName('Focus an already open tab').setDesc('If the note is open somewhere, jump there instead of opening it again.')
+      .addToggle(t => t.setValue(!!s.focusExistingTab).onChange(async v => { s.focusExistingTab = v; await this.save(); }));
+    new Setting(e).setName('Open from the breadcrumb path').setDesc('Clicking a folder in the path above a note opens that folder\'s note.')
+      .addToggle(t => t.setValue(s.openFromPath !== false).onChange(async v => { s.openFromPath = v; await this.save(); refresh(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Appearance in the explorer' });
+    new Setting(e).setName('Hide the note itself').setDesc('The note is reachable through its folder, so the extra row is noise.')
+      .addToggle(t => t.setValue(s.hideInExplorer !== false).onChange(async v => { s.hideInExplorer = v; await this.save(); refresh(); }));
+    new Setting(e).setName('Underline folders that have a note')
+      .addToggle(t => t.setValue(s.underline !== false).onChange(async v => { s.underline = v; await this.save(); refresh(); }));
+    new Setting(e).setName('Bold').addToggle(t => t.setValue(!!s.bold).onChange(async v => { s.bold = v; await this.save(); refresh(); }));
+    new Setting(e).setName('Italic').addToggle(t => t.setValue(!!s.italic).onChange(async v => { s.italic = v; await this.save(); refresh(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Keeping things in sync' });
+    new Setting(e).setName('Rename the note when the folder is renamed')
+      .addToggle(t => t.setValue(s.syncRename !== false).onChange(async v => { s.syncRename = v; await this.save(); }));
+    new Setting(e).setName('Ask before renaming')
+      .addToggle(t => t.setValue(s.confirmRename !== false).onChange(async v => { s.confirmRename = v; await this.save(); }));
+    new Setting(e).setName('Delete the folder when its note is deleted')
+      .setDesc('Only ever removes a folder that is empty afterwards.')
+      .addToggle(t => t.setValue(!!s.syncDelete).onChange(async v => { s.syncDelete = v; await this.save(); }));
+    new Setting(e).setName('Ask before deleting')
+      .addToggle(t => t.setValue(s.confirmDelete !== false).onChange(async v => { s.confirmDelete = v; await this.save(); }));
+    nxMultiRow(e, 'Excluded folders', 'These never get a folder note. One per line.', (s.excludeFolders || []).join(','), ',', 'Archive',
+      v => { s.excludeFolders = v.split(',').map(x => x.trim()).filter(Boolean); this.save(); refresh(); },
+      () => this.plugin._allFolders());
+
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Code block ```folder-overview``` renders the contents of the folder. Optional lines: title, depth, include (folder, markdown, all), sort (name/created/modified), asc, style (list/grid), folder.' });
+  }
+
+  tIcons(e) {
+    const s = this.plugin.settings.icons;
+    const refresh = () => { if (this.plugin.icons) this.plugin.icons.refresh(); };
+    this.head(e, s, refresh);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'An icon for any folder or file, shown in the explorer. Assign one by right-clicking the item → "Set icon …". Emoji work too.' });
+
+    new Setting(e).setName('Import from icon-folder').setDesc('Takes over the assignments from the obsidian-icon-folder plugin (its Lucide names are converted).')
+      .addButton(b => b.setButtonText('Import').onClick(async () => {
+        if (this.plugin.icons) await this.plugin.icons.migrateFromIconFolder();
+        this.display();
+      }));
+
+    const map = (s.map && typeof s.map === 'object') ? s.map : (s.map = {});
+    const paths = Object.keys(map).sort((a, b) => a.localeCompare(b));
+    const broken = new Set(this.plugin.icons ? this.plugin.icons.unresolvedIcons() : []);
+    if (broken.size) e.createEl('p', { cls: 'setting-item-description',
+      text: broken.size + ' assignment(s) name an icon this Obsidian does not ship (they render as nothing) — marked below.' });
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Assigned icons (' + paths.length + ')' });
+    if (!paths.length) e.createEl('p', { cls: 'setting-item-description', text: '— none yet —' });
+    paths.forEach(path => {
+      const icon = map[path];
+      const exists = !!this.app.vault.getAbstractFileByPath(path);
+      const set = new Setting(e);
+      const row = set.nameEl.createDiv('nx-iconlist-row');
+      const ico = row.createDiv('nx-iconlist-icon');
+      if (/^[a-z0-9-]+$/.test(icon)) setIcon(ico, icon); else ico.setText(icon);
+      row.createDiv({ cls: 'nx-iconlist-path', text: path });
+      const notes = [icon];
+      if (!exists) notes.push('path no longer exists');
+      if (broken.has(path)) notes.push('unknown icon — pick a new one');
+      set.setDesc(notes.join(' · '));
+      set.addExtraButton(b => b.setIcon('pencil').setTooltip('Change').onClick(() => {
+        if (this.plugin.icons) this.plugin.icons.pick(path);
+        window.setTimeout(() => this.display(), 400);
+      }));
+      set.addExtraButton(b => b.setIcon('trash-2').setTooltip('Remove').onClick(async () => {
+        delete map[path]; await this.save(); refresh(); this.display();
+      }));
+    });
+    if (paths.some(p => !this.app.vault.getAbstractFileByPath(p))) {
+      new Setting(e).addButton(b => b.setButtonText('Clean up missing paths').onClick(async () => {
+        paths.forEach(p => { if (!this.app.vault.getAbstractFileByPath(p)) delete map[p]; });
+        await this.save(); refresh(); this.display();
+      }));
+    }
+  }
+
+  tTagTools(e) {
+    const s = this.plugin.settings.tagTools;
+    this.head(e, s);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Right-click any tag — in the tag pane or inside a note — to rename, merge or remove it across the vault. Renaming onto an existing tag merges the two. Nested tags follow along; code blocks, inline code and URL fragments are left alone.' });
+    new Setting(e).addButton(b => b.setButtonText('Rename a tag …').setCta()
+      .onClick(() => { if (this.plugin.tagTools) this.plugin.tagTools.pickAndRename(); }));
+
+    const counts = nxAllTagCounts(this.app);
+    const tags = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Tags in this vault (' + tags.length + ')' });
+    if (!tags.length) e.createEl('p', { cls: 'setting-item-description', text: '— none —' });
+    tags.slice(0, 100).forEach(([tag, n]) => {
+      const set = new Setting(e).setName('#' + tag).setDesc(n + ' use(s)');
+      set.addExtraButton(b => b.setIcon('pencil').setTooltip('Rename / merge')
+        .onClick(() => new NexusTagRenameModal(this.plugin, tag, () => this.display()).open()));
+      set.addExtraButton(b => b.setIcon('trash-2').setTooltip('Remove everywhere').onClick(async () => {
+        const files = nxFilesWithTag(this.app, tag);
+        const ok = await new NexusConfirmModal(this.app, 'Remove #' + tag + ' everywhere?',
+          'Strips the tag (and its nested children) from ' + files.length + ' note(s). The notes stay.', 'Remove tag').openAndGet();
+        if (!ok) return;
+        const c = await nxRenameTag(this.plugin, tag, '');
+        new Notice('Nexus: removed #' + tag + ' from ' + c + ' note(s).');
+        this.display();
+      }));
+    });
+    if (tags.length > 100) e.createEl('p', { cls: 'setting-item-description', text: '… and ' + (tags.length - 100) + ' more — use "Rename a tag …" to reach them.' });
+  }
+
   tInkCapture(e) {
     const s = this.plugin.settings.inkCapture;
     this.head(e, s);
@@ -253,18 +659,40 @@ class NexusSettingsTab extends PluginSettingTab {
       .setDesc('Only for scans taken via the Capture button/command — files that just appear in a source folder never trigger a popup.')
       .addToggle(t => t.setValue(s.tagOnCapture).onChange(async v => { s.tagOnCapture = v; await this.save(); }));
 
-    const srcLabels = { paper: 'Paper (camera)', saber: 'Saber', butterfly: 'Butterfly' };
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Sources' });
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Anything landing in a source folder (via the camera button, or synced/exported in some other way) automatically gets its own capture folder — a sidecar note (as a folder note, requires the folder-notes plugin to open with one click) plus the raw file, flat inside it. Accepts images and PDF.' });
-    for (const id of ['paper', 'saber', 'butterfly']) {
-      const src = s.sources[id];
-      new Setting(e).setName(srcLabels[id]).addToggle(t => t.setValue(src.enabled)
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Add one source per app you export from — the name is yours to choose and is what the gallery shows as the origin badge. "Paper" is the built-in camera capture and cannot be removed.' });
+    this.plugin.inkSources().forEach(src => {
+      const isPaper = src.id === 'paper';
+      const set = new Setting(e).setName(src.label || src.id).setDesc(isPaper ? 'Built-in camera capture' : 'id: ' + src.id);
+      set.addToggle(t => t.setValue(src.enabled !== false)
         .onChange(async v => { src.enabled = v; await this.save(); await this.plugin.ensureInkFolders(); }));
+      if (!isPaper) set.addExtraButton(b => b.setIcon('pencil').setTooltip('Rename').onClick(async () => {
+        const name = await new NexusNameModal(this.app, 'Source name', src.label || src.id).openAndGet();
+        if (name && name.trim()) { src.label = name.trim(); await this.save(); this.display(); }
+      }));
+      if (!isPaper) set.addExtraButton(b => b.setIcon('trash-2').setTooltip('Remove source').onClick(async () => {
+        const ok = await new NexusConfirmModal(this.app, 'Remove source "' + (src.label || src.id) + '"?',
+          'Only stops watching "' + (src.folder || '—') + '". Existing captures and their notes stay untouched.',
+          'Remove').openAndGet();
+        if (!ok) return;
+        s.sources = this.plugin.inkSources().filter(x => x !== src);
+        await this.save(); this.display();
+      }));
       new Setting(e).setName('Folder').setClass('nx-set-sub')
-        .addText(t => t.setPlaceholder('Inbox/' + srcLabels[id].split(' ')[0]).setValue(src.folder)
-          .onChange(async v => { src.folder = v || src.folder; await this.save(); await this.plugin.ensureInkFolders(); }));
-    }
+        .addText(t => t.setPlaceholder('Inbox/' + (src.label || src.id)).setValue(src.folder || '')
+          .onChange(async v => { src.folder = v.trim() || src.folder; await this.save(); await this.plugin.ensureInkFolders(); }));
+    });
+    new Setting(e).addButton(b => b.setButtonText('Add source').setCta().onClick(async () => {
+      const name = await new NexusNameModal(this.app, 'Name of the app you export from', '').openAndGet();
+      const label = (name || '').trim();
+      if (!label) return;
+      const id = this.plugin.inkSourceId(label);
+      this.plugin.inkSources().push({ id, label, folder: 'Inbox/' + label.replace(/[\\/:*?"<>|]/g, '_'), enabled: true });
+      await this.save(); await this.plugin.ensureInkFolders(); this.display();
+    }));
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Excalidraw' });
     new Setting(e).setName('Show in gallery')
@@ -272,7 +700,7 @@ class NexusSettingsTab extends PluginSettingTab {
       .addToggle(t => t.setValue(s.excalidraw.enabled).onChange(async v => { s.excalidraw.enabled = v; await this.save(); }));
 
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Command "Capture scan" or the camera ribbon icon opens the gallery / takes a paper photo. Saber and Butterfly have no in-app capture (they\'re separate apps) — export a PDF/image from them into their source folder instead.' });
+      text: 'Command "Capture scan" or the camera ribbon icon opens the gallery / takes a paper photo. Your own sources have no in-app capture (they are separate apps) — export a PDF/image from them into their source folder instead.' });
   }
   tSketch(e) {
     const s = this.plugin.settings.quicksketch;
@@ -307,12 +735,20 @@ class NexusSettingsTab extends PluginSettingTab {
         .addSlider(sl => { sl.setLimits(0.5, 40, 0.1).setValue(penSizes[id] != null ? penSizes[id] : 3).setDynamicTooltip();
           sl.onChange(async v => { penSizes[id] = v; await this.save(); }); });
     });
-    new Setting(e).setName('Size favourites').setDesc('The 3 quick-set widths in the toolbar (also settable there via press-and-hold).')
-      .addText(t => t.setPlaceholder('1.5, 3, 8').setValue((s.sizeFavorites || [1.5, 3, 8]).join(', '))
-        .onChange(async v => {
-          const nums = v.split(',').map(x => parseFloat(x.trim())).filter(x => x > 0).slice(0, 3);
-          if (nums.length) { s.sizeFavorites = nums; await this.save(); }
-        }));
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Size favourites' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The 3 quick-set widths in the toolbar — per pen, since a marker and a pencil want very different ones. Also settable in a sketch: tap the active dot again.' });
+    if (!s.sizeFavorites || Array.isArray(s.sizeFavorites)) s.sizeFavorites = {};
+    PEN_IDS.forEach(id => {
+      const def = id === 'marker' ? [6, 10, 18] : [1.5, 3, 8];
+      if (!Array.isArray(s.sizeFavorites[id]) || !s.sizeFavorites[id].length) s.sizeFavorites[id] = def.slice();
+      new Setting(e).setName(PEN_LABELS[id]).setClass('nx-set-sub')
+        .addText(t => t.setPlaceholder(def.join(', ')).setValue(s.sizeFavorites[id].join(', '))
+          .onChange(async v => {
+            const nums = v.split(',').map(x => parseFloat(x.trim())).filter(x => x > 0).slice(0, 3);
+            if (nums.length) { s.sizeFavorites[id] = nums; await this.save(); }
+          }));
+    });
     new Setting(e).setName('Auto-extend downward').setDesc('New pads grow taller automatically as you draw near the bottom. Toggle per sketch in the toolbar.')
       .addToggle(t => t.setValue(!!s.autoGrow).onChange(async v => { s.autoGrow = v; await this.save(); }));
     new Setting(e).setName('Shape recognition').setDesc('Hold the pen still right after drawing → the stroke snaps to a clean line / rectangle / ellipse / triangle.')
@@ -320,30 +756,79 @@ class NexusSettingsTab extends PluginSettingTab {
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Pen behaviour (smoothing, pressure, sharpness, speed fade — and the marker\'s tip/overlap): tap the ACTIVE pen in a sketch toolbar again. Colour palettes (create/rename/switch, max 8 colours): the swatch-book button next to the colours.' });
 
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Palette (active)' });
+    // ── Palettes: ALL of them, not just the active one. Each holds up to 8
+    //    colours; the sketch toolbar hides its "+" once a palette is full. ──
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Colour palettes' });
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Colours of the ACTIVE palette (max 8). Create/rename/switch palettes via the swatch-book button in any sketch toolbar.' });
+      text: 'Max 8 colours each. The active one is what a sketch toolbar shows; switch it here or via the swatch-book button in any toolbar.' });
     if (!Array.isArray(s.palettes) || !s.palettes.length) s.palettes = [{ name: 'Default', colors: (s.palette || ['#2f2f2f']).slice(0, 8) }];
     if (s.activePalette == null || s.activePalette >= s.palettes.length) s.activePalette = 0;
-    const pal = s.palettes[s.activePalette];
-    s.palette = pal.colors;
-    const palRow = e.createDiv('nx-sk-palette-edit');
-    pal.colors.forEach(col => {
-      const chip = palRow.createDiv('nx-sk-palette-chip');
-      chip.style.setProperty('--c', col);
-      chip.setAttribute('aria-label', col);
-      const rm = chip.createDiv('nx-sk-palette-rm'); setIcon(rm, 'x');
-      rm.onclick = async () => { if (pal.colors.length > 1) { pal.colors = pal.colors.filter(c => c !== col); s.palette = pal.colors; await this.save(); this.display(); } };
-    });
-    new Setting(e).setName('Add colour').setClass('nx-set-sub')
-      .addColorPicker(cp => cp.setValue('#888888'))
-      .addButton(b => b.setButtonText('Add').onClick(async () => {
-        const cp = e.querySelector('.nx-set-sub input[type="color"]');
-        const v = cp && cp.value;
-        if (!v) return;
-        if (pal.colors.length >= 8) { new Notice('Nexus: palette is full (max 8 colours).'); return; }
-        if (!pal.colors.map(c => c.toLowerCase()).includes(v.toLowerCase())) { pal.colors.push(v); s.palette = pal.colors; await this.save(); this.display(); }
+    s.palette = s.palettes[s.activePalette].colors;
+    const syncActive = async () => { s.palette = s.palettes[s.activePalette].colors; await this.save(); };
+
+    s.palettes.forEach((pal, idx) => {
+      if (!Array.isArray(pal.colors) || !pal.colors.length) pal.colors = ['#2f2f2f'];
+      const isActive = idx === s.activePalette;
+      const set = new Setting(e)
+        .setName(pal.name || 'Palette ' + (idx + 1))
+        .setDesc(pal.colors.length + ' / 8 colours' + (isActive ? ' · active' : ''));
+      if (isActive) set.setClass('nx-pal-active');
+      if (!isActive) set.addExtraButton(b => b.setIcon('check').setTooltip('Use this palette')
+        .onClick(async () => { s.activePalette = idx; await syncActive(); this.display(); }));
+      set.addExtraButton(b => b.setIcon('pencil').setTooltip('Rename').onClick(async () => {
+        const name = await new NexusNameModal(this.app, 'Palette name', pal.name || '').openAndGet();
+        if (name && name.trim()) { pal.name = name.trim(); await this.save(); this.display(); }
       }));
+      set.addExtraButton(b => b.setIcon('copy').setTooltip('Duplicate').onClick(async () => {
+        s.palettes.splice(idx + 1, 0, { name: (pal.name || 'Palette') + ' copy', colors: pal.colors.slice(0, 8) });
+        await this.save(); this.display();
+      }));
+      if (s.palettes.length > 1) set.addExtraButton(b => b.setIcon('trash-2').setTooltip('Delete palette').onClick(async () => {
+        s.palettes.splice(idx, 1);
+        if (s.activePalette >= s.palettes.length) s.activePalette = s.palettes.length - 1;
+        await syncActive(); this.display();
+      }));
+
+      const row = e.createDiv('nx-sk-palette-edit');
+      pal.colors.forEach((col, ci) => {
+        const chip = row.createDiv('nx-sk-palette-chip');
+        chip.style.setProperty('--c', col);
+        chip.setAttribute('aria-label', col + ' — click to change');
+        // Hidden native picker: click the chip to recolour it in place.
+        const pick = chip.createEl('input', { cls: 'nx-sk-palette-pick', attr: { type: 'color' } });
+        pick.value = /^#[0-9a-f]{6}$/i.test(col) ? col : '#888888';
+        pick.oninput = () => { chip.style.setProperty('--c', pick.value); };
+        pick.onchange = async () => { pal.colors[ci] = pick.value; if (isActive) s.palette = pal.colors; await this.save(); this.display(); };
+        if (pal.colors.length > 1) {
+          const rm = chip.createDiv('nx-sk-palette-rm'); setIcon(rm, 'x');
+          rm.setAttribute('aria-label', 'Remove colour');
+          rm.onclick = async (ev) => {
+            ev.preventDefault(); ev.stopPropagation();
+            pal.colors.splice(ci, 1); if (isActive) s.palette = pal.colors;
+            await this.save(); this.display();
+          };
+        }
+      });
+      if (pal.colors.length < 8) {
+        const add = row.createDiv({ cls: 'nx-sk-palette-add', attr: { 'aria-label': 'Add colour' } });
+        setIcon(add, 'plus');
+        const pick = add.createEl('input', { cls: 'nx-sk-palette-pick', attr: { type: 'color' } });
+        pick.value = '#888888';
+        pick.onchange = async () => {
+          if (pal.colors.length >= 8) { new Notice('Nexus: palette is full (max 8 colours).'); return; }
+          pal.colors.push(pick.value); if (isActive) s.palette = pal.colors;
+          await this.save(); this.display();
+        };
+      } else {
+        row.createDiv({ cls: 'nx-sk-palette-full', text: 'full' });
+      }
+    });
+    new Setting(e).addButton(b => b.setButtonText('New palette').setCta().onClick(async () => {
+      const name = await new NexusNameModal(this.app, 'Palette name', 'Palette ' + (s.palettes.length + 1)).openAndGet();
+      s.palettes.push({ name: (name || '').trim() || 'Palette ' + (s.palettes.length + 1), colors: ['#2f2f2f'] });
+      s.activePalette = s.palettes.length - 1;
+      await syncActive(); this.display();
+    }));
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Background' });
     new Setting(e).setName('Default background').setDesc('Grid / lines / dots on new pads. Adjust type + spacing + opacity live per sketch via the background button in the toolbar.')
@@ -428,18 +913,56 @@ class NexusSettingsTab extends PluginSettingTab {
     slider('Theme · Corner radius (global)', 'radius', 0, 28, 12);
   }
   tSearch(e) {
-    this.head(e, this.plugin.settings.search);
-    e.createEl('p', { cls: 'setting-item-description', text: 'Command "Nexus Suite: Open search" (assign a hotkey). Fuzzy over title & content.' });
+    const s = this.plugin.settings.search;
+    this.head(e, s);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Command "Nexus Suite: Open search" (assign a hotkey). Results are ranked by WHERE a term matches — title first, then tags, headings, frontmatter and finally the body text.' });
+    if (!s.fields || typeof s.fields !== 'object') s.fields = { title: true, tags: true, headings: true, props: true, text: true };
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Search in' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The starting scope. You can flip each one while searching, via the chips under the search box — that choice is remembered here.' });
+    SEARCH_FIELDS.forEach(f => {
+      new Setting(e).setName(f.label).setDesc('rank weight ' + f.weight)
+        .addToggle(t => t.setValue(s.fields[f.id] !== false).onChange(async v => {
+          if (!v && SEARCH_FIELDS.filter(x => s.fields[x.id] !== false).length <= 1) {
+            new Notice('Nexus: at least one field has to stay on.');
+            this.display(); return;
+          }
+          s.fields[f.id] = v; await this.save();
+        }));
+    });
   }
   tTypography(e) {
     const s = this.plugin.settings.typography;
     this.head(e, s);
-    const opt = (k, l) => new Setting(e).setName(l).addToggle(t => t.setValue(s[k]).onChange(async v => { s[k] = v; await this.save(); }));
-    opt('dashes', 'Dashes (-- → – → —)');
-    opt('ellipsis', 'Ellipsis (…)');
-    opt('quotes', 'Typographic quotes');
-    opt('arrows', 'Arrows (→ ← ⇒)');
-    opt('symbols', '© ® ™');
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Typed while writing, replaced the moment the sequence is complete. Each option below lists exactly what it converts.' });
+
+    /* The old labels ("Dashes (-- → – → —)") crammed the rule INTO the name and
+       still left you guessing which input produced which character. Show the
+       actual pairs instead: what you type on the left, what you get on the right. */
+    const opt = (key, label, pairs, note) => {
+      new Setting(e).setName(label)
+        .addToggle(t => t.setValue(s[key]).onChange(async v => { s[key] = v; await this.save(); }));
+      const map = e.createDiv('nx-st-map');
+      pairs.forEach(([from, to]) => {
+        const row = map.createDiv('nx-st-pair');
+        row.createSpan({ cls: 'nx-st-in', text: from });
+        row.createSpan({ cls: 'nx-st-arrow', text: '→' });
+        row.createSpan({ cls: 'nx-st-out', text: to });
+      });
+      if (note) map.createDiv({ cls: 'nx-st-note', text: note });
+    };
+
+    // Pairs come from the same table the editor hook uses (constants.js), so
+    // this list cannot claim a rule that isn't actually wired up.
+    const byGroup = (grp) => ST_SYMBOL_RULES.filter(r => r.grp === grp).map(r => [r.m, r.r]);
+    opt('dashes', 'Dashes', byGroup('dashes'), 'Type -- for an en dash, then one more hyphen for an em dash.');
+    opt('ellipsis', 'Ellipsis', byGroup('ellipsis'));
+    opt('quotes', 'Typographic quotes', [['"word"', '“word”'], ["'word'", '‘word’']],
+      'Opening or closing is decided by what precedes the quote — after a space or bracket it opens, otherwise it closes.');
+    opt('arrows', 'Arrows', byGroup('arrows'));
+    opt('symbols', 'Symbols', byGroup('symbols'));
   }
   tCalendar(e) {
     const s = this.plugin.settings.calendar;
@@ -527,17 +1050,65 @@ class NexusSettingsTab extends PluginSettingTab {
         .setValue(s.selectMode || 'release')
         .onChange(async v => { s.selectMode = v; await this.save(); }));
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Ctrl+Alt+Tab opens the tile switcher (layout preview, core "Workspaces" plugin). There is also the command "Nexus Suite: Open workspace switcher" for a custom hotkey.' });
-  }
-  tExternal(e) {
-    const s = this.plugin.settings.externalEdit;
-    this.head(e, s);
-    new Setting(e).setName('Focus mode').setDesc('Load the focus workspace on open; restore the previous one on close.')
-      .addToggle(t => t.setValue(s.focus).onChange(async v => { s.focus = v; await this.save(); }));
-    new Setting(e).setName('Focus workspace').setDesc('Name of a saved workspace loaded during Quick Edit. Empty / not present → sidebars are just collapsed.')
-      .addText(t => t.setPlaceholder('Focus').setValue(s.workspace).onChange(async v => { s.workspace = v; await this.save(); }));
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'Command "Open external .md (Quick Edit)" (assign a hotkey). Opens a file OUTSIDE the vault temporarily, writes changes live back to the original file, and removes the temp file on close (workspace switches back). Desktop only.' });
+      text: 'Ctrl+Alt+Tab opens the tile switcher (layout preview). There is also the command "Nexus Suite: Open workspace switcher" for a custom hotkey.' });
+
+    /* Layouts are owned by the core "Workspaces" plugin — we edit its store
+       directly (same objects the switcher shows) instead of keeping a copy. */
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Saved layouts' });
+    const wp = this.app.internalPlugins && this.app.internalPlugins.getPluginById('workspaces');
+    if (!wp || !wp.enabled) {
+      e.createEl('p', { cls: 'setting-item-description', text: 'The core "Workspaces" plugin is disabled — layouts live there.' });
+      new Setting(e).addButton(b => b.setButtonText('Enable core plugin').setCta()
+        .onClick(async () => { try { await wp.enable(); } catch (err) {} this.display(); }));
+      return;
+    }
+    const inst = wp.instance;
+    const names = Object.keys(inst.workspaces || {}).sort((a, b) => a.localeCompare(b));
+    if (!names.length) e.createEl('p', { cls: 'setting-item-description', text: '— no layouts saved yet —' });
+    const persist = () => { try { if (inst.saveData) inst.saveData(); } catch (err) {} };
+    names.forEach(name => {
+      const isActive = inst.activeWorkspace === name;
+      const set = new Setting(e).setName(name).setDesc(isActive ? 'currently loaded' : '');
+      set.addExtraButton(b => b.setIcon('play').setTooltip('Load layout')
+        .onClick(() => { inst.loadWorkspace(name); new Notice('Layout loaded: ' + name); this.display(); }));
+      set.addExtraButton(b => b.setIcon('save').setTooltip('Overwrite with the current layout')
+        .onClick(async () => {
+          const ok = await new NexusConfirmModal(this.app, 'Overwrite "' + name + '"?',
+            'Replaces the saved panes and tabs with what is on screen right now.', 'Overwrite').openAndGet();
+          if (!ok) return;
+          inst.saveWorkspace(name); new Notice('Overwritten: ' + name); this.display();
+        }));
+      set.addExtraButton(b => b.setIcon('pencil').setTooltip('Rename').onClick(async () => {
+        const nn = await new NexusNameModal(this.app, 'Rename layout', name).openAndGet();
+        const clean = (nn || '').trim();
+        if (!clean || clean === name) return;
+        if (inst.workspaces[clean]) { new Notice('Nexus: "' + clean + '" already exists.'); return; }
+        inst.workspaces[clean] = inst.workspaces[name];
+        delete inst.workspaces[name];
+        if (inst.activeWorkspace === name) inst.activeWorkspace = clean;
+        persist(); this.display();
+      }));
+      set.addExtraButton(b => b.setIcon('copy').setTooltip('Duplicate').onClick(async () => {
+        let copy = name + ' copy', i = 2;
+        while (inst.workspaces[copy]) copy = name + ' copy ' + i++;
+        try { inst.workspaces[copy] = JSON.parse(JSON.stringify(inst.workspaces[name])); } catch (err) { return; }
+        persist(); this.display();
+      }));
+      set.addExtraButton(b => b.setIcon('trash-2').setTooltip('Delete').onClick(async () => {
+        const ok = await new NexusConfirmModal(this.app, 'Delete layout "' + name + '"?',
+          'Only the saved arrangement is removed — no note or file is touched.', 'Delete').openAndGet();
+        if (!ok) return;
+        inst.deleteWorkspace(name); persist(); this.display();
+      }));
+    });
+    new Setting(e)
+      .addButton(b => b.setButtonText('Save current layout').setCta().onClick(async () => {
+        const name = await new NexusNameModal(this.app, 'Save current layout as', '').openAndGet();
+        const clean = (name || '').trim();
+        if (!clean) return;
+        inst.saveWorkspace(clean); new Notice('Saved: ' + clean); this.display();
+      }))
+      .addButton(b => b.setButtonText('Open switcher').onClick(() => new NexusWorkspaceModal(this.plugin, false).open()));
   }
 }
 

@@ -1,0 +1,200 @@
+/* ── SUBJECT DASHBOARD ─────────────────────────────────────────────────────
+   Rendered from a ```nexus-board``` block inside an ordinary note.
+   Two arrangements of the SAME set of notes: a grid of everything, and the
+   same cards in columns by working state. Colours come from the active
+   palette's accent family, so the board recolours with the theme. */
+.nx-board {
+  --nx-board-edge: color-mix(in srgb, var(--text-muted) 30%, transparent);
+  --nx-state: var(--text-muted);        /* per card / per column, set from JS */
+  margin: 0.6em 0 1em;
+}
+
+/* Obsidian hangs an edit affordance (frame + "</>" button) on every rendered
+   code block as soon as you hover it — right on top of the search field and
+   the gear. Same fix the sketch block already uses. */
+.cm-preview-code-block:has(.nx-board),
+.cm-embed-block:has(.nx-board),
+.markdown-rendered .el-pre:has(.nx-board) {
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+.cm-preview-code-block:has(.nx-board):hover,
+.cm-embed-block:has(.nx-board):hover { box-shadow: none !important; }
+.cm-preview-code-block:has(.nx-board) .edit-block-button,
+.cm-embed-block:has(.nx-board) .edit-block-button,
+.markdown-rendered .el-pre:has(.nx-board) .edit-block-button { display: none !important; }
+
+/* ── head ── */
+.nx-board-head {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  padding-bottom: 10px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.nx-board-title {
+  font-family: var(--font-text, inherit);
+  font-weight: 600; font-size: 1.2em; color: var(--text-normal);
+}
+.nx-board-count { font-size: .78em; color: var(--text-faint); }
+.nx-board-tally { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.nx-board-tally-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .74em; padding: 2px 9px; border-radius: 999px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--nx-state) 13%, transparent);
+}
+.nx-board-tally-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--nx-state); }
+.nx-board-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.nx-board-modebtn {
+  display: inline-flex; padding: 4px; border-radius: 6px; cursor: pointer;
+  color: var(--text-faint);
+}
+.nx-board-modebtn:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-board-modebtn.is-active { color: var(--text-on-accent); background: var(--interactive-accent); }
+.nx-board-modebtn .svg-icon { width: 15px; height: 15px; }
+.nx-board-search {
+  width: 140px; padding: 4px 10px; font-size: .85em;
+  border-radius: 999px; border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field); color: var(--text-normal);
+}
+.nx-board-search:focus { outline: none; border-color: var(--interactive-accent); }
+.nx-board-gear { display: inline-flex; cursor: pointer; color: var(--text-faint); padding: 4px; border-radius: 6px; }
+.nx-board-gear:hover { color: var(--text-accent); background: var(--background-modifier-hover); }
+.nx-board-gear .svg-icon { width: 16px; height: 16px; }
+
+/* ── grid: every note, once ── */
+.nx-board-grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+.nx-board.is-sm .nx-board-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.nx-board.is-lg .nx-board-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+
+/* ── columns: the same cards, by state ── */
+.nx-board-cols { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
+.nx-board-col {
+  flex: 0 0 246px; min-width: 246px;
+  border-radius: var(--radius-m, 10px);
+  background: color-mix(in srgb, var(--nx-state) 6%, var(--background-secondary));
+  border: 1px solid color-mix(in srgb, var(--nx-state) 24%, var(--background-modifier-border));
+  border-top: 2px solid color-mix(in srgb, var(--nx-state) 60%, transparent);
+  padding: 9px;
+  transition: background .12s ease, border-color .12s ease;
+}
+.nx-board-col.is-over {
+  background: color-mix(in srgb, var(--nx-state) 18%, transparent);
+  border-color: var(--nx-state);
+}
+.nx-board-col-head { display: flex; align-items: center; gap: 7px; padding: 2px 4px 9px; }
+.nx-board-col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--nx-state); }
+.nx-board-col-name {
+  flex: 1; min-width: 0; font-size: .86em; font-weight: 600; color: var(--text-normal);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-board-col-count {
+  font-size: .72em; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  color: color-mix(in srgb, var(--nx-state) 75%, var(--text-normal));
+  background: color-mix(in srgb, var(--nx-state) 15%, transparent);
+}
+.nx-board-list { display: flex; flex-direction: column; gap: 7px; max-height: 62vh; overflow-y: auto; }
+.nx-board-drop-hint {
+  padding: 16px 8px; text-align: center; font-size: .78em; font-style: italic; color: var(--text-faint);
+}
+
+/* ── cards ── */
+.nx-board-card {
+  padding: 9px 11px; border-radius: var(--radius-s, 8px); cursor: pointer;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  transition: transform .1s ease, border-color .1s ease, opacity .12s ease;
+  touch-action: none;                 /* the card doubles as a drag handle */
+}
+.nx-board-card.has-state { border-left: 2px solid color-mix(in srgb, var(--nx-state) 70%, transparent); }
+.nx-board-card:hover { border-color: var(--nx-state); transform: translateY(-1px); }
+.nx-board-card.is-dragging { opacity: .35; }
+.nx-board-card.is-filtered { display: none; }
+/* Nothing in the subject links here — a dashed left edge, not a second colour
+   that would fight the state colour. */
+.nx-board-card.is-orphan { border-left: 2px dashed color-mix(in srgb, var(--text-faint) 60%, transparent); }
+
+.nx-board-card-top { display: flex; align-items: flex-start; gap: 7px; }
+.nx-board-card-dot {
+  width: 9px; height: 9px; margin-top: 4px; flex-shrink: 0; cursor: pointer;
+  border-radius: 50%; background: var(--nx-state);
+  box-shadow: 0 0 0 3px transparent; transition: box-shadow .12s ease;
+}
+.nx-board-card-dot:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--nx-state) 28%, transparent); }
+.nx-board-card-title {
+  flex: 1; min-width: 0;
+  font-size: .9em; font-weight: 600; color: var(--text-normal); line-height: 1.3;
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.nx-board-card-excerpt {
+  margin-top: 4px; font-size: .78em; line-height: 1.4; color: var(--text-faint);
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+.nx-board.is-sm .nx-board-card-excerpt { -webkit-line-clamp: 2; }
+.nx-board-card-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 7px; }
+.nx-board-tag, .nx-board-prop {
+  font-size: .68em; padding: 1px 6px; border-radius: 999px;
+  color: var(--text-faint); background: color-mix(in srgb, var(--text-muted) 13%, transparent);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-board-prop { color: var(--text-muted); background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 15%, transparent); }
+.nx-board-links {
+  display: inline-flex; align-items: center; gap: 3px; margin-left: auto;
+  font-size: .7em; color: var(--text-faint); font-variant-numeric: tabular-nums;
+}
+.nx-board-links .svg-icon { width: 11px; height: 11px; }
+.nx-board-links.is-none { opacity: .45; }
+
+/* Hovering a card (or a graph node) reveals its web: everything unrelated
+   steps back instead of the related ones shouting. */
+.nx-board.is-linking .nx-board-card { opacity: .3; }
+.nx-board.is-linking .nx-board-card.is-linked { opacity: 1; border-color: var(--nx-state); }
+
+.nx-board-ghost {
+  position: fixed; z-index: 9999; pointer-events: none;
+  padding: 5px 11px; border-radius: 8px; font-size: .82em;
+  color: var(--text-on-accent); background: var(--interactive-accent);
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+
+/* ── graph ── */
+.nx-board-graph {
+  position: relative; margin-top: 14px;
+  border-radius: var(--radius-m, 10px);
+  border: 1px solid var(--background-modifier-border);
+  background: color-mix(in srgb, var(--background-secondary) 45%, transparent);
+  overflow: hidden;
+}
+.nx-board-graph canvas { display: block; width: 100%; }
+.nx-board-graph-label {
+  position: absolute; left: 10px; bottom: 8px; pointer-events: none;
+  font-size: .76em; color: var(--text-muted);
+  text-shadow: 0 1px 3px var(--background-primary);
+}
+
+.nx-board-empty { padding: 18px; color: var(--text-faint); font-style: italic; font-size: .9em; }
+
+/* Settings: how many notes the chosen folder holds */
+.nx-board-preview { margin: -4px 0 14px; }
+.nx-board-preview-head { font-size: .8em; color: var(--text-muted); }
+
+/* Block reference in the settings tab */
+.nx-board-help {
+  font-family: var(--font-monospace); font-size: .78em; line-height: 1.55;
+  padding: 12px 14px; border-radius: 8px; overflow-x: auto;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-muted); white-space: pre;
+}
+
+/* Narrow pane / phone */
+@media (max-width: 620px) {
+  .nx-board-cols { flex-direction: column; overflow-x: visible; }
+  .nx-board-col { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .nx-board-list { max-height: none; }
+  .nx-board-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
