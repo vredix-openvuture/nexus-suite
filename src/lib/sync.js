@@ -133,18 +133,40 @@ function topoSort(projects) {
 }
 function projIdByName(projName, name) { for (const id in projName) if (projName[id] === name) return id; return null; }
 
-async function rebuildChecklistFor(plugin, projectName, accountId) {
-  const app = plugin.app, lines = [];
+/* Parse a leading YAML frontmatter block straight from file CONTENT. We do NOT
+   use metadataCache here: it lags right after a note is created, so on the FIRST
+   sync every freshly-written task would be missing frontmatter and get dropped
+   from the checklist (→ empty "## Tasks"). Reading content is race-free. */
+function parseFmBlock(text) {
+  const m = String(text || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return {};
+  const fm = {};
+  for (const line of m[1].split(/\r?\n/)) {
+    const i = line.indexOf(':'); if (i < 0) continue;
+    const k = line.slice(0, i).trim(); let v = line.slice(i + 1).trim();
+    if (v && ((v[0] === '"' && v.endsWith('"')) || (v[0] === "'" && v.endsWith("'")))) { try { v = JSON.parse(v); } catch (e) { v = v.slice(1, -1); } }
+    fm[k] = v;
+  }
+  return fm;
+}
+
+/* Rebuild the "## Tasks" checklist of the given projects from the task notes on
+   disk in a single content-based pass (race-free, no metadataCache). */
+async function rebuildChecklists(plugin, projectNames, accountId) {
+  const app = plugin.app, want = new Set(projectNames), byProject = {};
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith(tasks.itemsFolder(plugin) + '/')) continue;
-    const n = readTaskNote(plugin, f);
-    if (!n.provider || n.provider === 'local') continue;   // synced (vikunja/caldav) tasks only
-    if (accountId && n.account && n.account !== accountId) continue;
-    if (parseLink(n.projectLink) !== projectName) continue;
-    lines.push('- [' + (n.done ? 'x' : ' ') + '] [[' + n.key + '|' + (n.title || n.key) + ']] <!-- nx:' + n.key + ' -->');
+    let fm; try { fm = parseFmBlock(await app.vault.read(f)); } catch (e) { continue; }
+    const provider = fm['nexus-provider']; if (!provider || provider === 'local') continue;
+    if (accountId && fm['nexus-account'] && fm['nexus-account'] !== accountId) continue;
+    const pn = parseLink(fm['nexus-project'] || ''); if (!pn || !want.has(pn)) continue;
+    const done = (fm.status === 'completed' || fm.done === true || fm.done === 'true');
+    const key = f.basename, title = fm.title || key;
+    (byProject[pn] = byProject[pn] || []).push('- [' + (done ? 'x' : ' ') + '] [[' + key + '|' + title + ']] <!-- nx:' + key + ' -->');
   }
-  await tasks.rebuildChecklist(plugin, projectName, lines);
+  for (const pn of want) await tasks.rebuildChecklist(plugin, pn, byProject[pn] || []);
 }
+async function rebuildChecklistFor(plugin, projectName, accountId) { await rebuildChecklists(plugin, [projectName], accountId); }
 
 /* ── Full two-way Vikunja sync. Returns {stats, conflicts}. First sync of an
      account is pure PULL (base is empty → nothing is pushed). ── */
@@ -218,7 +240,8 @@ async function syncVikunja(plugin, account, client) {
     } catch (e) { console.error('[Nexus] create remote task failed:', e); }
   }
 
-  for (const pn of touched) await rebuildChecklistFor(plugin, pn, account.id);
+  Object.values(projName).forEach(n => touched.add(n));   // rebuild ALL project checklists (repairs earlier empty ones)
+  await rebuildChecklists(plugin, Array.from(touched), account.id);
   await saveBase(plugin, account.id, base);
   return { stats, conflicts };
 }
@@ -260,6 +283,7 @@ async function syncCaldavTodos(plugin, account, ical, client) {
 
   for (const cal of cals) {
     const projectName = await tasks.upsertProject(plugin, { title: cal.display, provider: 'caldav', remoteId: cal.href, account: account.id });
+    touched.add(projectName);   // rebuild this project's checklist even if no task changed (repairs empty ones)
     let resources; try { resources = await client.listComponents(cal.href, 'VTODO'); } catch (e) { continue; }
     const remoteTasks = {};
     for (const r of resources) {
@@ -319,7 +343,7 @@ async function syncCaldavTodos(plugin, account, ical, client) {
       } catch (e) { console.error('[Nexus] create remote VTODO failed:', e); }
     }
   }
-  for (const pn of touched) await rebuildChecklistFor(plugin, pn, account.id);
+  await rebuildChecklists(plugin, Array.from(touched), account.id);
   await saveBase(plugin, account.id, base);
   return { stats, conflicts };
 }
@@ -327,5 +351,5 @@ async function syncCaldavTodos(plugin, account, ical, client) {
 module.exports = {
   fnv1a, canonical, localHash, reconcile, stripFrontmatter, readTaskNote, writeTaskNote, taskKey,
   loadBase, saveBase, baseIndexPath, CANON_FIELDS,
-  syncVikunja, syncCaldavTodos, applyResolution, rebuildChecklistFor,
+  syncVikunja, syncCaldavTodos, applyResolution, rebuildChecklistFor, rebuildChecklists,
 };
