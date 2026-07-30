@@ -89,13 +89,30 @@ function readTaskNote(plugin, file) {
   };
 }
 
-/* ── write / overwrite a synced task note (provider-generic: vikunja | caldav) ── */
+/* ── find a synced task note by its remote identity (not by file name) ── */
+function findTaskNote(plugin, provider, account, remoteId) {
+  const items = tasks.itemsFolder(plugin) + '/';
+  const want = String(remoteId);
+  for (const f of plugin.app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(items)) continue;
+    const fm = (plugin.app.metadataCache.getFileCache(f) || {}).frontmatter || {};
+    if (fm['nexus-type'] !== 'task' || (fm['nexus-provider'] || '') !== provider) continue;
+    if (account && fm['nexus-account'] && String(fm['nexus-account']) !== String(account)) continue;
+    if (String(fm['nexus-id'] == null ? '' : fm['nexus-id']) === want) return f;
+  }
+  return null;
+}
+
+/* ── write / overwrite a synced task note (provider-generic: vikunja | caldav) ──
+     The note is named after its TITLE and renamed when the title changes on the
+     server; the id lives in the frontmatter. Identity therefore never depends
+     on the file name — callers hand over the known file, and the lookups below
+     only catch the leftovers (crash mid-sync, notes from the id-named era). */
 function taskKey(provider, id) { return (provider === 'caldav' ? 'cd-' : 'vk-') + String(id).replace(/[^\w.-]+/g, '_'); }
-async function writeTaskNote(plugin, remote, projectName) {
+async function writeTaskNote(plugin, remote, projectName, existing) {
   const app = plugin.app;
   const provider = remote.provider || 'vikunja';
   const key = taskKey(provider, remote.remoteId);
-  const path = tasks.taskPath(plugin, key);
   const lines = ['---', 'nexus-type: task', 'nexus-provider: ' + provider,
     'nexus-account: ' + (remote.account || ''),
     'nexus-id: ' + JSON.stringify(String(remote.remoteId)),
@@ -106,14 +123,29 @@ async function writeTaskNote(plugin, remote, projectName) {
     'status: ' + (remote.done ? 'completed' : 'needs-action'),
     'due: ' + (remote.due || ''), 'priority: ' + (remote.priority || 0),
     'repeat: ' + (remote.repeat || ''), '---', '', (remote.description || ''));
-  const fm = lines.join('\n');
-  let file = app.vault.getAbstractFileByPath(path);
+  const body = lines.join('\n');
+  const title = tasks.sanitize(remote.title || '') || key;
+  let file = existing instanceof TFile ? existing : null;
+  if (!file) file = findTaskNote(plugin, provider, remote.account, remote.remoteId);
+  if (!file) {
+    // notes written before task notes were named after their title
+    const legacy = app.vault.getAbstractFileByPath(tasks.taskPath(plugin, key));
+    if (legacy instanceof TFile) file = legacy;
+  }
   plugin._taskWriting = true;
   try {
-    if (file) await app.vault.modify(file, fm);
-    else { await tasks.ensureItemsFolder(plugin); file = await app.vault.create(path, fm); }
+    if (file) {
+      const want = tasks.freeTaskPath(plugin, title, file);
+      // renameFile also rewrites the link in the project checklist — that's why
+      // a title change on the server doesn't strand the checklist line
+      if (want !== file.path) { try { await app.fileManager.renameFile(file, want); } catch (e) {} }
+      await app.vault.modify(file, body);
+    } else {
+      await tasks.ensureItemsFolder(plugin);
+      file = await app.vault.create(tasks.freeTaskPath(plugin, title), body);
+    }
   } finally { plugin._taskWriting = false; }
-  return { key, file };
+  return { key: file.basename, file };
 }
 
 /* ── base index (per account) under the data dir ── */
@@ -150,30 +182,93 @@ function parseFmBlock(text) {
   return fm;
 }
 
+/* Has the server seen this note in its current shape? True only when the sync
+   base still matches what's on disk — i.e. nothing changed here since the last
+   successful exchange. That is the condition for hiding a completed task: a tick
+   the server hasn't got yet must stay visible and revocable. */
+function isSynced(fm, text, basename, base) {
+  if (!base) return false;
+  const id = String(fm['nexus-id'] == null ? '' : fm['nexus-id']);
+  if (!id) return false;
+  const b = base[id];
+  if (!b) return false;
+  return b.localHash === localHash({
+    title: fm.title || basename,
+    description: stripFrontmatter(text).trim(),
+    due: fm.due || '',
+    priority: parseInt(fm.priority, 10) || 0,
+    done: (fm.status === 'completed' || fm.done === true || fm.done === 'true'),
+    repeat: fm.repeat || '',
+  });
+}
+
 /* Rebuild the "## Tasks" checklist of the given projects from the task notes on
-   disk in a single content-based pass (race-free, no metadataCache). */
-async function rebuildChecklists(plugin, projectNames, accountId) {
+   disk in a single content-based pass (race-free, no metadataCache). Completed
+   tasks drop out of the list once the server has them (see isSynced). */
+async function rebuildChecklists(plugin, projectNames, accountId, base) {
   const app = plugin.app, want = new Set(projectNames), byProject = {};
   for (const f of app.vault.getMarkdownFiles()) {
     if (!f.path.startsWith(tasks.itemsFolder(plugin) + '/')) continue;
-    let fm; try { fm = parseFmBlock(await app.vault.read(f)); } catch (e) { continue; }
+    let text; try { text = await app.vault.read(f); } catch (e) { continue; }
+    const fm = parseFmBlock(text);
     const provider = fm['nexus-provider']; if (!provider || provider === 'local') continue;
     if (accountId && fm['nexus-account'] && fm['nexus-account'] !== accountId) continue;
     const pn = parseLink(fm['nexus-project'] || ''); if (!pn || !want.has(pn)) continue;
     const done = (fm.status === 'completed' || fm.done === true || fm.done === 'true');
-    const key = f.basename, title = fm.title || key;
-    (byProject[pn] = byProject[pn] || []).push('- [' + (done ? 'x' : ' ') + '] [[' + key + '|' + title + ']] <!-- nx:' + key + ' -->');
+    if (done && isSynced(fm, text, f.basename, base)) continue;
+    const title = fm.title || f.basename;
+    (byProject[pn] = byProject[pn] || []).push({ done, title, line: tasks.checklistLine(f.basename, title, done) });
   }
-  for (const pn of want) await tasks.rebuildChecklist(plugin, pn, byProject[pn] || []);
+  // Stable order (open first, then A–Z): the vault's file order would reshuffle
+  // the section on every sync and turn each one into a pointless diff.
+  for (const pn of want) {
+    const rows = (byProject[pn] || []).sort((a, b) => (a.done - b.done) || a.title.localeCompare(b.title));
+    await tasks.rebuildChecklist(plugin, pn, rows.map(r => r.line));
+  }
 }
-async function rebuildChecklistFor(plugin, projectName, accountId) { await rebuildChecklists(plugin, [projectName], accountId); }
+async function rebuildChecklistFor(plugin, projectName, accountId, base) { await rebuildChecklists(plugin, [projectName], accountId, base); }
+
+/* ── Vikunja project background → the project note's banner ──
+     Vikunja lets a project carry a background image; the project note is the
+     same project, so it gets the same picture. Downloaded once per project
+     (missing file = fetch, present = keep) and never applied over a banner the
+     user set themselves. Failure is silent: a picture must not fail a sync. ── */
+async function ensureProjectBanner(plugin, account, client, proj, projectName) {
+  if (!proj || !proj.hasBackground || !projectName) return false;
+  const app = plugin.app;
+  const pFile = app.vault.getAbstractFileByPath(tasks.projectPath(plugin, projectName));
+  if (!(pFile instanceof TFile)) return false;
+  const cur = ((app.metadataCache.getFileCache(pFile) || {}).frontmatter || {}).banner;
+  const folder = ((plugin.settings.banner && plugin.settings.banner.folder) || 'attachments/banners').replace(/\/+$/, '');
+  const path = folder + '/vikunja-' + account.id + '-' + proj.remoteId + '.jpg';
+  let img = app.vault.getAbstractFileByPath(path);
+  if (!img) {
+    if (cur) return false;                       // user picked their own — don't even download
+    let buf;
+    try { buf = await client.getBackground(proj.remoteId); } catch (e) { return false; }
+    if (!buf || !buf.byteLength) return false;
+    const ad = app.vault.adapter;
+    let curDir = '';
+    for (const part of folder.split('/')) {
+      curDir = curDir ? curDir + '/' + part : part;
+      try { if (!(await ad.exists(curDir))) await ad.mkdir(curDir); } catch (e) {}
+    }
+    try { img = await app.vault.createBinary(path, buf); } catch (e) { return false; }
+  }
+  if (cur) return false;
+  plugin._taskWriting = true;
+  try { await app.fileManager.processFrontMatter(pFile, fm => { fm.banner = path; }); }
+  catch (e) { return false; }
+  finally { plugin._taskWriting = false; }
+  return true;
+}
 
 /* ── Full two-way Vikunja sync. Returns {stats, conflicts}. First sync of an
      account is pure PULL (base is empty → nothing is pushed). ── */
 async function syncVikunja(plugin, account, client) {
   const app = plugin.app;
   const base = await loadBase(plugin, account.id);
-  const stats = { pulled: 0, pushed: 0, created: 0, deleted: 0, conflicts: 0, skipped: 0 };
+  const stats = { pulled: 0, pushed: 0, created: 0, deleted: 0, conflicts: 0, skipped: 0, banners: 0 };
   const conflicts = [];
 
   const projects = (await client.listProjects()).map(vik.mapProjectFromApi).filter(p => !p.archived);
@@ -181,7 +276,8 @@ async function syncVikunja(plugin, account, client) {
   const projName = {};
   for (const p of topoSort(projects)) {
     const parentName = p.parentId && projById[p.parentId] ? projName[p.parentId] : null;
-    projName[p.remoteId] = await tasks.upsertProject(plugin, { title: p.title, parentName, provider: 'vikunja', remoteId: p.remoteId, account: account.id });
+    projName[p.remoteId] = await tasks.upsertProject(plugin, { title: p.title, parentName, provider: 'vikunja', remoteId: p.remoteId, account: account.id, color: p.color });
+    try { if (await ensureProjectBanner(plugin, account, client, p, projName[p.remoteId])) stats.banners++; } catch (e) {}
   }
 
   const remoteTasks = {};
@@ -207,14 +303,14 @@ async function syncVikunja(plugin, account, client) {
     const dec = reconcile(local, remote, b);
     const pn = nameFor(remote, local);
     if (dec.action === 'pull' || dec.action === 'create-local') {
-      await writeTaskNote(plugin, remote, pn);
+      await writeTaskNote(plugin, remote, pn, local && local.file);
       base[id] = { localHash: localHash(remote), remoteTag: remote.updated };
       touched.add(pn); stats[dec.action === 'pull' ? 'pulled' : 'created']++;
     } else if (dec.action === 'push') {
       const updated = await client.updateTask(id, vik.mapTaskToApi(local));
       const m = vik.mapTaskFromApi(updated); m.account = account.id;
       const pn2 = projName[m.projectId] || pn;
-      await writeTaskNote(plugin, m, pn2);
+      await writeTaskNote(plugin, m, pn2, local && local.file);
       base[id] = { localHash: localHash(m), remoteTag: m.updated };
       touched.add(pn2); stats.pushed++;
     } else if (dec.action === 'delete-local') {
@@ -232,16 +328,17 @@ async function syncVikunja(plugin, account, client) {
     try {
       const created = await client.createTask(pid, vik.mapTaskToApi(n));
       const m = vik.mapTaskFromApi(created); m.account = account.id;
-      if (n.file) { plugin._taskWriting = true; try { await app.vault.delete(n.file); } catch (e) {} finally { plugin._taskWriting = false; } }
       const pn = projName[m.projectId] || pName;
-      await writeTaskNote(plugin, m, pn);
+      // reuse the very note the user typed into — deleting and re-creating it
+      // would break its links and lose anything they wrote in the body
+      await writeTaskNote(plugin, m, pn, n.file);
       base[m.remoteId] = { localHash: localHash(m), remoteTag: m.updated };
       touched.add(pn); stats.created++;
     } catch (e) { console.error('[Nexus] create remote task failed:', e); }
   }
 
   Object.values(projName).forEach(n => touched.add(n));   // rebuild ALL project checklists (repairs earlier empty ones)
-  await rebuildChecklists(plugin, Array.from(touched), account.id);
+  await rebuildChecklists(plugin, Array.from(touched), account.id, base);
   await saveBase(plugin, account.id, base);
   return { stats, conflicts };
 }
@@ -250,7 +347,7 @@ async function syncVikunja(plugin, account, client) {
 async function applyResolution(plugin, account, client, rec, choice) {
   const base = await loadBase(plugin, account.id);
   if (choice === 'server' && rec.remote) {
-    await writeTaskNote(plugin, rec.remote, rec.projectName);
+    await writeTaskNote(plugin, rec.remote, rec.projectName, rec.local && rec.local.file);
     base[rec.id] = { localHash: localHash(rec.remote), remoteTag: rec.remote.updated };
   } else if (choice === 'mine' && rec.local) {
     let m;
@@ -262,11 +359,11 @@ async function applyResolution(plugin, account, client, rec, choice) {
       const updated = await client.updateTask(rec.id, vik.mapTaskToApi(rec.local));
       m = vik.mapTaskFromApi(updated); m.account = account.id;
     }
-    await writeTaskNote(plugin, m, rec.projectName);
+    await writeTaskNote(plugin, m, rec.projectName, rec.local && rec.local.file);
     base[rec.id] = { localHash: localHash(m), remoteTag: m.updated };
   }
   await saveBase(plugin, account.id, base);
-  await rebuildChecklistFor(plugin, rec.projectName, account.id);
+  await rebuildChecklistFor(plugin, rec.projectName, account.id, base);
 }
 
 /* ── Full two-way CalDAV VTODO sync (Nextcloud Tasks / generic). Each enabled
@@ -311,7 +408,7 @@ async function syncCaldavTodos(plugin, account, ical, client) {
       const remote = remoteTasks[id] || null, local = localByRemote[id] || null, b = base[id] || null;
       const dec = reconcile(local, remote, b);
       if (dec.action === 'pull' || dec.action === 'create-local') {
-        await writeTaskNote(plugin, remote, projectName);
+        await writeTaskNote(plugin, remote, projectName, local && local.file);
         base[id] = { localHash: localHash(remote), remoteTag: remote.updated };
         touched.add(projectName); stats[dec.action === 'pull' ? 'pulled' : 'created']++;
       } else if (dec.action === 'push') {
@@ -320,7 +417,7 @@ async function syncCaldavTodos(plugin, account, ical, client) {
         if (put.status === 412) { conflicts.push({ account: account.id, id, projectName, local, remote, reason: 'precondition', ical }); stats.conflicts++; }
         else {
           const m = { provider: 'caldav', account: account.id, remoteId: id, href: local.href, updated: put.etag || '', title: local.title, description: local.description, due: local.due, priority: local.priority, done: local.done, repeat: local.repeat, projectName };
-          await writeTaskNote(plugin, m, projectName);
+          await writeTaskNote(plugin, m, projectName, local.file);
           base[id] = { localHash: localHash(m), remoteTag: m.updated }; touched.add(projectName); stats.pushed++;
         }
       } else if (dec.action === 'delete-local') {
@@ -336,20 +433,21 @@ async function syncCaldavTodos(plugin, account, ical, client) {
       const url = cal.href.replace(/\/$/, '') + '/' + uid + '.ics';
       try {
         const put = await client.putResource(url, ics, null);
-        if (n.file) { plugin._taskWriting = true; try { await app.vault.delete(n.file); } catch (e) {} finally { plugin._taskWriting = false; } }
         const m = { provider: 'caldav', account: account.id, remoteId: uid, href: url, updated: put.etag || '', title: n.title, description: n.description, due: n.due, priority: n.priority, done: n.done, repeat: n.repeat, projectName };
-        await writeTaskNote(plugin, m, projectName);
+        await writeTaskNote(plugin, m, projectName, n.file);
         base[uid] = { localHash: localHash(m), remoteTag: m.updated }; touched.add(projectName); stats.created++;
       } catch (e) { console.error('[Nexus] create remote VTODO failed:', e); }
     }
   }
-  await rebuildChecklists(plugin, Array.from(touched), account.id);
+  await rebuildChecklists(plugin, Array.from(touched), account.id, base);
   await saveBase(plugin, account.id, base);
   return { stats, conflicts };
 }
 
 module.exports = {
   fnv1a, canonical, localHash, reconcile, stripFrontmatter, readTaskNote, writeTaskNote, taskKey,
+  findTaskNote, isSynced,
   loadBase, saveBase, baseIndexPath, CANON_FIELDS,
   syncVikunja, syncCaldavTodos, applyResolution, rebuildChecklistFor, rebuildChecklists,
+  ensureProjectBanner,
 };

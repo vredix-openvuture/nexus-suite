@@ -1,0 +1,135 @@
+/* ── AGENDA BLOCK ──────────────────────────────────────────────────────────
+   Rendered from a ```nexus-agenda``` block — one day (events, tasks, backlinks)
+   inside an ordinary note. Sits in a daily note, so it stays quiet: no card
+   frame, just typed rows that read as part of the note. */
+.nx-agenda {
+  --nx-ag-dot: var(--interactive-accent);
+  --nx-ag-edge: var(--background-modifier-border);
+  margin: 0.6em 0 1em;
+  font-size: 0.94em;
+}
+
+/* Obsidian's hover frame + "</>" button would sit right on the block's tools. */
+.cm-preview-code-block:has(.nx-agenda),
+.cm-embed-block:has(.nx-agenda),
+.markdown-rendered .el-pre:has(.nx-agenda) {
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+.cm-preview-code-block:has(.nx-agenda):hover,
+.cm-embed-block:has(.nx-agenda):hover { box-shadow: none !important; }
+.cm-preview-code-block:has(.nx-agenda) .edit-block-button,
+.cm-embed-block:has(.nx-agenda) .edit-block-button,
+.markdown-rendered .el-pre:has(.nx-agenda) .edit-block-button { display: none !important; }
+
+/* ── head ── */
+.nx-ag-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 8px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--nx-ag-edge);
+}
+.nx-ag-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.nx-ag-date {
+  font-family: var(--font-text, inherit);
+  font-weight: 600; font-size: 1.1em; color: var(--text-normal);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-ag-badge {
+  flex: none;
+  font-size: .66em; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 999px;
+  color: var(--text-on-accent); background: var(--interactive-accent);
+}
+.nx-ag-tools { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.nx-ag-tool {
+  display: inline-flex; padding: 4px; border-radius: 6px;
+  color: var(--text-faint); cursor: pointer;
+}
+.nx-ag-tool:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-ag-tool .svg-icon { width: 15px; height: 15px; }
+
+/* ── sections ── */
+.nx-ag-body { display: flex; flex-direction: column; gap: 16px; }
+.nx-ag-sec { display: flex; flex-direction: column; gap: 1px; }
+.nx-ag-h {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 5px;
+}
+.nx-ag-count {
+  font-size: .92em; font-weight: 600; letter-spacing: 0;
+  padding: 0 6px; border-radius: 999px;
+  color: var(--text-faint); background: var(--background-modifier-hover);
+}
+.nx-ag-empty { font-size: .88em; color: var(--text-faint); padding: 2px 0 4px; }
+.nx-ag-note {
+  font-size: .85em; color: var(--text-muted);
+  padding: 8px 11px; border-radius: 6px;
+  background: var(--background-modifier-hover);
+}
+
+/* ── rows ── */
+.nx-ag-row {
+  display: flex; align-items: baseline; gap: 9px;
+  padding: 5px 7px; margin: 0 -7px;
+  border-radius: 6px; cursor: pointer;
+  transition: background 90ms ease;
+}
+.nx-ag-row:hover { background: var(--background-modifier-hover); }
+.nx-ag-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px; min-width: 0; flex: 1; }
+.nx-ag-text { color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; }
+.nx-ag-meta { display: flex; align-items: baseline; gap: 8px; font-size: .8em; color: var(--text-faint); }
+.nx-ag-chip {
+  flex: none;
+  font-size: .74em; padding: 1px 8px; border-radius: 999px;
+  color: var(--text-muted); background: var(--background-modifier-hover);
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-ag-chip.is-project:hover { color: var(--text-normal); background: var(--background-modifier-border); }
+
+/* events: fixed time column so the day reads as a timeline, not a list */
+.nx-ag-time {
+  flex: none; width: 5.9em;
+  font-size: .8em; font-variant-numeric: tabular-nums;
+  color: var(--text-muted); text-align: right;
+}
+.nx-ag-dot {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--nx-ag-dot); align-self: center;
+}
+
+/* tasks */
+.nx-ag-check {
+  flex: none; align-self: center; margin: 0;
+  cursor: pointer;
+}
+.nx-ag-task.is-done .nx-ag-text { text-decoration: line-through; color: var(--text-faint); }
+.nx-ag-task.is-busy { opacity: .5; }
+.nx-ag-overdue { color: var(--text-error, #e5534b); font-weight: 600; }
+.nx-ag-rep { display: inline-flex; align-self: center; }
+.nx-ag-rep .svg-icon { width: 12px; height: 12px; }
+.nx-ag-prio { font-weight: 600; }
+.nx-ag-prio.is-high { color: var(--text-error, #e5534b); }
+.nx-ag-prio.is-medium { color: var(--text-warning, #d29922); }
+.nx-ag-prio.is-low { color: var(--text-faint); }
+
+/* linked notes */
+.nx-ag-link {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 7px; margin: 0 -7px;
+  border-radius: 6px; cursor: pointer;
+}
+.nx-ag-link:hover { background: var(--background-modifier-hover); }
+.nx-ag-link-ic { display: inline-flex; color: var(--text-faint); }
+.nx-ag-link-ic .svg-icon { width: 14px; height: 14px; }
+.nx-ag-link-name { color: var(--text-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-ag-link-path { font-size: .76em; color: var(--text-faint); margin-left: auto; }
+
+/* ── narrow panes / mobile: the time column eats too much width ── */
+@media (max-width: 620px) {
+  .nx-ag-time { width: auto; min-width: 4.4em; text-align: left; }
+  .nx-ag-chip { max-width: 55%; }
+  .nx-ag-row { gap: 7px; }
+}

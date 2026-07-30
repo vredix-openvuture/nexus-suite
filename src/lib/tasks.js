@@ -11,7 +11,7 @@
  *  REST) plug into the SAME notes via the sync engine in later milestones.
  * ========================================================================== */
 
-const { moment, TFile } = require('obsidian');
+const { MarkdownView, Notice, moment, TFile } = require('obsidian');
 
 function key() { return 't-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 function sanitize(name) { return String(name || '').replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -19,7 +19,48 @@ function sanitize(name) { return String(name || '').replace(/[\\/:*?"<>|#^[\]]+/
 function projectsFolder(plugin) { return (plugin.settings.tasksCalendar.tasks.projectsFolder || 'Tasks/Projects').replace(/\/+$/, ''); }
 function itemsFolder(plugin) { return (plugin.settings.tasksCalendar.tasks.itemsFolder || 'Tasks/Items').replace(/\/+$/, ''); }
 function projectPath(plugin, name) { return projectsFolder(plugin) + '/' + sanitize(name) + '.md'; }
+/* `k` is a task note's FILE NAME (its title). Ids live in the frontmatter — a
+   note called after its own key is unreadable in the explorer, the graph and
+   every link that points at it. */
 function taskPath(plugin, k) { return itemsFolder(plugin) + '/' + k + '.md'; }
+
+/* Free path for a task note titled `title`. Two tasks may legitimately share a
+   title (different projects), so collisions get a counter rather than merging
+   two tasks into one note. `ignore` = the note being renamed, which must not
+   count as its own collision. */
+function freeTaskPath(plugin, title, ignore) {
+  const base = sanitize(title) || 'Task';
+  const folder = itemsFolder(plugin);
+  for (let i = 1; i < 500; i++) {
+    const path = folder + '/' + (i === 1 ? base : base + ' ' + i) + '.md';
+    const ex = plugin.app.vault.getAbstractFileByPath(path);
+    if (!ex || ex === ignore) return path;
+  }
+  return folder + '/' + base + ' ' + Date.now().toString(36) + '.md';
+}
+
+/* ── one checklist line: `- [ ] [[Note name|Title]]` ──
+     The link target IS the identity — no `<!-- nx:id -->` marker any more. */
+function checklistLine(noteName, title, done, indent) {
+  const alias = title && title !== noteName ? '|' + sanitize(title) : '';
+  return (indent || '') + '- [' + (done ? 'x' : ' ') + '] [[' + noteName + alias + ']]';
+}
+function linkRe(noteName) {
+  return new RegExp('\\[\\[' + noteName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\||\\]\\])');
+}
+/* first wikilink of a checklist line → {link, alias} */
+function parseTaskLine(line) {
+  const m = String(line).match(/^(\s*)- \[( |x|X)\]\s*(.*)$/);
+  if (!m) return null;
+  const rest = m[3];
+  const link = rest.match(/\[\[([^\]|#]+)(?:\|([^\]]*))?\]\]/);
+  return {
+    indent: m[1], done: m[2].toLowerCase() === 'x', rest,
+    link: link ? link[1].trim() : '', alias: link && link[2] ? link[2].trim() : '',
+    // legacy notes still carry the old marker — read it, never write it
+    legacyKey: (rest.match(/<!-- nx:([\w.-]+) -->/) || [])[1] || '',
+  };
+}
 
 async function ensureFolder(plugin, path) {
   const ad = plugin.app.vault.adapter;
@@ -69,45 +110,86 @@ async function _linkSubproject(plugin, parentName, childName) {
   await app.vault.modify(pFile, text);
 }
 
-/* ── create a task note + append it to its project's checklist ── */
+/* ── create a task note + append it to its project's checklist ──
+     opts.provider/account let a task inherit its project's remote binding: a
+     task note carrying a provider but NO `nexus-id` is exactly what the sync
+     engine treats as "new here, push it" (see sync.js localNew). */
 async function createTask(plugin, projectName, opts) {
   const app = plugin.app;
   opts = opts || {};
-  const k = key();
+  const title = sanitize(opts.title) || 'Untitled';
+  const provider = opts.provider || 'local';
   await ensureFolder(plugin, itemsFolder(plugin));
-  const fm = ['---', 'nexus-type: task', 'nexus-provider: local', 'nexus-id: ' + k,
+  const lines = ['---', 'nexus-type: task', 'nexus-provider: ' + provider];
+  if (opts.account) lines.push('nexus-account: ' + opts.account);
+  // local ids are ours to invent; a remote task has no id until the server gave one
+  lines.push('nexus-id: ' + (provider === 'local' ? key() : ''),
     'nexus-project: "[[' + sanitize(projectName) + ']]"',
+    'title: ' + JSON.stringify(title),
     'status: ' + (opts.status || 'needs-action'),
     'due: ' + (opts.due || ''),
     'priority: ' + (opts.priority != null ? opts.priority : 0),
     'repeat: ' + (opts.repeat || ''),
-    'completed: ', '---', '', (opts.description || '')].join('\n');
-  const file = await app.vault.create(taskPath(plugin, k), fm);
-  await addTaskToProject(plugin, projectName, k, opts.title || 'Untitled', false);
-  return { key: k, file };
+    'completed: ', '---', '', (opts.description || ''));
+  const file = await app.vault.create(freeTaskPath(plugin, title), lines.join('\n'));
+  if (!opts.skipChecklist) await addTaskToProject(plugin, projectName, file.basename, title, false);
+  return { key: file.basename, file };
 }
 
 /* ── append a checklist line to the project's "## Tasks" section ── */
-async function addTaskToProject(plugin, projectName, k, title, done) {
+async function addTaskToProject(plugin, projectName, noteName, title, done) {
   const app = plugin.app;
   let pFile = app.vault.getAbstractFileByPath(projectPath(plugin, projectName));
   if (!pFile) pFile = await createProject(plugin, projectName);
-  const line = '- [' + (done ? 'x' : ' ') + '] [[' + k + '|' + sanitize(title) + ']] <!-- nx:' + k + ' -->';
   let text = await app.vault.read(pFile);
-  if (text.includes('<!-- nx:' + k + ' -->')) return;
+  if (linkRe(noteName).test(text)) return;
+  const line = checklistLine(noteName, title, done);
   if (text.includes('## Tasks')) text = text.replace(/## Tasks\n/, '## Tasks\n' + line + '\n');
   else text += '\n## Tasks\n' + line + '\n';
   plugin._taskWriting = true;
   try { await app.vault.modify(pFile, text); } finally { plugin._taskWriting = false; }
 }
 
-/* ── read a task note's frontmatter via the metadata cache ── */
-function taskState(plugin, k) {
+/* ── tick/untick a task's checkbox in its project note ──
+     For callers that complete a task somewhere else (agenda block, a view):
+     the project note is the human-readable record, so its box must not be left
+     disagreeing with the task note. Silent no-op when the line isn't there. */
+async function setChecklistBox(plugin, projectName, noteName, done) {
   const app = plugin.app;
-  const file = app.vault.getAbstractFileByPath(taskPath(plugin, k));
-  if (!file) return null;
-  const fm = (app.metadataCache.getFileCache(file) || {}).frontmatter || {};
-  return { file, status: fm.status || 'needs-action', due: fm.due || '', repeat: fm.repeat || '', priority: fm.priority || 0, done: (fm.status === 'completed') };
+  const file = app.vault.getAbstractFileByPath(projectPath(plugin, projectName));
+  if (!(file instanceof TFile)) return false;
+  const text = await app.vault.read(file);
+  const lines = text.split('\n');
+  const want = linkRe(noteName);
+  let hit = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const p = parseTaskLine(lines[i]);
+    if (!p) continue;
+    if (p.link === noteName || (!p.link && p.legacyKey === noteName) || want.test(lines[i])) { hit = i; break; }
+  }
+  if (hit < 0) return false;
+  const cur = parseTaskLine(lines[hit]);
+  if (cur.done === !!done) return false;
+  lines[hit] = lines[hit].replace(/- \[( |x|X)\]/, '- [' + (done ? 'x' : ' ') + ']');
+  plugin._taskWriting = true;
+  try { await app.vault.modify(file, lines.join('\n')); } finally { plugin._taskWriting = false; }
+  return true;
+}
+
+/* ── read a task note's frontmatter via the metadata cache ── */
+function taskStateOf(plugin, file) {
+  if (!(file instanceof TFile)) return null;
+  const fm = (plugin.app.metadataCache.getFileCache(file) || {}).frontmatter || {};
+  if (fm['nexus-type'] !== 'task') return null;
+  return {
+    file, title: fm.title || file.basename,
+    provider: fm['nexus-provider'] || 'local', account: fm['nexus-account'] || '',
+    status: fm.status || 'needs-action', due: fm.due || '', repeat: fm.repeat || '',
+    priority: fm.priority || 0, done: (fm.status === 'completed'),
+  };
+}
+function taskState(plugin, k) {
+  return taskStateOf(plugin, plugin.app.vault.getAbstractFileByPath(taskPath(plugin, k)));
 }
 
 /* ── set a task done/undone. A repeating task advances its due instead. ──
@@ -136,45 +218,138 @@ async function setTaskDone(plugin, k, done) {
   return { repeated, newDue };
 }
 
-/* ── vault.on('modify') handler: a project note's checkboxes changed → apply.
-     Repeating tasks that got checked are advanced + the box reset to [ ]. ── */
+/* ── vault.on('modify') handler for a project note. Three jobs, all read off
+     the checklist under "## Tasks":
+       · a box that disagrees with its task note → apply it (a repeating task
+         advances its due date and the box goes back to unchecked)
+       · a hand-written line with no task behind it → CREATE the task: write the
+         note, inherit the project's provider/account, turn the line into a link
+         (a remote project then gets the task pushed on the next sync)
+       · legacy `<!-- nx:id -->` markers disappear from any line we rewrite
+     A line linking to a note that exists but isn't a task is left alone — a
+     project note may hold ordinary checklists too. ── */
 async function onProjectNoteModify(plugin, file) {
   if (plugin._taskWriting) return;
   if (!(file instanceof TFile) || file.extension !== 'md') return;
   const app = plugin.app;
   const cache = app.metadataCache.getFileCache(file) || {};
-  if (!cache.frontmatter || cache.frontmatter['nexus-type'] !== 'project') return;
+  const pfm = cache.frontmatter;
+  if (!pfm || pfm['nexus-type'] !== 'project') return;
 
-  let text = await app.vault.read(file);
-  const lineRe = /^(\s*)- \[( |x|X)\] (.*?)<!-- nx:([\w-]+) -->/gm;
-  const changes = [];
-  let m;
-  while ((m = lineRe.exec(text)) !== null) {
-    const checked = m[2].toLowerCase() === 'x';
-    const k = m[4];
-    const st = taskState(plugin, k);
-    if (!st) continue;
-    if (checked !== st.done) changes.push({ k, checked, full: m[0], indent: m[1], mid: m[3] });
-  }
-  if (!changes.length) return;
+  const projectName = file.basename;
+  const provider = pfm['nexus-provider'] || 'local';
+  const account = pfm['nexus-account'] || '';
+  const lines = (await app.vault.read(file)).split('\n');
+  const changed = [];
+  let rewrite = false, created = 0, inTasks = false;
 
-  let rewrite = false;
-  for (const ch of changes) {
-    const res = await setTaskDone(plugin, ch.k, ch.checked);
-    if (res.repeated && ch.checked) {
-      // reset the box to unchecked in the project note
-      const resetLine = ch.indent + '- [ ] ' + ch.mid + '<!-- nx:' + ch.k + ' -->';
-      text = text.replace(ch.full, resetLine);
-      rewrite = true;
+  // Obsidian saves while you type, so the line under the cursor is still being
+  // written — turning THAT into a task would make a note out of every half word.
+  // It becomes one as soon as the cursor leaves it.
+  const view = app.workspace.getActiveViewOfType(MarkdownView);
+  const editor = view && view.file === file && view.editor ? view.editor : null;
+  const typingLine = editor ? editor.getCursor().line : -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const head = lines[i].match(/^#{1,6}\s+(.*)$/);
+    if (head) { inTasks = /^tasks\b/i.test(head[1].trim()); continue; }
+    const p = parseTaskLine(lines[i]);
+    if (!p) continue;
+
+    const noteName = p.link || p.legacyKey;
+    const dest = noteName ? app.metadataCache.getFirstLinkpathDest(noteName, file.path) : null;
+    const st = dest ? taskStateOf(plugin, dest) : null;
+
+    if (st) {
+      if (p.done !== st.done) {
+        const res = await setTaskDone(plugin, dest.basename, p.done);
+        // a repeat rolls forward instead of closing → the box goes back to open
+        const box = res.repeated && p.done ? false : p.done;
+        const next = checklistLine(dest.basename, st.title, box, p.indent);
+        if (next !== lines[i]) { lines[i] = next; changed.push(i); rewrite = true; }
+      } else if (p.legacyKey) {
+        const next = checklistLine(dest.basename, st.title, p.done, p.indent);
+        if (next !== lines[i]) { lines[i] = next; changed.push(i); rewrite = true; }
+      }
+      continue;
     }
+    if (dest) continue;                      // links somewhere else — not ours
+    if (!inTasks || i === typingLine) continue;   // only "## Tasks", never mid-typing
+
+    const title = sanitize(p.rest.replace(/<!--[\s\S]*?-->/g, '').replace(/[[\]]/g, ' '));
+    if (!title) continue;
+    try {
+      const res = await createTask(plugin, projectName, {
+        title, provider, account, skipChecklist: true,
+        status: p.done ? 'completed' : 'needs-action',
+      });
+      lines[i] = checklistLine(res.file.basename, title, p.done, p.indent);
+      changed.push(i); rewrite = true; created++;
+    } catch (e) { console.error('[nexus-suite] create task from checklist line', e); }
   }
+
   if (rewrite) {
     plugin._taskWriting = true;
-    try { await app.vault.modify(file, text); } finally { plugin._taskWriting = false; }
+    try {
+      // Writing through the editor when the note is open keeps the cursor and
+      // the undo history intact — vault.modify would replace the whole document
+      // under the hands of whoever is typing in it.
+      if (editor) changed.forEach(i => { if (editor.getLine(i) !== lines[i]) editor.setLine(i, lines[i]); });
+      else await app.vault.modify(file, lines.join('\n'));
+    } finally { plugin._taskWriting = false; }
+  }
+  if (created) {
+    new Notice(created === 1 ? 'Task created' : created + ' tasks created');
+    // a remote project owns its tasks on the server — get the new ones up there
+    if (provider !== 'local' && plugin.queueTaskSync) plugin.queueTaskSync();
   }
 }
 
 async function ensureItemsFolder(plugin) { await ensureFolder(plugin, itemsFolder(plugin)); }
+
+/* ── one-off migration: task notes used to be named after their id (t-… local,
+     cd-… CalDAV, vk-… Vikunja). Rename each to its title — Obsidian's
+     renameFile rewrites every link in the vault, so the project checklists
+     follow by themselves — then drop the old `<!-- nx:id -->` markers and the
+     now-redundant `[[Name|Name]]` aliases. Ids live on in the frontmatter. ── */
+async function migrateTaskNoteNames(plugin) {
+  const app = plugin.app;
+  const items = itemsFolder(plugin) + '/';
+  let renamed = 0, cleaned = 0;
+
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(items)) continue;
+    const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter || {};
+    if (fm['nexus-type'] !== 'task') continue;
+    const title = sanitize(fm.title || '');
+    if (!title || title === f.basename) continue;
+    const want = freeTaskPath(plugin, title, f);
+    if (want === f.path) continue;
+    plugin._taskWriting = true;
+    try { await app.fileManager.renameFile(f, want); renamed++; }
+    catch (e) { console.error('[nexus-suite] rename task note', f.path, e); }
+    finally { plugin._taskWriting = false; }
+  }
+
+  const projects = projectsFolder(plugin) + '/';
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(projects)) continue;
+    const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter || {};
+    if (fm['nexus-type'] !== 'project') continue;
+    const text = await app.vault.read(f);
+    if (!text.includes('<!-- nx:') && !/\[\[([^\]|#]+)\|\1\]\]/.test(text)) continue;
+    const next = text.split('\n').map(line => {
+      if (!parseTaskLine(line)) return line;
+      return line.replace(/\s*<!--\s*nx:[\w.-]+\s*-->/g, '')
+        .replace(/\[\[([^\]|#]+)\|([^\]]*)\]\]/g, (all, tgt, alias) => (tgt.trim() === alias.trim() ? '[[' + tgt + ']]' : all))
+        .replace(/\s+$/, '');
+    }).join('\n');
+    if (next === text) continue;
+    plugin._taskWriting = true;
+    try { await app.vault.modify(f, next); cleaned++; } finally { plugin._taskWriting = false; }
+  }
+  return { renamed, cleaned };
+}
 
 /* ── upsert a project note by title (stamps a provider + remote id) ── */
 async function upsertProject(plugin, opts) {
@@ -182,12 +357,13 @@ async function upsertProject(plugin, opts) {
   let file = plugin.app.vault.getAbstractFileByPath(projectPath(plugin, name));
   if (!file) file = await createProject(plugin, name, opts.parentName);
   else if (opts.parentName) await _linkSubproject(plugin, opts.parentName, name);
-  if (opts.provider || opts.remoteId != null) {
+  if (opts.provider || opts.remoteId != null || opts.color) {
     plugin._taskWriting = true;
     try { await plugin.app.fileManager.processFrontMatter(file, fm => {
       if (opts.provider) fm['nexus-provider'] = opts.provider;
       if (opts.remoteId != null) fm['nexus-id'] = opts.remoteId;
       if (opts.account) fm['nexus-account'] = opts.account;
+      if (opts.color) fm['nexus-color'] = opts.color;   // provider colour → dot in the tasks view
     }); } finally { plugin._taskWriting = false; }
   }
   return name;
@@ -220,6 +396,50 @@ async function rebuildChecklist(plugin, projectName, lines) {
   try { await app.vault.modify(file, next); } finally { plugin._taskWriting = false; }
 }
 
+/* ── the vault's task/project notes as plain records ──
+     One reader for every consumer (agenda block, tasks view, future queries):
+     the notes stay the source of truth, this is just the projection. ── */
+function linkName(v) {
+  return String(v == null ? '' : v).trim()
+    .replace(/^["']|["']$/g, '').replace(/^\[\[|\]\]$/g, '').split('|')[0].trim();
+}
+function taskRecord(file, fm) {
+  const due = String(fm.due || '').trim();
+  return {
+    file, key: file.basename, title: fm.title || file.basename,
+    project: linkName(fm['nexus-project']),
+    provider: fm['nexus-provider'] || 'local', account: fm['nexus-account'] || '',
+    remoteId: fm['nexus-id'] == null ? '' : String(fm['nexus-id']),
+    done: String(fm.status || '') === 'completed',
+    due, dueDay: due ? due.slice(0, 10) : '', timed: due.length > 10 ? due.slice(11, 16) : '',
+    priority: parseInt(fm.priority, 10) || 0, repeat: String(fm.repeat || ''),
+  };
+}
+function listTasks(plugin) {
+  const app = plugin.app, items = itemsFolder(plugin) + '/', out = [];
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(items)) continue;
+    const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+    if (!fm || fm['nexus-type'] !== 'task') continue;
+    out.push(taskRecord(f, fm));
+  }
+  return out;
+}
+function listProjectNotes(plugin) {
+  const app = plugin.app, folder = projectsFolder(plugin) + '/', out = [];
+  for (const f of app.vault.getMarkdownFiles()) {
+    if (!f.path.startsWith(folder)) continue;
+    const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+    if (!fm || fm['nexus-type'] !== 'project') continue;
+    out.push({
+      file: f, name: f.basename, parent: linkName(fm['nexus-parent']),
+      provider: fm['nexus-provider'] || 'local', account: fm['nexus-account'] || '',
+      color: fm['nexus-color'] || '', banner: fm.banner || '',
+    });
+  }
+  return out;
+}
+
 /* ── list all project notes (for pickers) ── */
 function listProjects(plugin) {
   const folder = projectsFolder(plugin);
@@ -230,8 +450,10 @@ function listProjects(plugin) {
 }
 
 module.exports = {
-  createProject, createTask, addTaskToProject, setTaskDone, taskState,
-  onProjectNoteModify, listProjects, advanceDue,
-  projectPath, taskPath, projectsFolder, itemsFolder,
-  ensureItemsFolder, upsertProject, rebuildChecklist,
+  createProject, createTask, addTaskToProject, setTaskDone, setChecklistBox,
+  taskState, taskStateOf, onProjectNoteModify, listProjects, advanceDue,
+  listTasks, listProjectNotes, taskRecord, linkName,
+  projectPath, taskPath, freeTaskPath, projectsFolder, itemsFolder, sanitize,
+  checklistLine, parseTaskLine, linkRe,
+  ensureItemsFolder, upsertProject, rebuildChecklist, migrateTaskNoteNames,
 };

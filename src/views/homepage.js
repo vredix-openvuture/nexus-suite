@@ -886,12 +886,12 @@ class NexusHomepageView extends ItemView {
     const end = period === 'week' ? today.clone().endOf('isoWeek')
       : today.clone().endOf(period === 'quartal' ? 'quarter' : 'month');
     const cal = parent.createDiv('nx-habit-cal');
-    // Keep cells square AND fit the card in both directions: give the grid a
-    // fixed aspect ratio (7 cols : rows+header) so max-width/max-height scaling
-    // never clips it — no matter how small/flat the widget gets.
+    // Row count (weeks + the weekday header) drives the grid's size in CSS:
+    // width = min(all available width, what the height allows at 7:rows). Keeps
+    // the cells square and fills the card in whichever direction is tighter.
     const leading = start.isoWeekday() - 1;
     const rows = Math.ceil((leading + end.diff(start, 'days') + 1) / 7);
-    cal.style.aspectRatio = '7 / ' + (rows + 1);
+    cal.style.setProperty('--habit-rows', String(rows + 1));
     // weekday header (Mon-based, localised)
     const wd = today.clone().startOf('isoWeek');
     for (let i = 0; i < 7; i++) cal.createDiv({ cls: 'nx-habit-hd', text: wd.clone().add(i, 'days').format('dd') });

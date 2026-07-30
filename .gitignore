@@ -1,8 +1,10 @@
 # Build-Artefakte: entstehen aus src/ via esbuild und wandern nur in GitHub-
 # Releases (dort holt BRAT sie ab). Im Repo wuerden sie bei jedem Build
 # riesige, nutzlose Diffs erzeugen.
-main.js
-styles.css
+# Anchored to the plugin ROOT — an unanchored "main.js" also matched src/main.js
+# and quietly kept the plugin's entry file out of the repo.
+/main.js
+/styles.css
 *.map
 
 # Persoenliche Plugin-Einstellungen dieses Vaults - nichts fuer die Oeffentlichkeit.

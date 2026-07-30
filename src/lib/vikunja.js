@@ -62,6 +62,20 @@ class VikunjaClient {
   createTask(projectId, task) { return this._req('PUT', '/projects/' + projectId + '/tasks', task).then(r => r.json); }
   deleteTask(id) { return this._req('DELETE', '/tasks/' + id).then(() => true); }
   createProject(project) { return this._req('PUT', '/projects', project).then(r => r.json); }
+
+  /* A project's background image (upload provider) as raw bytes, or null when
+     there is none / the fetch fails — a missing banner must never fail a sync. */
+  async getBackground(projectId) {
+    let res;
+    try {
+      res = await requestUrl({
+        url: this.origin + '/api/v1/projects/' + projectId + '/background', method: 'GET',
+        headers: { Authorization: 'Bearer ' + this.token }, throw: false,
+      });
+    } catch (e) { return null; }
+    if (!res || res.status < 200 || res.status >= 300) return null;
+    return res.arrayBuffer || null;
+  }
 }
 
 /* ── Field mapping: raw Vikunja API task → normalized Nexus task ──
@@ -134,6 +148,10 @@ function mapProjectFromApi(p) {
     description: p.description || '',
     archived: !!p.is_archived,
     updated: p.updated || '',
+    // set when the project has a background image on the server (upload
+    // provider); the bytes come from GET /projects/{id}/background
+    hasBackground: !!p.background_information,
+    blurHash: p.background_blur_hash || '',
   };
 }
 
