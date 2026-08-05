@@ -247,7 +247,7 @@ class NexusBoard {
     const search = tools.createEl('input', { cls: 'nx-board-search', attr: { type: 'text', placeholder: 'filter …' } });
     const gear = tools.createDiv('nx-board-gear');
     setIcon(gear, 'settings-2');
-    gear.setAttribute('aria-label', 'Dashboard settings');
+    gear.setAttribute('aria-label', 'Board settings');
     gear.onclick = () => {
       const { NexusBoardConfigModal } = require('../modals/board.js');
       new NexusBoardConfigModal(this.plugin, cfg, (next) => this.writeBack(el, ctx, next)).open();

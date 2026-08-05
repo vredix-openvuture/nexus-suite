@@ -116,3 +116,55 @@
 .nx-has-banner > .nx-slate-btn.is-active,
 .nx-pk-note > .nx-slate-btn.is-active { color: var(--text-accent); }
 
+
+/* ── IMAGE SEPARATOR ──
+   A photo used as a divider. The strip is a WINDOW onto the whole image
+   (background-size: cover + a vertical position), so any picture works without
+   being cropped to a few pixels first — and the band can be moved afterwards.
+   See main.js · renderSeparator and modals/separator.js. */
+.nx-sep {
+  height: var(--nx-sep-h, 26px);
+  width: 100%;
+  background-size: cover;
+  background-position: center var(--nx-sep-pos, 50%);
+  background-repeat: no-repeat;
+  margin: 1.1em 0;
+  cursor: pointer;
+}
+.nx-sep.is-round { border-radius: calc(var(--nx-radius, 12px) / 2); }
+/* Fades into the page on both ends instead of stopping at a hard edge. */
+.nx-sep.is-fade {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.nx-sep-missing {
+  padding: 6px 10px; margin: 1em 0;
+  border: 1px dashed var(--nx-border, var(--background-modifier-border));
+  border-radius: var(--nx-radius, 10px);
+  color: var(--text-faint); font-size: .84em; font-style: italic;
+}
+
+/* picker */
+.nx-sep-modal .nx-sep-preview {
+  padding: 10px 2px 4px;
+  border-bottom: 1px solid var(--nx-border, var(--background-modifier-border));
+  margin-bottom: 10px;
+}
+.nx-sep-modal .nx-sep { cursor: default; margin: 0; background-color: var(--background-modifier-hover); }
+.nx-sep-preview-hint { padding: 6px 2px; color: var(--text-faint); font-size: .84em; font-style: italic; }
+.nx-sep-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.nx-sep-row { display: flex; flex-direction: column; gap: 2px; }
+.nx-sep-row-head { display: flex; justify-content: space-between; font-size: .82em; color: var(--text-muted); }
+.nx-sep-val { color: var(--text-faint); font-family: var(--font-monospace); }
+.nx-sep-row input[type="range"] { width: 100%; }
+.nx-sep-toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+.nx-sep-toggle {
+  padding: 3px 10px; border-radius: 999px; cursor: pointer; font-size: .8em;
+  border: 1px solid var(--nx-border, var(--background-modifier-border));
+  color: var(--text-muted);
+}
+.nx-sep-toggle.is-on {
+  color: var(--nx-accent, var(--interactive-accent));
+  border-color: var(--nx-accent, var(--interactive-accent));
+  background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 14%, transparent);
+}

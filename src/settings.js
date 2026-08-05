@@ -5,7 +5,7 @@
  *  Plugin settings tab.
  * ========================================================================== */
 
-const { Notice, PluginSettingTab, Setting, setIcon } = require('obsidian');
+const { Notice, PluginSettingTab, Setting, moment, setIcon } = require('obsidian');
 const { NexusCalloutModal } = require('./modals/callout.js');
 const { SEARCH_FIELDS } = require('./modals/search.js');
 const { NexusWorkspaceModal } = require('./modals/workspace.js');
@@ -18,7 +18,7 @@ const { FN_TYPES } = require('./lib/foldernotes.js');
 const { nxAutocomplete, nxMultiRow } = require('./lib/inputs.js');
 const calstore = require('./lib/calstore.js');
 const tasks = require('./lib/tasks.js');
-const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES } = require('./constants.js');
+const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_STATES } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
@@ -54,6 +54,16 @@ class NexusSettingsTab extends PluginSettingTab {
     }
     new Setting(e).setName('Default view').addDropdown(d => d.addOption('month', 'Month').addOption('week', 'Week').addOption('day', 'Day')
       .setValue(s.defaultView).onChange(async v => { s.defaultView = v; await this.save(); }));
+    // One setting for every calendar surface in the vault — month grids, the
+    // week view, the agenda's "this week". Obsidian's own locale stays untouched.
+    new Setting(e).setName('Week starts on')
+      .setDesc('Applies to every calendar in the vault: month grids, the week view and the "this week" filter.')
+      .addDropdown(d => {
+        d.addOption('locale', 'Locale default (' + moment.weekdays()[moment().startOf('week').day()] + ')');
+        moment.weekdays().forEach((name, i) => d.addOption(String(i), name));
+        d.setValue(s.weekStart == null ? 'locale' : String(s.weekStart));
+        d.onChange(async v => { s.weekStart = v; await this.save(); this.plugin.refreshCalendarViews(); });
+      });
     new Setting(e).setName('Sync on startup').addToggle(t => t.setValue(s.syncOnStartup).onChange(async v => { s.syncOnStartup = v; await this.save(); }));
     new Setting(e).setName('Sync interval (minutes)').addText(t => { t.inputEl.type = 'number'; t.setValue(String(s.syncIntervalMin)).onChange(async v => { s.syncIntervalMin = Math.max(5, parseInt(v, 10) || 15); await this.save(); }); });
     new Setting(e).setName('Conflict policy').setDesc('When a server change and a local change collide (used once writing is enabled).')
@@ -208,6 +218,14 @@ class NexusSettingsTab extends PluginSettingTab {
         s.bgStrength = 4.5; await this.save(); this.plugin.applyNoteBgStrength(); this.display();
       }));
 
+    new Setting(e).setName('Handwritten font size')
+      .setDesc('The "handwritten" note style relative to the app\'s font size (Appearance → Font size). 1.0 = exactly the same; the font has a small x-height, so it needs a bump to read at the same size.')
+      .addSlider(sl => { sl.setLimits(1, 2.2, 0.05).setValue(s.handScale == null ? 1.45 : s.handScale).setDynamicTooltip();
+        sl.onChange(async v => { s.handScale = v; await this.save(); this.plugin.applyHandFont(); }); })
+      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default (1.45)').onClick(async () => {
+        s.handScale = 1.45; await this.save(); this.plugin.applyHandFont(); this.display();
+      }));
+
     // ── Where imported images land ──
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Storage' });
     new Setting(e).setName('Banner folder').setDesc('Target folder in the vault where imported images are copied.')
@@ -258,6 +276,22 @@ class NexusSettingsTab extends PluginSettingTab {
       await this.plugin.ensureBannerGroup(clean);
       this.display();
     }));
+
+    // ── Image separator ──
+    // Same image pool as the banners, used as a divider inside the note.
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Image separator' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Command "Insert an image separator": pick any banner image and it becomes a thin strip in the note — a window onto the picture, so nothing has to be cropped to a few pixels first. Height and the visible band are sliders in the dialog, and clicking a separator in a note reopens it. The values below are what a new separator starts with.' });
+    new Setting(e).setName('Height (px)')
+      .addSlider(sl => { sl.setLimits(6, 160, 1).setValue(s.sepHeight == null ? 26 : s.sepHeight).setDynamicTooltip();
+        sl.onChange(async v => { s.sepHeight = v; await this.save(); }); });
+    new Setting(e).setName('Image band').setDesc('Which horizontal band of the picture the strip shows (0 = top, 100 = bottom).')
+      .addSlider(sl => { sl.setLimits(0, 100, 1).setValue(s.sepPosition == null ? 50 : s.sepPosition).setDynamicTooltip();
+        sl.onChange(async v => { s.sepPosition = v; await this.save(); }); });
+    new Setting(e).setName('Fade at the edges')
+      .addToggle(t => t.setValue(!!s.sepFade).onChange(async v => { s.sepFade = v; await this.save(); }));
+    new Setting(e).setName('Rounded corners')
+      .addToggle(t => t.setValue(s.sepRound !== false).onChange(async v => { s.sepRound = v; await this.save(); }));
 
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Image icon top-right: choose · system import · move/height (drag) · remove. Palette icon next to it: note style — background (grid/lined/dotted) & font (normal/mono/handwritten).' });
@@ -323,6 +357,19 @@ class NexusSettingsTab extends PluginSettingTab {
       .onChange(async v => { s.ribbon = v; await this.save(); new Notice('Nexus: Restart/reload for the ribbon change.'); }));
     new Setting(e).setName('Open on startup').addToggle(t => t.setValue(s.openOnStartup)
       .onChange(async v => { s.openOnStartup = v; await this.save(); }));
+
+    // ── Pinned tabs ──
+    // Lives here because the dashboard is the page you reach for first, but it
+    // covers all three Nexus pages — the same switch sits in each page's tab menu.
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Pinned tabs' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A pinned page stays at the tab bar as its bare icon: no title, no close button, and it comes back if something closes it anyway. Also switchable via right-click on the tab.' });
+    this.plugin.pinnableTabs().forEach(p => {
+      new Setting(e).setName(p.label)
+        .addToggle(t => t.setValue(this.plugin.isTabPinned(p.key))
+          .onChange(async v => { await this.plugin.setTabPinned(p.key, v); }));
+    });
+
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Configure cards individually: in the dashboard via the gear at the top-right of each card (size in units, filter, count, cover).' });
   }
@@ -484,6 +531,23 @@ class NexusSettingsTab extends PluginSettingTab {
     new Setting(e).setName('Glyph')
       .addText(t => t.setPlaceholder('❦').setValue(s.ornamentGlyph || '❦')
         .onChange(async v => { s.ornamentGlyph = v.trim() || '❦'; await this.save(); apply(); }));
+
+    // ── Checklist states ──
+    // Pure CSS over Obsidian's own data-task attribute — the note stays plain
+    // markdown, so the characters keep their meaning in any other app.
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Checklist states' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The alternate checkbox characters Minimal made a convention: "- [>] " and friends get their own icon and colour. Command "Set the checklist state" writes one into the current line.' });
+    new Setting(e).setName('Enabled')
+      .addToggle(t => t.setValue(s.taskStates !== false).onChange(async v => { s.taskStates = v; await this.save(); apply(); }));
+    const legend = e.createDiv('nx-task-legend nx-task-states');
+    TASK_STATES.filter(([ch]) => ch !== ' ' && ch !== 'x').forEach(([ch, label]) => {
+      const row = legend.createDiv({ cls: 'nx-task-legend-item', attr: { 'data-task': ch } });
+      const box = row.createEl('input', { type: 'checkbox' });
+      box.disabled = true;
+      row.createSpan({ cls: 'nx-task-legend-ch', text: '[' + ch + ']' });
+      row.createSpan({ cls: 'nx-task-legend-lbl', text: label });
+    });
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Drop cap' });
     new Setting(e).setName('Enlarge the first letter of a note')

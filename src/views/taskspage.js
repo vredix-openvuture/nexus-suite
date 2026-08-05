@@ -16,6 +16,7 @@
 
 const { ItemView, Notice, moment, setIcon } = require('obsidian');
 const { TASKS_VIEW } = require('../constants.js');
+const { nxPinMenuItem } = require('../lib/helpers.js');
 const tasks = require('../lib/tasks.js');
 
 const STATES = [['open', 'Open'], ['done', 'Done'], ['all', 'All']];
@@ -40,6 +41,10 @@ class NexusTasksPageView extends ItemView {
   getViewType() { return TASKS_VIEW; }
   getDisplayText() { return 'Tasks'; }
   getIcon() { return 'list-checks'; }
+  onPaneMenu(menu, source) {
+    nxPinMenuItem(this.plugin, menu, 'tasks');
+    return super.onPaneMenu(menu, source);
+  }
 
   async onOpen() {
     this.render();

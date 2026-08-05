@@ -10,6 +10,8 @@ const { NexusBannerImportModal, NexusBannerModal } = require('./modals/banner.js
 const { NexusCalendarView } = require('./views/calendar.js');
 const { NexusCalendarPageView } = require('./views/calendarpage.js');
 const { NexusTasksPageView } = require('./views/taskspage.js');
+const { NexusSideView } = require('./views/sidebar.js');
+const { NexusSketchPaneView } = require('./views/sketchpane.js');
 const { NexusEventModal } = require('./modals/event.js');
 const { NexusTaskModal } = require('./modals/task.js');
 const calstore = require('./lib/calstore.js');
@@ -20,7 +22,7 @@ const { CalDavClient } = require('./lib/caldav.js');
 const { VikunjaClient } = require('./lib/vikunja.js');
 const { NexusConflictModal } = require('./modals/conflict.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
-const { CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, PEN_IDS, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
+const { CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
 const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusAgenda } = require('./lib/agenda.js');
 const { NexusBoard } = require('./lib/board.js');
@@ -53,6 +55,10 @@ module.exports = class NexusSuite extends Plugin {
     // code-block processors — down with it. See _guard.
     // ── Fonts (bundle handwritten font for ALL platforms, incl. mobile) ──
     await this._guard('fonts', () => this.registerFonts());
+    this.applyHandFont();
+    // Obsidian fires css-change from updateFontSize(), so the handwritten note
+    // follows the font-size setting and the zoom shortcuts like everything else.
+    this.registerEvent(this.app.workspace.on('css-change', () => this.applyHandFont()));
 
     // ── Callouts (custom icons/colors via CSS; import from Callout Manager) ──
     await this._guard('callouts', async () => {
@@ -103,16 +109,56 @@ module.exports = class NexusSuite extends Plugin {
     this.registerEvent(this.app.workspace.on('active-leaf-change', refreshProps));
     this.registerEvent(this.app.workspace.on('file-open', refreshProps));
     this.registerEvent(this.app.workspace.on('layout-change', refreshProps));
-    this.registerDomEvent(document, 'contextmenu', (e) => {
-      if (!this.settings.propertyHider.enabled) return;
+    const propKeyAt = (e) => {
+      if (!this.settings.propertyHider.enabled) return null;
       const propEl = e.target && e.target.closest ? e.target.closest('.metadata-property') : null;
-      if (!propEl) return;
+      if (!propEl) return null;
       const inp = propEl.querySelector('.metadata-property-key-input');
-      const key = propEl.dataset.propertyKey || (inp && inp.value);
-      if (!key) return;
-      this._watchForPropMenu(key);
+      return propEl.dataset.propertyKey || (inp && inp.value) || null;
+    };
+    this.registerDomEvent(document, 'contextmenu', (e) => {
+      const key = propKeyAt(e);
+      if (key) this._watchForPropMenu(key);
     }, { capture: true });
-    this.register(() => this._stopPropMenuWatch());
+    // Mobile: a long press does NOT fire `contextmenu` — Obsidian opens the
+    // property menu from its own hold timer, so the desktop path never ran and
+    // "Hide property" was missing on the tablet. Arm the same watcher from the
+    // touch instead: after the press has lasted long enough to be a hold, it
+    // waits for whatever menu appears and injects into that. A short tap clears
+    // the timer, and an armed watcher that never sees a menu simply expires.
+    this.registerDomEvent(document, 'touchstart', (e) => {
+      const key = propKeyAt(e);
+      if (!key) return;
+      // Snapshot the open menus NOW, not when the timer fires: Obsidian's own
+      // hold timer may beat ours, and a menu that is already there when the
+      // watcher starts would count as "not new" and never get the item.
+      const known = new Set(document.body.querySelectorAll('.menu'));
+      window.clearTimeout(this._propHoldT);
+      this._propHoldT = window.setTimeout(() => this._watchForPropMenu(key, known), 300);
+    }, { capture: true, passive: true });
+    const cancelHold = () => window.clearTimeout(this._propHoldT);
+    this.registerDomEvent(document, 'touchend', cancelHold, { capture: true, passive: true });
+    this.registerDomEvent(document, 'touchmove', cancelHold, { capture: true, passive: true });
+    this.registerDomEvent(document, 'touchcancel', cancelHold, { capture: true, passive: true });
+    this.register(() => { window.clearTimeout(this._propHoldT); this._stopPropMenuWatch(); });
+
+    // ── Image separator ──
+    // A thin strip of a picture instead of a horizontal rule. The block only
+    // stores the link and two numbers; the crop is a CSS window onto the full
+    // image, so no file has to be prepared and the band can be moved later.
+    this.registerMarkdownCodeBlockProcessor('nexus-separator', (src, el, ctx) => this.renderSeparator(src, el, ctx));
+    this.addCommand({ id: 'nexus-insert-separator', name: 'Insert an image separator',
+      editorCallback: (editor, view) => {
+        const { NexusSeparatorModal } = require('./modals/separator.js');
+        const path = (view && view.file && view.file.path) || '';
+        new NexusSeparatorModal(this, path, (cfg) => {
+          const lines = ['```nexus-separator', 'image: [[' + cfg.link + ']]', 'height: ' + cfg.height, 'position: ' + cfg.position];
+          if (cfg.fade) lines.push('fade: true');
+          if (!cfg.round) lines.push('round: false');
+          lines.push('```', '');
+          editor.replaceSelection(lines.join('\n'));
+        }).open();
+      } });
 
     // ── Columns (reading-mode code block) ──
     this.registerMarkdownCodeBlockProcessor('columns', (source, el, ctx) => {
@@ -133,6 +179,8 @@ module.exports = class NexusSuite extends Plugin {
     // ── Quick Sketch (draw-on-canvas code block; sidecar .svg) ──
     this.app.workspace.onLayoutReady(() => this.ensureSketchFolder());
     this.registerMarkdownCodeBlockProcessor('quicksketch', (source, el, ctx) => this.renderSketch(source, el, ctx));
+    // One sketch as its own tab — see views/sketchpane.js and openSketchInSplit.
+    this.registerView(SKETCH_VIEW, (leaf) => new NexusSketchPaneView(leaf, this));
     this.addCommand({ id: 'nexus-insert-sketch', name: 'Insert a sketch',
       editorCallback: (editor) => {
         if (!this.settings.quicksketch.enabled) { new Notice(NX_MODULES.quicksketch.name + ' is switched off.'); return; }
@@ -206,6 +254,11 @@ module.exports = class NexusSuite extends Plugin {
       this.addRibbonIcon('list-checks', 'Tasks', () => this.openTasksPage());
     }
     this.addCommand({ id: 'nexus-open-tasks-page', name: 'Open the tasks page', callback: () => this.openTasksPage() });
+    // ── The same two as side panels (see views/sidebar.js) ──
+    this.registerView(SIDE_CAL_VIEW, (leaf) => new NexusSideView(leaf, this, 'calendar'));
+    this.registerView(SIDE_TASKS_VIEW, (leaf) => new NexusSideView(leaf, this, 'tasks'));
+    this.addCommand({ id: 'nexus-open-calendar-sidebar', name: 'Open the calendar in the sidebar', callback: () => this.openSidePanel('calendar') });
+    this.addCommand({ id: 'nexus-open-tasks-sidebar', name: 'Open the tasks in the sidebar', callback: () => this.openSidePanel('tasks') });
     this.addCommand({ id: 'nexus-sync-taskcal', name: 'Sync calendars and tasks now', callback: () => { new Notice('Nexus: syncing…'); this.syncTaskCal().then(r => new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000)); } });
     this.addCommand({ id: 'nexus-new-event', name: 'New event', callback: () => {
       if (!this.settings.tasksCalendar.enabled) { new Notice(NX_MODULES.tasksCalendar.name + ' is switched off.'); return; }
@@ -330,6 +383,12 @@ module.exports = class NexusSuite extends Plugin {
       if (this.settings.homepage.enabled && this.settings.homepage.openOnStartup) this.openHomepage(false);
     });
 
+    // ── Pinned tabs ──
+    // The pin survives a restart, so the pages come back on their own; the
+    // watchdog then keeps them there.
+    this.app.workspace.onLayoutReady(() => this.guardPinnedTabs());
+    this.registerEvent(this.app.workspace.on('layout-change', () => this.guardPinnedTabs()));
+
     this.applyThemeSettings();
     this.applyNoteBgStrength();
     this.applyExplorer();
@@ -340,12 +399,19 @@ module.exports = class NexusSuite extends Plugin {
   }
 
   onunload() {
+    // Before anything detaches: the pin watchdog must not reopen what we close.
+    this._unloading = true;
+    window.clearTimeout(this._pinT);
+    ['nx-pin-home', 'nx-pin-cal', 'nx-pin-tasks'].forEach(c => document.body.removeClass(c));
     this.app.workspace.detachLeavesOfType(CAL_VIEW);
     this.app.workspace.detachLeavesOfType(CAL_PAGE_VIEW);
     this.app.workspace.detachLeavesOfType(TASKS_VIEW);
     this.app.workspace.detachLeavesOfType(HOME_VIEW);
     this.app.workspace.detachLeavesOfType(TIMER_VIEW);
     this.app.workspace.detachLeavesOfType(INK_VIEW);
+    this.app.workspace.detachLeavesOfType(SIDE_CAL_VIEW);
+    this.app.workspace.detachLeavesOfType(SIDE_TASKS_VIEW);
+    this.app.workspace.detachLeavesOfType(SKETCH_VIEW);
     (this._inkPdfDocs || []).forEach((pdf) => { try { pdf.destroy(); } catch (e) {} });
     this._inkPdfDocs = [];
     const pel = document.getElementById('nx-palette-style'); if (pel) pel.remove();
@@ -353,7 +419,7 @@ module.exports = class NexusSuite extends Plugin {
     document.body.removeClass('nx-ribbon-hover');
     document.body.removeClass('nx-ribbon-hidden');
     { const rs = document.getElementById('nx-ribbon-style'); if (rs) rs.remove(); }
-    ['--nx-gap', '--nx-radius', '--nx-home-gap', '--nx-home-pad', '--nx-home-col', '--nx-home-row', '--nx-fld-intensity']
+    ['--nx-gap', '--nx-radius', '--nx-home-gap', '--nx-home-pad', '--nx-home-col', '--nx-home-row', '--nx-fld-intensity', '--nx-hand-size']
       .forEach(v => document.body.style.removeProperty(v));
     if (this._scrollRef && this._scrollRef.el) this._scrollRef.el.removeEventListener('scroll', this._scrollRef.fn);
     if (this._propStyle) this._propStyle.remove();
@@ -1353,35 +1419,48 @@ module.exports = class NexusSuite extends Plugin {
 
   /* Choose an image via the system file dialog, copy it into the chosen banner
      group and set it as the banner. */
-  importBannerFromSystem(noteFile) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async () => {
-      try {
-        const f = input.files && input.files[0];
-        if (!f) return;
-        const ext = ((f.name.split('.').pop() || 'png').toLowerCase()).replace(/[^a-z0-9]/g, '') || 'png';
-        const origName = f.name.replace(/\.[^.]+$/, '');
-        const picked = await new NexusBannerImportModal(this, this.bannerFileName(origName, noteFile)).openAndGet();
-        if (!picked) return;   // cancelled
-        const dir = await this.ensureBannerGroup(picked.group);
-        const base = (picked.name.trim() || origName).replace(/[\\/:*?"<>|]/g, '_');
-        const mk = (n) => (dir ? dir + '/' : '') + base + (n ? '-' + n : '') + '.' + ext;
-        let dest = mk(0), i = 1;
-        while (this.app.vault.getAbstractFileByPath(dest)) dest = mk(i++);
-        const buf = await f.arrayBuffer();
-        const img = await this.app.vault.createBinary(dest, buf);
-        await this.app.fileManager.processFrontMatter(noteFile, fm => {
-          fm.banner = '[[' + this.app.metadataCache.fileToLinktext(img, noteFile.path) + ']]';
-        });
-        this.refreshBanner();
-        new Notice('Banner set: ' + dest);
-      } catch (e) {
-        new Notice(NX_MODULES.banner.name + ': import failed (' + e.message + ')');
-      }
-    };
-    input.click();
+  /* Pick a file from the system, name it, drop it into a banner group.
+     Returns the created TFile (null when cancelled) — the caller decides what
+     it is FOR: a note banner, or an image separator. */
+  importBannerImage(noteFile) {
+    return new Promise((resolve) => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      // A cancelled file dialog fires no event at all — resolve on the window
+      // regaining focus instead, so the caller is never left hanging.
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      input.onchange = async () => {
+        try {
+          const f = input.files && input.files[0];
+          if (!f) { finish(null); return; }
+          const ext = ((f.name.split('.').pop() || 'png').toLowerCase()).replace(/[^a-z0-9]/g, '') || 'png';
+          const origName = f.name.replace(/\.[^.]+$/, '');
+          const picked = await new NexusBannerImportModal(this, this.bannerFileName(origName, noteFile)).openAndGet();
+          if (!picked) { finish(null); return; }
+          const dir = await this.ensureBannerGroup(picked.group);
+          const base = (picked.name.trim() || origName).replace(/[\\/:*?"<>|]/g, '_');
+          const mk = (n) => (dir ? dir + '/' : '') + base + (n ? '-' + n : '') + '.' + ext;
+          let dest = mk(0), i = 1;
+          while (this.app.vault.getAbstractFileByPath(dest)) dest = mk(i++);
+          finish(await this.app.vault.createBinary(dest, await f.arrayBuffer()));
+        } catch (e) {
+          new Notice(NX_MODULES.banner.name + ': import failed (' + e.message + ')');
+          finish(null);
+        }
+      };
+      input.click();
+    });
+  }
+  async importBannerFromSystem(noteFile) {
+    const img = await this.importBannerImage(noteFile);
+    if (!img) return;
+    await this.app.fileManager.processFrontMatter(noteFile, fm => {
+      fm.banner = '[[' + this.app.metadataCache.fileToLinktext(img, noteFile.path) + ']]';
+    });
+    this.refreshBanner();
+    new Notice('Banner set: ' + img.path);
   }
 
   /* Move the banner image vertically by dragging (→ banner-y-pct). */
@@ -1615,9 +1694,9 @@ module.exports = class NexusSuite extends Plugin {
      for a menu that is NEW (added after the right-click) and already POPULATED.
      That avoids the old bug of grabbing a stale/hidden leftover `.menu` (which is
      why the item never showed up). The observer self-stops on success/timeout. */
-  _watchForPropMenu(key) {
+  _watchForPropMenu(key, knownBefore) {
     this._stopPropMenuWatch();
-    const known = new Set(document.body.querySelectorAll('.menu'));
+    const known = knownBefore || new Set(document.body.querySelectorAll('.menu'));
     const tryInject = () => {
       for (const menu of document.body.querySelectorAll('.menu')) {
         if (known.has(menu) || menu.dataset.nxHideInjected) continue;
@@ -1632,7 +1711,7 @@ module.exports = class NexusSuite extends Plugin {
     if (tryInject()) return;                               // menu already open & ready
     this._propObs = new MutationObserver(() => tryInject());
     this._propObs.observe(document.body, { childList: true, subtree: true });
-    this._propTimer = window.setTimeout(() => this._stopPropMenuWatch(), 1500);
+    this._propTimer = window.setTimeout(() => this._stopPropMenuWatch(), 2200);
   }
   _stopPropMenuWatch() {
     if (this._propObs) { this._propObs.disconnect(); this._propObs = null; }
@@ -1778,12 +1857,21 @@ module.exports = class NexusSuite extends Plugin {
   setCredential(id, obj) { try { window.localStorage.setItem(this.credKey(id), JSON.stringify(obj || {})); } catch (e) {} }
 
   refreshCalendarViews() {
+    // The sidebar month over the daily notes draws weeks too — a week-start
+    // change has to reach it, not just the CalDAV surfaces.
+    for (const leaf of this.app.workspace.getLeavesOfType(CAL_VIEW)) {
+      const v = leaf.view; if (v && typeof v.render === 'function') v.render();
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType(HOME_VIEW)) {
+      const v = leaf.view; if (v && typeof v.render === 'function') v.render();
+    }
     for (const leaf of this.app.workspace.getLeavesOfType(CAL_PAGE_VIEW)) {
       const v = leaf.view; if (v && typeof v.reload === 'function') v.reload();
     }
     for (const leaf of this.app.workspace.getLeavesOfType(TASKS_VIEW)) {
       const v = leaf.view; if (v && typeof v.reload === 'function') v.reload();
     }
+    this.refreshSidePanels();
     // Agenda blocks read the same cache — and it lives under .obsidian/, so no
     // vault event tells them it moved.
     if (this.agenda) this.agenda.refreshAll();
@@ -1841,6 +1929,22 @@ module.exports = class NexusSuite extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
+  /* Calendar / tasks as a side panel — right dock, because that is where a
+     companion to the note you're writing belongs. */
+  async openSidePanel(kind) {
+    const type = kind === 'tasks' ? SIDE_TASKS_VIEW : SIDE_CAL_VIEW;
+    let leaf = this.app.workspace.getLeavesOfType(type)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(false);
+      await leaf.setViewState({ type, active: true });
+    }
+    this.app.workspace.revealLeaf(leaf);
+  }
+  refreshSidePanels() {
+    [SIDE_CAL_VIEW, SIDE_TASKS_VIEW].forEach(t => this.app.workspace.getLeavesOfType(t)
+      .forEach(l => { if (l.view && l.view.reload) l.view.reload(); }));
+  }
+
   async syncTaskCal() {
     let fsOk = false; try { require('fs'); fsOk = true; } catch (e) {}
     if (!fsOk) return { lines: ['Sync runs on desktop only (mobile reads the synced cache).'] };
@@ -1884,6 +1988,58 @@ module.exports = class NexusSuite extends Plugin {
     }
     this.refreshCalendarViews();   // cache lives under .obsidian/ → no vault event fires; refresh explicitly
     return { lines };
+  }
+
+  /* ---- Image separator ----
+     `image:` is the only required line. Everything else has a default, and an
+     unreadable block still renders SOMETHING (the message) instead of vanishing
+     — a separator that silently disappears would look like a broken note. */
+  renderSeparator(src, el, ctx) {
+    const cfg = {};
+    String(src || '').split('\n').forEach(line => {
+      const i = line.indexOf(':');
+      if (i < 0) return;
+      cfg[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+    });
+    const link = cfg.image || cfg.img || cfg.src || '';
+    const url = link ? this.resolveBannerSrc(link, (ctx && ctx.sourcePath) || '') : '';
+    if (!url) {
+      el.createDiv({ cls: 'nx-sep-missing', text: link ? 'Separator: image not found — ' + link : 'Separator: no image set.' });
+      return;
+    }
+    const truthy = (v) => /^(true|yes|1|on)$/i.test(String(v || '').trim());
+    const falsy = (v) => /^(false|no|0|off)$/i.test(String(v || '').trim());
+    const strip = el.createDiv('nx-sep'
+      + (truthy(cfg.fade) ? ' is-fade' : '')
+      + (falsy(cfg.round) ? '' : ' is-round'));
+    strip.style.setProperty('--nx-sep-h', (Math.max(2, Math.min(400, parseInt(cfg.height, 10) || 26))) + 'px');
+    strip.style.setProperty('--nx-sep-pos', (Math.max(0, Math.min(100, parseInt(cfg.position, 10) || 50))) + '%');
+    strip.style.backgroundImage = 'url("' + url.replace(/"/g, '\\"') + '")';
+    // Click to re-tune without touching the block by hand.
+    strip.onclick = () => {
+      const file = this.app.vault.getAbstractFileByPath((ctx && ctx.sourcePath) || '');
+      if (!(file instanceof TFile)) return;
+      const { NexusSeparatorModal } = require('./modals/separator.js');
+      const img = this.app.metadataCache.getFirstLinkpathDest(String(link).replace(/^!?\[\[|\]\]$/g, '').split('|')[0], ctx.sourcePath);
+      new NexusSeparatorModal(this, ctx.sourcePath, (next) => this._rewriteSeparator(ctx, el, next), {
+        file: img, height: parseInt(cfg.height, 10) || 26, position: parseInt(cfg.position, 10) || 50,
+        fade: truthy(cfg.fade), round: !falsy(cfg.round),
+      }).open();
+    };
+  }
+  /* Replace the block's body in place (same trick as the sketch id writeback). */
+  async _rewriteSeparator(ctx, el, cfg) {
+    const info = ctx.getSectionInfo(el);
+    const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath);
+    if (!info || !(file instanceof TFile)) return;
+    const body = ['image: [[' + cfg.link + ']]', 'height: ' + cfg.height, 'position: ' + cfg.position];
+    if (cfg.fade) body.push('fade: true');
+    if (!cfg.round) body.push('round: false');
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      lines.splice(info.lineStart + 1, info.lineEnd - info.lineStart - 1, ...body);
+      return lines.join('\n');
+    });
   }
 
   /* ---- Quick Sketch ----
@@ -1977,6 +2133,11 @@ module.exports = class NexusSuite extends Plugin {
     if (paper === 'paperlike') paper = 'paper';
 
     const wrap = el.createDiv('nx-sketch');
+    // A finger stroke that starts near an edge is a drawer swipe to the mobile
+    // gesture recogniser. It skips any subtree marked like this (same lever the
+    // canvas uses) — the touch guards further up can't reach it, it listens in
+    // the capture phase and was registered long before any plugin.
+    wrap.dataset.ignoreSwipe = 'true';
     const barWrap = wrap.createDiv('nx-sketch-bar-wrap');   // grid-rows wrapper → smooth collapse
     const bar = barWrap.createDiv('nx-sketch-bar');
     const pad = wrap.createDiv('nx-sketch-pad');            // height comes from the SVG (width:100%/height:auto), not CSS aspect-ratio
@@ -2016,6 +2177,7 @@ module.exports = class NexusSuite extends Plugin {
         // Leaving edit → view crops to content (setMode), then persist that height.
         onDone: () => { setMode('view'); if (surface.strokes.length) surface.persist(); },
         onFullscreen: () => this._openSketchFullscreen(surface, pad, wrap, s, buildInlineBar),
+        onSplit: true, sketchId: () => state.id, notePath: ctx && ctx.sourcePath,
       });
     };
     buildInlineBar();
@@ -2523,6 +2685,12 @@ module.exports = class NexusSuite extends Plugin {
       iconBtn(right, 'redo-2', 'Redo', () => surface.redo());
       const clearBtn = iconBtn(right, 'trash-2', 'Clear', null);
       plugin._sketchPopover(clearBtn, clearBuild);
+      // Slate notes: put the drawing in a split next to the note's text.
+      if (opts.onSplit) {
+        right.createDiv('nx-sk-sep');
+        const splitBtn = iconBtn(right, 'columns-2', 'Open beside the note', null, 'nx-sk-split');
+        plugin._attachSplitMenu(splitBtn, opts, true);
+      }
       if (opts.onCollapse) {   // fullscreen editor: exit button. Protokoll view: none.
         right.createDiv('nx-sk-sep');
         iconBtn(right, 'minimize-2', 'Close full-size editor', () => opts.onCollapse(), 'nx-sk-done');
@@ -2550,12 +2718,67 @@ module.exports = class NexusSuite extends Plugin {
         pop.createDiv('nx-sk-menu-sep');
         item('trash-2', 'Clear…', () => { closePop(); plugin._showPopover(moreBtn, clearBuild); });
       });
-      iconBtn(right, 'maximize-2', 'Full-size editor', () => opts.onFullscreen && opts.onFullscreen(), 'nx-sk-fs');
+      const fsBtn = iconBtn(right, 'maximize-2', 'Full-size editor', () => opts.onFullscreen && opts.onFullscreen(), 'nx-sk-fs');
+      // Press and hold (or right-click) the same button to put the sketch in a
+      // split instead: note on one side, drawing on the other. Only offered
+      // where there is a sketch to open — a pad that was never drawn on has no
+      // sidecar yet, and the pane can only show a saved one.
+      if (opts.onSplit) plugin._attachSplitMenu(fsBtn, opts);
       right.createDiv('nx-sk-sep');
       // Save & leave the editor — always visible (was buried in ⋯).
       iconBtn(right, 'check', 'Save & close', () => opts.onDone && opts.onDone(), 'nx-sk-done');
     }
     syncActive();
+  }
+
+  /* Long-press / right-click on the full-size button → open the sketch beside
+     the note. Long press, because a plain click already means "full size" and
+     the tablet has no second mouse button. */
+  _attachSplitMenu(btn, opts, clickOpens) {
+    const open = (side) => {
+      const id = opts.sketchId && opts.sketchId();
+      if (!id) { new Notice('Draw something first — the sketch is saved on the first stroke.'); return; }
+      this.openSketchInSplit(id, side, opts.notePath || '');
+    };
+    const menu = (evt) => {
+      const m = new Menu();
+      m.addItem(i => i.setTitle('Open to the left').setIcon('panel-left').onClick(() => open('left')));
+      m.addItem(i => i.setTitle('Open to the right').setIcon('panel-right').onClick(() => open('right')));
+      m.addItem(i => i.setTitle('Open in a new tab').setIcon('file-plus').onClick(() => open('tab')));
+      if (evt && evt.clientX != null) m.showAtPosition({ x: evt.clientX, y: evt.clientY });
+      else { const r = btn.getBoundingClientRect(); m.showAtPosition({ x: r.left, y: r.bottom }); }
+    };
+    btn.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); menu(e); });
+    if (clickOpens) btn.onclick = (e) => { e.stopPropagation(); menu(e); };
+    let holdT = null, held = false;
+    const start = (e) => {
+      held = false;
+      window.clearTimeout(holdT);
+      holdT = window.setTimeout(() => { held = true; menu(e); }, 500);
+    };
+    const cancel = () => window.clearTimeout(holdT);
+    btn.addEventListener('pointerdown', start);
+    btn.addEventListener('pointerup', cancel);
+    btn.addEventListener('pointerleave', cancel);
+    btn.addEventListener('pointercancel', cancel);
+    // Swallow the click that follows a completed hold, so it doesn't ALSO open
+    // the full-size editor behind the menu.
+    btn.addEventListener('click', (e) => { if (held) { e.preventDefault(); e.stopPropagation(); held = false; } }, true);
+  }
+
+  /* side: 'left' | 'right' | 'tab' */
+  async openSketchInSplit(id, side, notePath) {
+    const ws = this.app.workspace;
+    const existing = ws.getLeavesOfType(SKETCH_VIEW).find(l => l.view && l.view.id === id);
+    if (existing) { ws.revealLeaf(existing); return; }
+    let leaf;
+    if (side === 'tab') leaf = ws.getLeaf('tab');
+    else {
+      const anchor = ws.getMostRecentLeaf() || ws.getLeaf(false);
+      leaf = ws.createLeafBySplit(anchor, 'vertical', side === 'left');
+    }
+    await leaf.setViewState({ type: SKETCH_VIEW, active: true, state: { id, notePath: notePath || '' } });
+    ws.revealLeaf(leaf);
   }
 
   /* Full-size editor: re-parent the SAME surface into a full-window overlay
@@ -2569,6 +2792,7 @@ module.exports = class NexusSuite extends Plugin {
     surface.setLocked(false);                                   // full-size editor always draws
     surface.autoGrow = true;                                    // endless downward while writing
     const overlay = document.body.createDiv('nx-sketch-fs');
+    overlay.dataset.ignoreSwipe = 'true';   // full-size pad: same reason as the inline one
     const barEl = overlay.createDiv('nx-sketch-bar nx-sketch-fs-bar');
     const stage = overlay.createDiv('nx-sketch-fs-stage');
     stage.appendChild(pad);                                     // move the live surface in
@@ -2748,6 +2972,9 @@ module.exports = class NexusSuite extends Plugin {
     // In a slate note the paper picker writes the choice back to `sketch-bg` so
     // it stays the note's canonical override across reloads.
     this._buildSketchBar(bar, surface, s, { mode: 'full', slate: true,
+      // A slate note's drawing can go into a split too — the note's text and
+      // its paper side by side.
+      onSplit: true, sketchId: () => id, notePath: file.path,
       onPaper: (mode) => { this.app.fileManager.processFrontMatter(file, f => { f['sketch-bg'] = mode; }).catch(() => {}); } });
 
     // Endless downward using the note's OWN scroll container (passed in).
@@ -3484,6 +3711,18 @@ module.exports = class NexusSuite extends Plugin {
      Sets a body class AND injects the CSS rule itself (via <style>), so both
      ALWAYS come from the same call — independent of a theme/styles.css reload.
      Targets exactly .workspace-ribbon.mod-left (confirmed via devtools). */
+  /* Handwritten note font: a factor of the app's own text size, published as a
+     px value. It cannot be a calc() in the stylesheet — --font-text-size is
+     exactly the variable being overridden, and a custom property defined in
+     terms of itself is invalid at computed-value time. */
+  applyHandFont() {
+    const scale = Number((this.settings.banner || {}).handScale) || 1.45;
+    let base = 0;
+    try { base = parseFloat(this.app.vault.getConfig('baseFontSize')); } catch (e) {}
+    if (!base) base = parseFloat(getComputedStyle(document.body).getPropertyValue('--font-text-size')) || 16;
+    document.body.style.setProperty('--nx-hand-size', (Math.round(base * scale * 10) / 10) + 'px');
+  }
+
   applyRibbon() {
     const mode = (this.settings.ribbon && this.settings.ribbon.mode) || 'always';
     document.body.classList.toggle('nx-ribbon-hover', mode === 'hover');
@@ -3509,5 +3748,54 @@ module.exports = class NexusSuite extends Plugin {
         'background:var(--nx-chip-side,var(--background-secondary)) !important;' +
         'border:1px solid var(--nx-border,var(--background-modifier-border)) !important;' +
         'border-radius:var(--nx-radius,12px) !important;margin:6px !important;}';
+  }
+
+  /* ---- Pinned tabs (dashboard · calendar · tasks) ----
+     A pinned page sits at the tab bar as its bare icon and stays there: Obsidian's
+     own pin flag keeps the next opened file from replacing it, CSS takes away the
+     close button (see 01-core.css), and the watchdog below reopens it if something
+     detaches it anyway — Ctrl+W, "Close others", a workspace switch. Toggled from
+     each page's tab menu (onPaneMenu) or in Settings → Dashboard. */
+  pinnableTabs() {
+    return [
+      { key: 'home',     type: HOME_VIEW,     cls: 'nx-pin-home',  label: NX_MODULES.homepage.name,
+        on: () => this.settings.homepage.enabled,      open: () => this.openHomepage(false) },
+      { key: 'calendar', type: CAL_PAGE_VIEW, cls: 'nx-pin-cal',   label: NX_MODULES.tasksCalendar.name,
+        on: () => this.settings.tasksCalendar.enabled, open: () => this.openCalendarPage() },
+      { key: 'tasks',    type: TASKS_VIEW,    cls: 'nx-pin-tasks', label: 'Tasks',
+        on: () => this.settings.tasksCalendar.enabled, open: () => this.openTasksPage() },
+    ];
+  }
+  isTabPinned(key) { return !!(this.settings.pinnedTabs || {})[key]; }
+  async setTabPinned(key, on) {
+    this.settings.pinnedTabs = Object.assign({}, this.settings.pinnedTabs, { [key]: !!on });
+    await this.saveSettings();
+    this.applyPinnedTabs();
+    if (on) { const e = this.pinnableTabs().find(p => p.key === key); if (e) e.open(); }
+  }
+  applyPinnedTabs() {
+    this.pinnableTabs().forEach(p => {
+      const on = this.isTabPinned(p.key) && p.on();
+      document.body.classList.toggle(p.cls, on);
+      this.app.workspace.getLeavesOfType(p.type).forEach(leaf => {
+        try { if (leaf.setPinned) leaf.setPinned(on); } catch (e) {}
+      });
+    });
+  }
+  /* Closed anyway? Bring it back once the layout has settled. Debounced, because
+     one close fires several layout events, and skipped while unloading — the
+     detachLeavesOfType in onunload must not be undone. */
+  guardPinnedTabs() {
+    if (this._unloading) return;
+    window.clearTimeout(this._pinT);
+    this._pinT = window.setTimeout(() => {
+      if (this._unloading) return;
+      this.applyPinnedTabs();
+      this.pinnableTabs().forEach(p => {
+        if (!this.isTabPinned(p.key) || !p.on()) return;
+        if (this.app.workspace.getLeavesOfType(p.type).length) return;
+        try { p.open(); } catch (e) {}
+      });
+    }, 150);
   }
 };
