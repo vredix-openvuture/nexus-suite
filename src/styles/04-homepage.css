@@ -469,9 +469,9 @@
 .nx-home.is-editing .nx-home-card-gear { opacity: .7; }
 /* Edit-mode edge locks: swallow the screen-edge swipe zones (drawer/command
    gestures) so dragging cards near the border can't trigger them. */
-.nx-edge-guard { position: fixed; top: 0; bottom: 0; width: 30px; z-index: 9999; touch-action: none; }
-.nx-edge-guard.is-left { left: 0; }
-.nx-edge-guard.is-right { right: 0; }
+/* Edit mode blocks the mobile swipe gestures via data-ignore-swipe on <body>
+   (see views/homepage.js · _swipeLock) — no overlay strips needed, and they used
+   to sit on top of the outermost cards and swallow their drag. */
 .nx-home .nx-home-card.is-dragging {
   opacity: .5; cursor: grabbing;
   outline: 2px solid color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 70%, transparent);
@@ -555,3 +555,79 @@
    AFTER the rule above, same specificity. */
 @container (max-height: 120px) { .nx-habit-legend { display: none; } }
 
+
+/* ── CALENDAR CARD ────────────────────────────────────────────────────────
+   Agenda rows are the agenda block's own (nx-ag-*), so a card and a block
+   never drift apart; only the day separators and the month grid are new. */
+.nx-home-cal-body { padding: 4px 6px 8px; }
+.nx-home-cal-day {
+  position: sticky; top: 0; z-index: 1;
+  padding: 6px 2px 3px; margin-top: 4px;
+  font-size: .74em; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); cursor: pointer;
+  background: var(--nx-chip-side, var(--background-secondary));
+}
+.nx-home-cal-day:first-child { margin-top: 0; }
+.nx-home-cal-day:hover { color: var(--nx-accent, var(--interactive-accent)); }
+.nx-home-cal-body .nx-ag-row { padding: 4px 2px; }
+
+/* month grid */
+.nx-home-cal-month { display: flex; flex-direction: column; gap: 4px; height: 100%; }
+.nx-home-cal-wd { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.nx-home-cal-wd span { text-align: center; font-size: .68em; color: var(--text-faint); text-transform: uppercase; }
+.nx-home-cal-cells { display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 1fr; gap: 2px; flex: 1; min-height: 0; }
+.nx-home-cal-cell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border-radius: 7px; cursor: pointer; min-height: 0;
+  transition: background .12s ease;
+}
+.nx-home-cal-cell:hover { background: var(--background-modifier-hover); }
+.nx-home-cal-cell.is-out { opacity: .35; }
+.nx-home-cal-cell.is-today { background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 22%, transparent); }
+.nx-home-cal-n { font-size: .78em; line-height: 1; color: var(--text-normal); }
+.nx-home-cal-cell.is-today .nx-home-cal-n { font-weight: 700; color: var(--nx-accent, var(--interactive-accent)); }
+.nx-home-cal-dots { display: flex; gap: 2px; }
+.nx-home-cal-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--nx-accent, var(--interactive-accent)); }
+
+/* ── TASKS CARD ── */
+.nx-home-tasks-body { padding: 4px 6px 8px; }
+.nx-home-tasks-body .nx-ag-row { padding: 4px 2px; }
+
+/* ── RANDOM NOTE CARD ──
+   A real preview, not a link list — the point is to actually re-read the note. */
+.nx-random-body { padding: 0; display: flex; flex-direction: column; }
+.nx-random-banner { height: 78px; flex: 0 0 auto; background-size: cover; background-position: center; cursor: pointer; }
+.nx-random-title {
+  padding: 8px 10px 2px; font-weight: 600; font-size: 1.02em; cursor: pointer;
+  color: var(--text-normal);
+}
+.nx-random-title:hover { color: var(--nx-accent, var(--interactive-accent)); }
+.nx-random-meta { padding: 0 10px 6px; font-size: .74em; color: var(--text-faint); }
+.nx-random-preview {
+  padding: 0 10px 10px; font-size: .86em; color: var(--text-muted);
+  overflow: auto; flex: 1; min-height: 0; cursor: pointer;
+}
+.nx-random-preview > :first-child { margin-top: 0; }
+.nx-random-preview img { max-width: 100%; }
+.nx-random-preview h1, .nx-random-preview h2, .nx-random-preview h3 { font-size: 1.05em; margin: .5em 0 .2em; }
+
+/* ── QUICK SKETCH CARD ── */
+.nx-sk-body { padding: 8px 6px; }
+.nx-sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.nx-sk-tile { display: flex; flex-direction: column; gap: 4px; cursor: pointer; }
+.nx-sk-thumb {
+  aspect-ratio: 16 / 10; border-radius: var(--nx-radius, 10px);
+  background: var(--background-primary); background-size: contain;
+  background-repeat: no-repeat; background-position: center;
+  border: 1px solid var(--nx-border, var(--background-modifier-border));
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.nx-sk-tile:hover .nx-sk-thumb { transform: translateY(-2px); box-shadow: 0 5px 12px rgba(0,0,0,.26); }
+.nx-sk-name { font-size: .72em; color: var(--text-muted); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-sk-mini {
+  width: 34px; height: 24px; flex: 0 0 auto; border-radius: 4px;
+  background: var(--background-primary); background-size: contain;
+  background-repeat: no-repeat; background-position: center;
+  border: 1px solid var(--nx-border, var(--background-modifier-border));
+}
+.nx-sk-item { display: flex; align-items: center; gap: 8px; }

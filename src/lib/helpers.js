@@ -5,7 +5,7 @@
  *  Markdown render, daily-note helpers, ink zoom/pan, pdf page, colour conversion.
  * ========================================================================== */
 
-const { MarkdownRenderer } = require('obsidian');
+const { MarkdownRenderer, moment } = require('obsidian');
 
 /* Render markdown (new + old API) */
 function renderMd(plugin, src, el, path) {
@@ -166,4 +166,51 @@ function nxPropValues(app, key) {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
-module.exports = { renderMd, getDailyNoteSettings, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToRgb, nxRgbToHex, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxPropValues };
+/* ── Week start ──────────────────────────────────────────────────────────────
+   One vault-wide setting (Settings → CalDAV → "Week starts on") decides where a
+   week begins for EVERY calendar surface: month grids, the week view, the
+   agenda's "this week" bucket. moment's own startOf('week') follows the app
+   locale, which is why these wrappers exist — they take the setting when it has
+   one and fall back to the locale otherwise. moment's global locale is
+   deliberately left alone: it belongs to Obsidian and every other plugin.
+   Returns 0 = Sunday … 6 = Saturday, or null for "whatever the locale says". */
+function nxWeekStartDow(plugin) {
+  const v = plugin && plugin.settings && plugin.settings.tasksCalendar
+    ? plugin.settings.tasksCalendar.weekStart : null;
+  if (v == null || v === '' || v === 'locale') return null;
+  const n = parseInt(v, 10);
+  return isNaN(n) ? null : ((n % 7) + 7) % 7;
+}
+function nxStartOfWeek(m, plugin) {
+  const dow = nxWeekStartDow(plugin);
+  if (dow == null) return m.clone().startOf('week');
+  const c = m.clone().startOf('day');
+  return c.subtract((c.day() - dow + 7) % 7, 'day');
+}
+function nxEndOfWeek(m, plugin) { return nxStartOfWeek(m, plugin).add(6, 'day').endOf('day'); }
+/* The grid around a whole month: full weeks, first one containing the 1st. */
+function nxMonthGridRange(m, plugin) {
+  const first = m.clone().startOf('month');
+  return [nxStartOfWeek(first, plugin), nxEndOfWeek(first.clone().endOf('month'), plugin)];
+}
+/* Column headings in the same order the grid runs. */
+function nxWeekdayLabels(plugin) {
+  const dow = nxWeekStartDow(plugin);
+  if (dow == null) return moment.weekdaysMin(true);
+  const min = moment.weekdaysMin(false);        // fixed Sunday → Saturday
+  return Array.from({ length: 7 }, (_, i) => min[(dow + i) % 7]);
+}
+
+/* Tab menu entry shared by the three pinnable Nexus pages (dashboard, calendar,
+   tasks). Pinning is a property of the PAGE, not of one tab, so it is stored in
+   the settings and applied by plugin.applyPinnedTabs(). */
+function nxPinMenuItem(plugin, menu, key) {
+  const on = plugin.isTabPinned(key);
+  menu.addItem(i => i
+    .setTitle(on ? 'Unpin from the tab bar' : 'Pin to the tab bar (icon only)')
+    .setIcon(on ? 'pin-off' : 'pin')
+    .setChecked(on)
+    .onClick(() => plugin.setTabPinned(key, !on)));
+}
+
+module.exports = { renderMd, getDailyNoteSettings, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToRgb, nxRgbToHex, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxStartOfWeek, nxWeekdayLabels, nxWeekStartDow };

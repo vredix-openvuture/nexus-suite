@@ -585,3 +585,12 @@ body.is-mobile .nx-sketch-fs { padding-top: max(env(safe-area-inset-top, 0px), 3
 .nx-cp-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 .nx-cp-preview { width: 26px; height: 26px; border-radius: 6px; box-shadow: 0 0 0 1px var(--background-modifier-border) inset; flex: 0 0 auto; }
 .nx-cp-hex { flex: 1 1 auto; min-width: 0; font-family: var(--font-monospace); font-size: 12px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 6px; color: var(--text-normal); padding: 4px 6px; }
+
+/* ── SKETCH PANE ──
+   One sketch as its own tab (views/sketchpane.js): a roomy toolbar on top, the
+   paper below in its own scroller so it can grow downward without end. */
+.nx-skpane { display: flex; flex-direction: column; height: 100%; padding: 0; }
+.nx-skpane-bar { flex: 0 0 auto; border-bottom: 1px solid var(--nx-border, var(--background-modifier-border)); border-radius: 0; }
+.nx-skpane-stage { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
+.nx-skpane-stage .nx-sketch-pad { width: 100%; }
+.nx-skpane-back { margin-left: 4px; }

@@ -133,3 +133,37 @@
   .nx-ag-chip { max-width: 55%; }
   .nx-ag-row { gap: 7px; }
 }
+
+/* ── SIDE PANELS (calendar / tasks) ──
+   Same rows as the agenda block — only the frame is different: a sticky header
+   with the panel's tools, and a body that scrolls on its own. */
+.nx-side { display: flex; flex-direction: column; height: 100%; padding: 0; }
+.nx-side-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 10px; border-bottom: 1px solid var(--nx-border, var(--background-modifier-border));
+  flex: 0 0 auto;
+}
+.nx-side-icon { display: inline-flex; color: var(--nx-accent, var(--interactive-accent)); }
+.nx-side-icon .svg-icon { width: 15px; height: 15px; }
+.nx-side-title { font-weight: 600; font-size: .92em; }
+.nx-side-count {
+  margin-right: auto; padding: 0 6px; border-radius: 999px;
+  font-size: .72em; color: var(--text-muted); background: var(--background-modifier-hover);
+}
+.nx-side-count:empty { display: none; }
+.nx-side-tool { display: inline-flex; padding: 3px; border-radius: 6px; cursor: pointer; color: var(--text-muted); }
+.nx-side-tool:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-side-tool .svg-icon { width: 14px; height: 14px; }
+.nx-side-body { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px 12px; }
+.nx-side-day {
+  position: sticky; top: 0; z-index: 1;
+  padding: 6px 2px 3px; margin-top: 6px;
+  font-size: .72em; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); cursor: pointer; background: var(--background-secondary);
+}
+.nx-side-day:first-child { margin-top: 0; }
+.nx-side-day:hover { color: var(--nx-accent, var(--interactive-accent)); }
+/* A narrow dock has no room for the wide time column of the agenda block. */
+.nx-side .nx-ag-row { padding: 4px 2px; }
+.nx-side .nx-ag-time { min-width: 0; font-size: .72em; }
+.nx-side .nx-ag-chip { display: none; }

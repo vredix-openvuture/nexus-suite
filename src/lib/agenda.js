@@ -24,7 +24,7 @@
 const { Notice, TFile, moment, setIcon } = require('obsidian');
 const calstore = require('./calstore.js');
 const tasks = require('./tasks.js');
-const { getDailyNoteSettings } = require('./helpers.js');
+const { getDailyNoteSettings, nxEndOfWeek, nxStartOfWeek } = require('./helpers.js');
 
 const SECTIONS = ['calendar', 'tasks', 'linked'];
 const DUE_SELECTORS = ['day', 'overdue', 'week', 'month', 'upcoming', 'none', 'any'];
@@ -253,7 +253,7 @@ class NexusAgenda {
     const titles = this.titleIndex();
     const wantProjects = cfg.projects.map(p => p.toLowerCase());
     const dayStr = day.format('YYYY-MM-DD');
-    const weekStart = day.clone().startOf('week'), weekEnd = day.clone().endOf('week');
+    const weekStart = nxStartOfWeek(day, this.plugin), weekEnd = nxEndOfWeek(day, this.plugin);
     const out = [];
 
     for (const rec of tasks.listTasks(this.plugin)) {

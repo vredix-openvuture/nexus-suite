@@ -35,3 +35,43 @@ body.nx-hide-explorer-buttons .workspace-leaf-content[data-type="file-explorer"]
   .nx-columns { flex-direction: column; }
 }
 
+
+/* ── PINNED NEXUS TABS ──
+   A pinned page (dashboard / calendar / tasks) shrinks to its bare icon and
+   loses the close button, so it reads as a fixed button rather than a document
+   that happens to be open. The JS side sets the body class, pins the leaf in
+   Obsidian's own sense and reopens the page if it is detached anyway
+   (see main.js · applyPinnedTabs / guardPinnedTabs). */
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"],
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"],
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-title,
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-title,
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-title {
+  display: none !important;
+}
+/* Both the close X and the pin glyph Obsidian swaps in for pinned tabs — either
+   one would close or unpin the page behind the user's back. */
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-close-button,
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-close-button,
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-close-button {
+  display: none !important;
+}
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner,
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner,
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner {
+  padding-inline: 8px;
+  justify-content: center;
+  gap: 0;
+}
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon,
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon,
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-icon {
+  margin: 0;
+  color: var(--nx-accent, var(--interactive-accent));
+}

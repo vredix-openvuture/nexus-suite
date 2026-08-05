@@ -6,9 +6,11 @@
  * ========================================================================== */
 
 const { ItemView, Menu, Notice, moment, setIcon } = require('obsidian');
-const { NexusActionConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, NexusListConfigModal, NexusOrphanConfigModal, NexusQuicknoteConfigModal, NexusStatConfigModal } = require('../modals/cards.js');
+const { NexusActionConfigModal, NexusCalendarCardConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, NexusListConfigModal, NexusOrphanConfigModal, NexusQuicknoteConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusTaskCardConfigModal } = require('../modals/cards.js');
+const { NexusAgenda, parsePriority } = require('../lib/agenda.js');
+const calstore = require('../lib/calstore.js');
 const { CARD_DEFS, HOME_VIEW, NX_DEFAULT_ACTIONS, NX_GREETINGS, NX_MODULES, WMO, WMO_ICON } = require('../constants.js');
-const { getDailyNoteSettings, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxPropValues, openDailyNote } = require('../lib/helpers.js');
+const { getDailyNoteSettings, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxWeekdayLabels, openDailyNote, renderMd } = require('../lib/helpers.js');
 const { NexusImageAdjustModal, NexusImageConfigModal } = require('../modals/image.js');
 const { KIND_ICON, nxBuildRefIndex, nxCanvasRefs, nxFormatSize, nxKindOf } = require('../lib/orphans.js');
 const { NexusConfirmModal, NexusNameModal } = require('../modals/misc.js');
@@ -17,10 +19,14 @@ const { NexusSearchModal } = require('../modals/search.js');
 const { NexusTimerConfigModal } = require('./timers.js');
 
 class NexusHomepageView extends ItemView {
-  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this._weatherCache = {}; this._liveEls = []; this._editing = false; this._qnDraft = {}; }
+  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this._weatherCache = {}; this._liveEls = []; this._editing = false; this._qnDraft = {}; this._randomPick = {}; }
   getViewType() { return HOME_VIEW; }
   getDisplayText() { return NX_MODULES.homepage.name; }
   getIcon() { return 'home'; }
+  onPaneMenu(menu, source) {
+    nxPinMenuItem(this.plugin, menu, 'home');
+    return super.onPaneMenu(menu, source);
+  }
 
   async onOpen() {
     this.render();
@@ -34,6 +40,14 @@ class NexusHomepageView extends ItemView {
     // one is edited, otherwise a freshly linked attachment stays "orphaned".
     this.registerEvent(this.app.vault.on('modify', (f) => {
       if (f && f.extension === 'canvas') { this._canvasIdx = null; this._debounced(); }
+    }));
+    // "Random note" draws when the dashboard is OPENED. With a pinned tab the
+    // view is never closed, so coming back to it counts as opening it — but
+    // only when we were away, otherwise every click inside would reshuffle.
+    this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => {
+      const mine = leaf && leaf.view === this;
+      if (mine && this._wasAway) { this._wasAway = false; this._randomPick = {}; this.render(); }
+      else if (!mine) this._wasAway = true;
     }));
     // Keep greeting/date fresh every minute (day change, morning→evening).
     this.registerInterval(window.setInterval(() => this.render(), 60 * 1000));
@@ -58,10 +72,10 @@ class NexusHomepageView extends ItemView {
       if (ls && !ls.collapsed) ls.collapse();
       if (rs && !rs.collapsed) rs.collapse();
     } catch (_) {}
-    this._installEdgeGuard();
+    this._swipeLock(true);
   }
   _exitEditGuards() {
-    this._removeEdgeGuard();
+    this._swipeLock(false);
     try {
       const ls = this.app.workspace.leftSplit, rs = this.app.workspace.rightSplit;
       if (this._sideState) {
@@ -71,37 +85,19 @@ class NexusHomepageView extends ItemView {
     } catch (_) {}
     this._sideState = null;
   }
-  /* Swallow touches that start in the screen-edge bands (where the mobile swipe
-     recogniser opens drawers / the command palette) — capture phase so it beats
-     Obsidian's recogniser, plus fixed overlay strips as a physical backstop. */
-  _installEdgeGuard() {
-    if (this._edgeGuard) return;
-    const EDGE = 30;
-    const guard = (e) => {
-      const t = (e.touches && e.touches[0]) || e;
-      if (!t || t.clientX == null) return;
-      if (t.clientX <= EDGE || t.clientX >= window.innerWidth - EDGE) { e.stopPropagation(); }
-    };
-    this._edgeGuard = guard;
-    document.addEventListener('touchstart', guard, true);
-    document.addEventListener('touchmove', guard, true);
-    this._edgeEls = ['left', 'right'].map(side => {
-      const s = document.body.createDiv('nx-edge-guard is-' + side);
-      const stop = (e) => { e.stopPropagation(); };
-      s.addEventListener('touchstart', stop, true);
-      s.addEventListener('touchmove', stop, true);
-      s.addEventListener('pointerdown', stop, true);
-      return s;
-    });
-  }
-  _removeEdgeGuard() {
-    if (this._edgeGuard) {
-      document.removeEventListener('touchstart', this._edgeGuard, true);
-      document.removeEventListener('touchmove', this._edgeGuard, true);
-      this._edgeGuard = null;
-    }
-    (this._edgeEls || []).forEach(el => el.remove());
-    this._edgeEls = null;
+  /* Dragging a card across the screen IS an edge swipe as far as the mobile
+     gesture recogniser is concerned — it would open a drawer (sideways) or the
+     quick action / command palette (pull down) mid-drag.
+     Obsidian's recogniser walks the target's ancestors on touchstart and gives
+     up as soon as one carries data-ignore-swipe (that is how the canvas and the
+     drawer tab strip opt out), so the whole body opts out while editing. This is
+     the only reliable lever: the recogniser listens in the capture phase and was
+     registered long before us, so stopPropagation from a plugin comes too late.
+     Cleared again on leaving edit mode — and in onClose, so a closed dashboard
+     can never leave the gestures switched off. */
+  _swipeLock(on) {
+    if (on) document.body.dataset.ignoreSwipe = 'true';
+    else delete document.body.dataset.ignoreSwipe;
   }
 
   /* ---- small data helpers ---- */
@@ -227,6 +223,10 @@ class NexusHomepageView extends ItemView {
     else if (item.type === 'quicknote') this._wQuicknote(card, item);
     else if (item.type === 'habit') this._wHabit(card, item);
     else if (item.type === 'orphans') this._wOrphans(card, item);
+    else if (item.type === 'calendar') this._wCalendar(card, item);
+    else if (item.type === 'tasks') this._wTasks(card, item);
+    else if (item.type === 'random') this._wRandom(card, item);
+    else if (item.type === 'sketches') this._wSketches(card, item);
     // Headless widgets get a gear in the corner in edit mode (settings)
     if (this._editing && ['image', 'clock', 'timer', 'weather'].includes(item.type)) {
       const gear = card.createDiv('nx-home-card-gear nx-home-gear-corner');
@@ -623,6 +623,332 @@ class NexusHomepageView extends ItemView {
       card.onclick = null;
     }
   }
+  /* ---- Calendar & tasks cards (CalDAV + local calendars + task notes) ------
+     Both read through the agenda module: it already knows how to expand
+     recurrences, bucket a task by its due date and write a tick back to both
+     the task note and the project checklist. Reusing it means a dashboard card
+     and an agenda block can never disagree about what "due today" means.
+     Data loading is async (the calendar cache is a set of files), so the body
+     paints a placeholder first and fills itself in when the read returns. ---- */
+  _agenda() {
+    // plugin.agenda exists once the module is on; a bare instance is enough for
+    // reading (init() only registers the code block).
+    return this._ag || (this._ag = this.plugin.agenda || new NexusAgenda(this.plugin));
+  }
+  _calModuleOn() { return !!(this.plugin.settings.tasksCalendar && this.plugin.settings.tasksCalendar.enabled); }
+  /* Card config → the agenda's own cfg shape (see lib/agenda.js · parseAgenda). */
+  _taskCfg(item) {
+    const list = (v) => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+    const due = Array.isArray(item.due) && item.due.length ? item.due : ['day', 'overdue'];
+    return {
+      calendars: list(item.calendars), projects: list(item.projects),
+      state: item.state || 'open',
+      priority: item.priority ? parsePriority(item.priority) : null,
+      due, sort: item.sort || 'smart', limit: item.count > 0 ? item.count : 0,
+    };
+  }
+  _cardHead(card, item, icon, title, ModalCls) {
+    const head = card.createDiv('nx-home-card-head');
+    setIcon(head.createSpan('nx-home-card-icon'), item.icon || icon);
+    head.createSpan({ cls: 'nx-home-card-title', text: item.title || title });
+    const count = head.createSpan({ cls: 'nx-home-card-count', text: '' });
+    if (this._editing && ModalCls) {
+      const gear = head.createSpan('nx-home-card-gear');
+      setIcon(gear, 'settings-2');
+      gear.onclick = (e) => { e.stopPropagation(); new ModalCls(this.plugin, this, item).open(); };
+    }
+    return { head, count };
+  }
+  _wCalendar(card, item) {
+    const { head, count } = this._cardHead(card, item, 'calendar-check', 'Calendar', NexusCalendarCardConfigModal);
+    const body = card.createDiv('nx-home-card-body nx-home-cal-body');
+    if (!this._calModuleOn()) { this._empty(body, 'Tasks & Calendar is switched off.'); return; }
+
+    const ag = this._agenda();
+    const days = Math.max(1, Math.min(60, parseInt(item.days, 10) || 7));
+    const start = moment().startOf('day');
+    const mode = item.display || 'agenda';
+    const [monFrom, monTo] = nxMonthGridRange(start, this.plugin);
+    const end = mode === 'month' ? monTo : start.clone().add(days - 1, 'day').endOf('day');
+    const from = mode === 'month' ? monFrom : start;
+
+    if (this._editing) {
+      // A "+ new event" button in edit mode would fight the drag handle.
+      body.createDiv({ cls: 'nx-home-empty', text: 'Calendar — ' + (mode === 'month' ? 'month view' : days + ' day(s)') });
+      return;
+    }
+    body.createDiv({ cls: 'nx-home-empty nx-cal-loading', text: 'Reading calendars …' });
+    ag.calendars().then(all => {
+      if (!body.isConnected) return;
+      const want = this._taskCfg(item).calendars.map(c => c.toLowerCase());
+      const cals = want.length
+        ? all.filter(c => want.some(w => String(c.display || '').toLowerCase().includes(w)))
+        : all;
+      const occs = calstore.expandRange(cals, from, end);
+      body.empty();
+      if (mode === 'month') this._calMonth(body, occs, start, cals);
+      else this._calAgenda(body, occs, start, days, cals, item);
+      count.setText(String(occs.filter(o => o.end.isAfter(moment())).length || occs.length));
+    }).catch(() => { if (body.isConnected) { body.empty(); this._empty(body, 'Calendar could not be read.'); } });
+  }
+  /* Upcoming events, grouped by day — the day heading is clickable and opens
+     that day in the full calendar. */
+  _calAgenda(body, occs, start, days, cals, item) {
+    const ag = this._agenda();
+    const now = moment();
+    const list = occs
+      .filter(o => item.past ? true : o.end.isAfter(now))
+      .sort((a, b) => a.start.valueOf() - b.start.valueOf());
+    const max = item.count > 0 ? item.count : 0;
+    const shown = max ? list.slice(0, max) : list;
+    if (!shown.length) { this._empty(body, 'Nothing scheduled in the next ' + days + ' day(s).'); return; }
+    let lastKey = '';
+    shown.forEach(o => {
+      const dayKey = o.start.format('YYYY-MM-DD');
+      if (dayKey !== lastKey) {
+        lastKey = dayKey;
+        const d = o.start.clone().startOf('day');
+        const label = d.isSame(start, 'day') ? 'Today'
+          : d.isSame(start.clone().add(1, 'day'), 'day') ? 'Tomorrow'
+          : d.format('ddd, D MMM');
+        const h = body.createDiv({ cls: 'nx-home-cal-day', text: label });
+        h.onclick = () => this.plugin.openCalendarPage(d, 'day');
+      }
+      ag.eventRow(body, o, o.start.clone().startOf('day'), cals, () => this.render());
+    });
+  }
+  /* Compact month grid with a dot per day that has events. */
+  _calMonth(body, occs, today, cals) {
+    const grid = body.createDiv('nx-home-cal-month');
+    const first = today.clone().startOf('month');
+    const [from, to] = nxMonthGridRange(today, this.plugin);
+    const byDay = {};
+    occs.forEach(o => {
+      // A multi-day event belongs on every day it covers.
+      const s = o.start.clone().startOf('day'), e = o.end.clone().subtract(1, 'ms').startOf('day');
+      for (let d = s.clone(); d.isSameOrBefore(e); d.add(1, 'day')) {
+        const k = d.format('YYYY-MM-DD');
+        (byDay[k] || (byDay[k] = [])).push(o);
+      }
+    });
+    const head = grid.createDiv('nx-home-cal-wd');
+    nxWeekdayLabels(this.plugin).forEach(d => head.createSpan({ text: d }));
+    const cells = grid.createDiv('nx-home-cal-cells');
+    for (let d = from.clone(); d.isSameOrBefore(to); d.add(1, 'day')) {
+      const k = d.format('YYYY-MM-DD');
+      const cell = cells.createDiv('nx-home-cal-cell'
+        + (d.isSame(today, 'day') ? ' is-today' : '')
+        + (d.month() !== first.month() ? ' is-out' : ''));
+      cell.createSpan({ cls: 'nx-home-cal-n', text: String(d.date()) });
+      const evs = byDay[k] || [];
+      if (evs.length) {
+        const dots = cell.createDiv('nx-home-cal-dots');
+        evs.slice(0, 3).forEach(o => {
+          const dot = dots.createSpan('nx-home-cal-dot');
+          if (o.color) dot.style.background = o.color;
+        });
+      }
+      const day = d.clone();
+      cell.onclick = () => this.plugin.openCalendarPage(day, 'day');
+      if (evs.length) cell.setAttribute('aria-label', evs.map(o => (o.allDay ? '' : o.start.format('H:mm') + ' ') + (o.event.summary || '')).join('\n'));
+    }
+  }
+  _wTasks(card, item) {
+    const { count } = this._cardHead(card, item, 'list-checks', 'Tasks', NexusTaskCardConfigModal);
+    const body = card.createDiv('nx-home-card-body nx-home-tasks-body');
+    if (!this._calModuleOn()) { this._empty(body, 'Tasks & Calendar is switched off.'); return; }
+    const ag = this._agenda();
+    const cfg = this._taskCfg(item);
+    const items = ag.collectTasks(cfg, moment().startOf('day'));
+    count.setText(String(items.length));
+    if (!items.length) { this._empty(body, 'Nothing due.'); return; }
+    // Repaint through the view so the card's own count follows a tick.
+    const repaint = () => this._debounced();
+    items.forEach(it => ag.taskRow(body, it, repaint));
+  }
+  /* ---- Random note ---------------------------------------------------------
+     One note out of the filtered set, shown with a real preview — the point is
+     to run into what you wrote months ago, so the draw happens when the
+     dashboard is OPENED (not on every repaint: the view re-renders on a timer
+     and on every vault event, which would make the card flicker through the
+     vault). _randomPick therefore holds the current draw per card. ---- */
+  _randomFiles(item) {
+    const clean = (s) => this._expandTokens(s).split(',').map(x => x.trim().replace(/^\/|\/$/g, '')).filter(Boolean);
+    const inc = clean(item.folders), exc = clean(item.exclude);
+    const name = this._expandTokens(item.name).trim().toLowerCase();
+    const minAge = Math.max(0, parseInt(item.minAge, 10) || 0);
+    const cutoff = minAge ? moment().subtract(minAge, 'day').valueOf() : 0;
+    return this.app.vault.getMarkdownFiles().filter(f => {
+      if (inc.length && !inc.some(p => f.path === p + '.md' || f.path.startsWith(p + '/'))) return false;
+      if (exc.length && exc.some(p => f.path === p + '.md' || f.path.startsWith(p + '/'))) return false;
+      if (String(item.tags || '').trim() && !this._tagMatch(f, this._expandTokens(item.tags))) return false;
+      if (name && !f.basename.toLowerCase().includes(name)) return false;
+      if (Array.isArray(item.propGroups) && item.propGroups.length && !this._propGroupsMatch(f, item.propGroups)) return false;
+      if (cutoff && f.stat.mtime > cutoff) return false;
+      return true;
+    });
+  }
+  _randomFile(item) {
+    const uid = item.uid;
+    const today = moment().format('YYYY-MM-DD');
+    // "Once per day" has to survive a restart → it lives in the card itself.
+    if ((item.mode || 'open') === 'day' && item.lastPick && item.lastPick.date === today) {
+      const f = this.app.vault.getAbstractFileByPath(item.lastPick.path);
+      if (f) return f;
+    }
+    const held = this._randomPick[uid];
+    if (held) {
+      const f = this.app.vault.getAbstractFileByPath(held);
+      if (f) return f;
+    }
+    const pool = this._randomFiles(item);
+    if (!pool.length) return null;
+    const f = pool[Math.floor(Math.random() * pool.length)];
+    this._randomPick[uid] = f.path;
+    if ((item.mode || 'open') === 'day') {
+      item.lastPick = { date: today, path: f.path };
+      this.plugin.saveSettings();
+    }
+    return f;
+  }
+  _wRandom(card, item) {
+    card.addClass('nx-home-random');
+    const head = card.createDiv('nx-home-card-head');
+    setIcon(head.createSpan('nx-home-card-icon'), item.icon || 'shuffle');
+    head.createSpan({ cls: 'nx-home-card-title', text: item.title || 'Random note' });
+    const shuffle = head.createSpan('nx-home-card-gear');
+    setIcon(shuffle, 'shuffle');
+    shuffle.setAttribute('aria-label', 'Draw another note');
+    shuffle.onclick = (e) => { e.stopPropagation(); this._randomPick[item.uid] = null; item.lastPick = null; this.render(); };
+    if (this._editing) {
+      const gear = head.createSpan('nx-home-card-gear');
+      setIcon(gear, 'settings-2');
+      gear.onclick = (e) => { e.stopPropagation(); new NexusRandomConfigModal(this.plugin, this, item).open(); };
+    }
+    const body = card.createDiv('nx-home-card-body nx-random-body');
+    const file = this._randomFile(item);
+    if (!file) { this._empty(body, 'No note matches this filter.'); return; }
+
+    if (item.showBanner !== false) {
+      const fm = this._fm(file);
+      const src = this.plugin.resolveBannerSrc(fm.banner || fm.cover || '', file.path);
+      if (src) {
+        const b = body.createDiv('nx-random-banner');
+        b.style.backgroundImage = 'url("' + src.replace(/"/g, '\\"') + '")';
+        b.onclick = () => this._open(file);
+      }
+    }
+    const t = body.createDiv({ cls: 'nx-random-title', text: file.basename });
+    t.onclick = () => this._open(file);
+    if (item.showMeta !== false) {
+      const dir = file.parent && file.parent.path && file.parent.path !== '/' ? file.parent.path : '/';
+      body.createDiv({ cls: 'nx-random-meta', text: dir + ' · ' + moment(file.stat.mtime).format('D MMM YYYY') });
+    }
+    const lines = item.lines == null ? 20 : item.lines;
+    if (lines <= 0) return;
+    const prev = body.createDiv('nx-random-preview');
+    prev.onclick = () => this._open(file);
+    this.app.vault.cachedRead(file).then(txt => {
+      if (!prev.isConnected) return;
+      // Frontmatter is metadata, not writing — the preview starts at the prose.
+      const src = String(txt).replace(/^---\n[\s\S]*?\n---\n?/, '').split('\n').slice(0, lines).join('\n');
+      renderMd(this.plugin, src || '*(empty note)*', prev, file.path);
+    }).catch(() => {});
+  }
+
+  /* ---- Quick sketches ------------------------------------------------------
+     The drawings themselves are standalone .svg files (see main.js ·
+     _sketchFolder), so the card is a thumbnail wall over that folder. Clicking
+     one opens the note it belongs to when we can find it, else the file. ---- */
+  _sketchFiles(item) {
+    const clean = (s) => String(s || '').split(',').map(x => x.trim().replace(/^\/|\/$/g, '')).filter(Boolean);
+    const folders = clean(item.folders);
+    const roots = folders.length ? folders : [this.plugin._sketchFolder()];
+    let files = this.app.vault.getFiles().filter(f => f.extension === 'svg'
+      && roots.some(p => f.path.startsWith(p + '/')));
+    const sort = item.sort || 'modified';
+    if (sort === 'name') files.sort((a, b) => a.basename.localeCompare(b.basename));
+    else if (sort === 'created') files.sort((a, b) => b.stat.ctime - a.stat.ctime);
+    else files.sort((a, b) => b.stat.mtime - a.stat.mtime);
+    return files;
+  }
+  /* Which note carries this sketch? Frontmatter `sketch:` (slate / note sketch)
+     is free; a `quicksketch` block hides its id in the body, so that lookup only
+     runs on demand and is remembered. */
+  _sketchOwnerFast(id) {
+    if (!this._sketchFmIdx) {
+      this._sketchFmIdx = new Map();
+      for (const f of this.app.vault.getMarkdownFiles()) {
+        const v = this._fm(f).sketch;
+        if (v) this._sketchFmIdx.set(String(v), f);
+      }
+    }
+    return this._sketchFmIdx.get(id) || null;
+  }
+  async _sketchOwner(id) {
+    const fast = this._sketchOwnerFast(id);
+    if (fast) return fast;
+    this._sketchOwners = this._sketchOwners || new Map();
+    if (this._sketchOwners.has(id)) return this._sketchOwners.get(id);
+    let hit = null;
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const cache = this.app.metadataCache.getFileCache(f);
+      // Only files that even have a code block can hold a sketch block.
+      if (!cache || !(cache.sections || []).some(s => s.type === 'code')) continue;
+      let txt = '';
+      try { txt = await this.app.vault.cachedRead(f); } catch (e) { continue; }
+      if (txt.includes('quicksketch') && new RegExp('id:\\s*' + id + '\\b').test(txt)) { hit = f; break; }
+    }
+    this._sketchOwners.set(id, hit);
+    return hit;
+  }
+  _openSketch(f) {
+    const id = f.basename;
+    this._sketchOwner(id).then(note => {
+      if (note) this.app.workspace.getLeaf(false).openFile(note);
+      else this._open(f);
+    }).catch(() => this._open(f));
+  }
+  _wSketches(card, item) {
+    card.addClass('nx-home-sketches');
+    const head = card.createDiv('nx-home-card-head');
+    setIcon(head.createSpan('nx-home-card-icon'), item.icon || 'pencil-line');
+    head.createSpan({ cls: 'nx-home-card-title', text: item.title || 'Quick sketches' });
+    const files = this._sketchFiles(item);
+    head.createSpan({ cls: 'nx-home-card-count', text: String(files.length) });
+    const add = head.createSpan('nx-home-card-gear');
+    setIcon(add, 'plus');
+    add.setAttribute('aria-label', 'New sketch note');
+    add.onclick = (e) => { e.stopPropagation(); this.plugin.createProtokollNote(); };
+    if (this._editing) {
+      const gear = head.createSpan('nx-home-card-gear');
+      setIcon(gear, 'settings-2');
+      gear.onclick = (e) => { e.stopPropagation(); new NexusSketchConfigModal(this.plugin, this, item).open(); };
+    }
+    const body = card.createDiv('nx-home-card-body nx-sk-body');
+    if (!files.length) { this._empty(body, 'No sketches yet.'); return; }
+    const shown = files.slice(0, item.count > 0 ? item.count : 8);
+    if ((item.display || 'grid') === 'list') {
+      shown.forEach(f => {
+        const row = body.createDiv('nx-home-item nx-sk-item');
+        const th = row.createSpan('nx-sk-mini');
+        th.style.backgroundImage = 'url("' + this.app.vault.getResourcePath(f).replace(/"/g, '\\"') + '")';
+        row.createDiv({ cls: 'nx-home-item-title', text: f.basename });
+        row.createSpan({ cls: 'nx-home-item-sub', text: moment(f.stat.mtime).fromNow() });
+        row.onclick = () => this._openSketch(f);
+      });
+      return;
+    }
+    const grid = body.createDiv('nx-sk-grid');
+    shown.forEach(f => {
+      const tile = grid.createDiv('nx-sk-tile');
+      const thumb = tile.createDiv('nx-sk-thumb');
+      thumb.style.backgroundImage = 'url("' + this.app.vault.getResourcePath(f).replace(/"/g, '\\"') + '")';
+      if (item.showName !== false) tile.createDiv({ cls: 'nx-sk-name', text: f.basename });
+      tile.setAttribute('aria-label', f.path + ' · ' + moment(f.stat.mtime).fromNow());
+      tile.onclick = () => this._openSketch(f);
+    });
+  }
   _wClock(card, item) {
     const box = card.createDiv('nx-home-live nx-clock');
     const time = box.createDiv('nx-clock-time');
@@ -754,9 +1080,14 @@ class NexusHomepageView extends ItemView {
     const menu = new Menu();
     const add = async (w) => { w.uid = this._uid(); this._widgets().push(w); await this.plugin.saveSettings(); this.render(); };
     menu.addItem(i => i.setTitle('List / query …').setIcon('list').onClick(() => this._addList()));
+    menu.addItem(i => i.setTitle('Random note …').setIcon('shuffle').onClick(() => this._addRandom()));
     menu.addItem(i => i.setTitle('Quicknote …').setIcon('pencil-line').onClick(() => this._addQuicknote()));
     menu.addItem(i => i.setTitle('Habit tracker …').setIcon('flame').onClick(() => this._addHabit()));
     menu.addItem(i => i.setTitle('Orphan finder …').setIcon('unlink').onClick(() => this._addOrphans()));
+    menu.addSeparator();
+    menu.addItem(i => i.setTitle('Calendar …').setIcon('calendar-check').onClick(() => this._addCalendar()));
+    menu.addItem(i => i.setTitle('Tasks …').setIcon('list-checks').onClick(() => this._addTasks()));
+    menu.addItem(i => i.setTitle('Quick sketches …').setIcon('pencil-line').onClick(() => this._addSketches()));
     menu.addSeparator();
     menu.addItem(i => i.setTitle('Image (file) …').setIcon('image-plus').onClick(() => this._pickImageWidget()));
     menu.addItem(i => i.setTitle('Image (URL) …').setIcon('link').onClick(() => this._addImageUrl()));
@@ -794,6 +1125,34 @@ class NexusHomepageView extends ItemView {
     this._widgets().push(item);
     await this.plugin.saveSettings(); this.render();
     new NexusHabitConfigModal(this.plugin, this, item).open();
+  }
+  async _addCalendar() {
+    const item = { type: 'calendar', uid: this._uid(), w: 8, h: 10, title: 'Calendar', icon: 'calendar-check',
+      display: 'agenda', days: 7, calendars: '', count: 12, past: false };
+    this._widgets().push(item);
+    await this.plugin.saveSettings(); this.render();
+    new NexusCalendarCardConfigModal(this.plugin, this, item).open();
+  }
+  async _addTasks() {
+    const item = { type: 'tasks', uid: this._uid(), w: 6, h: 10, title: 'Tasks', icon: 'list-checks',
+      projects: '', state: 'open', due: ['day', 'overdue'], priority: '', sort: 'smart', count: 12 };
+    this._widgets().push(item);
+    await this.plugin.saveSettings(); this.render();
+    new NexusTaskCardConfigModal(this.plugin, this, item).open();
+  }
+  async _addRandom() {
+    const item = { type: 'random', uid: this._uid(), w: 8, h: 10, title: 'Random note', icon: 'shuffle',
+      folders: '', tags: '', name: '', propGroups: [], mode: 'open', lines: 20, showMeta: true, showBanner: true };
+    this._widgets().push(item);
+    await this.plugin.saveSettings(); this.render();
+    new NexusRandomConfigModal(this.plugin, this, item).open();
+  }
+  async _addSketches() {
+    const item = { type: 'sketches', uid: this._uid(), w: 8, h: 10, title: 'Quick sketches', icon: 'pencil-line',
+      folders: '', sort: 'modified', count: 8, display: 'grid', showName: true };
+    this._widgets().push(item);
+    await this.plugin.saveSettings(); this.render();
+    new NexusSketchConfigModal(this.plugin, this, item).open();
   }
   async _addOrphans() {
     const item = { type: 'orphans', uid: this._uid(), w: 6, h: 8, title: 'Orphans', icon: 'unlink',
@@ -1050,6 +1409,13 @@ class NexusHomepageView extends ItemView {
     if (item.type === 'quicknote') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusQuicknoteConfigModal(this.plugin, this, item).open()));
     if (item.type === 'habit') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusHabitConfigModal(this.plugin, this, item).open()));
     if (item.type === 'orphans') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusOrphanConfigModal(this.plugin, this, item).open()));
+    if (item.type === 'calendar') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusCalendarCardConfigModal(this.plugin, this, item).open()));
+    if (item.type === 'tasks') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusTaskCardConfigModal(this.plugin, this, item).open()));
+    if (item.type === 'random') {
+      menu.addItem(i => i.setTitle('Shuffle now').setIcon('shuffle').onClick(() => { this._randomPick[item.uid] = null; this.render(); }));
+      menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusRandomConfigModal(this.plugin, this, item).open()));
+    }
+    if (item.type === 'sketches') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusSketchConfigModal(this.plugin, this, item).open()));
     const resize = (dw, dh) => async () => { item.w = Math.max(1, Math.min(48, (item.w || 1) + dw)); item.h = Math.max(1, Math.min(48, (item.h || 1) + dh)); await save(); };
     menu.addSeparator();
     menu.addItem(i => i.setTitle('Wider').setIcon('chevrons-right').onClick(resize(1, 0)));
@@ -1352,6 +1718,7 @@ class NexusHomepageView extends ItemView {
     this._applyHomeBg(root);
     this._liveEls = [];   // Uhr/Timer-Updater sammeln sich pro Render neu
     this._refCache = {};  // Orphan-Index pro Render einmal bauen, nicht pro Karte
+    this._sketchFmIdx = null;   // frontmatter → sketch owner, same deal
     const inner = root.createDiv('nx-home-inner');
 
     const hp = this.plugin.hp();

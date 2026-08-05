@@ -24,13 +24,22 @@ const TASKS_VIEW = 'nx-tasks';              // project/task board (later milesto
 
 const HOME_VIEW = 'nx-homepage';
 
+const SKETCH_VIEW = 'nx-sketch-pane';   // one sketch as its own tab (split next to the note)
+
+/* The calendar/tasks cards as side panels (see views/sidebar.js) */
+const SIDE_CAL_VIEW = 'nx-side-calendar';
+const SIDE_TASKS_VIEW = 'nx-side-tasks';
+
 const TIMER_VIEW = 'nx-timers';   // running timers move here when the dashboard is left
 
 const INK_VIEW = 'nx-ink-gallery';
 
 const DEFAULT_SETTINGS = {
   banner:     { enabled: true,  height: 250, fade: true, folder: 'attachments/banners', behindTabs: true,
-                nameTemplate: '{{name}}', defaultGroup: '', collapsed: {}, bgStrength: 4.5 },
+                nameTemplate: '{{name}}', defaultGroup: '', collapsed: {}, bgStrength: 4.5,
+                /* image separator — the last shape used, so the next one starts there */
+                sepHeight: 26, sepPosition: 50, sepFade: false, sepRound: true,
+                handScale: 1.45 },   // handwritten note font, as a factor of the app's font size
   hider:      { enabled: false, tooltips: false, scrollbars: false, status: false,
                 titlebar: false, vaultname: false, tabbar: false, instructions: false,
                 ribbon: false, explorerButtons: false },
@@ -75,7 +84,7 @@ const DEFAULT_SETTINGS = {
   sprint:     { enabled: true, minutes: 15, words: 300, useTime: true, useWords: true,
                 statusBar: true, focusDuringSprint: false, doneMessage: '' },
   editorial:  { enabled: true, margin: true, marginWidth: 200, pullquote: true,
-                dropcap: false, ornament: true, ornamentGlyph: '❦' },
+                dropcap: false, ornament: true, ornamentGlyph: '❦', taskStates: true },
   inkCapture: { enabled: true, ribbon: true, tagOnCapture: true,
     /* Only "paper" is fixed — that's the in-app camera capture. Every other
        source is whatever app the user exports from; they name it themselves. */
@@ -98,6 +107,10 @@ const DEFAULT_SETTINGS = {
     // units ≙ 297 mm (A4 landscape) → 5 mm ≙ ~26.9 units.
     bgType: 'none', bgSize: 27, bgOpacity: 0.12, bgColor: '#334155' },
   ribbon:     { mode: 'hover' },   // 'hover' | 'always' | 'hidden'
+  /* Nexus pages that live permanently at the tab bar as an icon (see
+     applyPinnedTabs): pinned in Obsidian's own sense, close button hidden,
+     reopened by the watchdog if something detaches them anyway. */
+  pinnedTabs: { home: false, calendar: false, tasks: false },
   theme:      { palette: 'nexus', gap: null, radius: null, homeGap: null, homePad: null, homeCols: 24, homeRow: 40 },
 };
 
@@ -235,8 +248,19 @@ const NX_MODULES = {
   focus:         { name: 'Focus',        sub: 'Dims everything but the line you are writing' },
   sprint:        { name: 'Sprint',       sub: 'Timed writing against a word goal' },
   editorial:     { name: 'Editorial',    sub: 'Margin notes, pull quotes, drop caps, ornaments' },
-  board:         { name: 'Dashboard',    sub: 'A folder as a card dashboard inside a normal note' },
+  board:         { name: 'Board',        sub: 'Every note of a folder as cards inside a normal note' },
 };
+
+/* Checklist states (see styles/19-task-states.css). The character is what goes
+   between the brackets; Obsidian puts it on the line as data-task and the CSS
+   turns it into an icon. Order = how they are offered in the command. */
+const TASK_STATES = [
+  [' ', 'Open'], ['x', 'Done'], ['/', 'In progress'], ['>', 'Forwarded'], ['<', 'Scheduled'],
+  ['!', 'Important'], ['?', 'Question'], ['-', 'Cancelled'], ['*', 'Star'], ['"', 'Quote'],
+  ['l', 'Location'], ['b', 'Bookmark'], ['i', 'Information'], ['I', 'Idea'],
+  ['p', 'Pro'], ['c', 'Con'], ['u', 'Up'], ['d', 'Down'],
+  ['f', 'Fire'], ['k', 'Key'], ['w', 'Win'], ['S', 'Amount'],
+];
 
 /* Pen ids in toolbar order — shared by the settings tab, the size-favourite
    migration and the sketch toolbar so they can never drift apart. */
@@ -255,4 +279,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_STATES };

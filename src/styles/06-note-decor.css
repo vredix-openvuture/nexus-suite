@@ -71,8 +71,13 @@
 }
 .nx-font-hand {
   --font-text: 'Grape Nuts';
-  --font-text-size: 20px;   /* Grape Nuts runs small → gentle bump; the note-bg
-                               grid re-measures line height, so it stays aligned */
+  /* Grape Nuts has a small x-height and needs a bump — but as a FACTOR of the
+     app's own font size, never a fixed px: --font-text-size IS Obsidian's font
+     size setting, and pinning it here made the handwritten note the one place
+     where that setting (and ⌘+/−) did nothing. The px value is computed in
+     main.js · applyHandFont, because a custom property cannot be defined in
+     terms of itself. */
+  --font-text-size: var(--nx-hand-size, 23px);
 }
 
 /* Button for the note background (to the left of the banner icon) */

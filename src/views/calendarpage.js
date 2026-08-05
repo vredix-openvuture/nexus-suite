@@ -10,7 +10,7 @@
 
 const { ItemView, moment, setIcon, Notice } = require('obsidian');
 const { CAL_PAGE_VIEW, NX_MODULES } = require('../constants.js');
-const { getDailyNoteSettings, openDailyNote } = require('../lib/helpers.js');
+const { getDailyNoteSettings, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxStartOfWeek, nxWeekdayLabels, openDailyNote } = require('../lib/helpers.js');
 const calstore = require('../lib/calstore.js');
 const tasks = require('../lib/tasks.js');
 const { NexusEventModal } = require('../modals/event.js');
@@ -31,6 +31,10 @@ class NexusCalendarPageView extends ItemView {
   getViewType() { return CAL_PAGE_VIEW; }
   getDisplayText() { return NX_MODULES.tasksCalendar.name; }
   getIcon() { return 'calendar-check'; }
+  onPaneMenu(menu, source) {
+    nxPinMenuItem(this.plugin, menu, 'calendar');
+    return super.onPaneMenu(menu, source);
+  }
 
   async onOpen() {
     await this.reload();
@@ -76,8 +80,8 @@ class NexusCalendarPageView extends ItemView {
   range() {
     const c = this.cursor;
     if (this.mode === 'day') return [c.clone().startOf('day'), c.clone().endOf('day')];
-    if (this.mode === 'week') return [c.clone().startOf('week'), c.clone().endOf('week')];
-    return [c.clone().startOf('month').startOf('week'), c.clone().endOf('month').endOf('week')];
+    if (this.mode === 'week') return [nxStartOfWeek(c, this.plugin), nxEndOfWeek(c, this.plugin)];
+    return nxMonthGridRange(c, this.plugin);
   }
   step(dir) {
     const unit = this.mode === 'day' ? 'day' : this.mode === 'week' ? 'week' : 'month';
@@ -210,7 +214,7 @@ class NexusCalendarPageView extends ItemView {
   _month(inner, occs) {
     const { format, folder } = getDailyNoteSettings(this.app);
     const dowrow = inner.createDiv('nx-cp-dowrow');
-    moment.weekdaysMin(true).forEach(d => dowrow.createDiv({ cls: 'nx-cp-dow', text: d }));
+    nxWeekdayLabels(this.plugin).forEach(d => dowrow.createDiv({ cls: 'nx-cp-dow', text: d }));
     const grid = inner.createDiv('nx-cp-month');
     const [start, end] = this.range();
     const today = moment().format('YYYY-MM-DD');

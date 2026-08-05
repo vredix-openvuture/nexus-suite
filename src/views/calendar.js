@@ -7,7 +7,7 @@
 
 const { ItemView, moment } = require('obsidian');
 const { CAL_VIEW, NX_MODULES } = require('../constants.js');
-const { getDailyNoteSettings, openDailyNote } = require('../lib/helpers.js');
+const { getDailyNoteSettings, nxMonthGridRange, nxWeekdayLabels, openDailyNote } = require('../lib/helpers.js');
 
 class NexusCalendarView extends ItemView {
   constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this.cursor = moment().startOf('month'); }
@@ -37,11 +37,10 @@ class NexusCalendarView extends ItemView {
     mkBtn('›', () => { this.cursor.add(1, 'month'); this.render(); });
 
     const grid = inner.createDiv('nx-cal-grid');
-    const dows = moment.weekdaysMin(true); // localized short names, respecting week start
-    dows.forEach(d => grid.createDiv({ cls: 'nx-cal-dow', text: d }));
+    // Column order and grid range both follow the vault's week-start setting.
+    nxWeekdayLabels(this.plugin).forEach(d => grid.createDiv({ cls: 'nx-cal-dow', text: d }));
 
-    const start = this.cursor.clone().startOf('month').startOf('week');
-    const end = this.cursor.clone().endOf('month').endOf('week');
+    const [start, end] = nxMonthGridRange(this.cursor, this.plugin);
     const today = moment().format('YYYY-MM-DD');
     const day = start.clone();
     while (day.isSameOrBefore(end)) {
