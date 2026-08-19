@@ -439,6 +439,9 @@ class NexusSketchSurface {
     this.streamline = (opts.streamline != null) ? opts.streamline : 0.55;   // fallback if a pen defines none
     this.minDist = (opts.minDist != null) ? opts.minDist : 2;                // viewBox units between samples
     this.mode = 'draw';
+    // Human name for the drawing, kept IN the sidecar (not in the note) so it
+    // travels with the sketch to every note that embeds it.
+    this.title = opts.title || '';
     this.locked = !!opts.locked;                         // view mode: gestures work, drawing doesn't (see setLocked)
     this.autoGrow = !!opts.autoGrow;                     // extend the canvas down while drawing near the bottom
     this.fixedViewport = !!opts.fixedViewport;           // protokoll paper: no pan, no zoom — only the outer container scrolls
@@ -1055,6 +1058,7 @@ class NexusSketchSurface {
       v: 1, w: this.W, h: this.H, bg: this.bg, paper: this.paper, paperStyle: this.paperStyle,
       bgType: this.bgType, bgSize: this.bgSize, bgOpacity: this.bgOpacity, bgColor: this.bgColor,
       autoGrow: this.autoGrow,
+      title: this.title || undefined,
       strokes: this.strokes,
     });
     let defs = '', body = '';

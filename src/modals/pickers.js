@@ -82,8 +82,123 @@ class NexusIconPickerModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
+/* ── Scribble picker ─────────────────────────────────────────────────────────
+   Shown when inserting a scribble block: start a blank one, or embed a drawing
+   that already exists. Sidecars ARE standalone SVGs, so the thumbnails are just
+   <img> — no parsing needed to show the grid. The alias title lives inside the
+   SVG metadata, so it is read lazily per file and filled in when it arrives;
+   the grid never waits for it. */
+class NexusSketchPickerModal extends Modal {
+  /* onPick(null) = blank pad · onPick({id}) = a saved sidecar ·
+     onPick({note}) = a scribble note, embedded by link so it follows renames. */
+  constructor(plugin, onPick, opts) {
+    super(plugin.app);
+    this.plugin = plugin; this.onPick = onPick; this.opts = opts || {}; this.titles = new Map();
+  }
+
+  /* The alias out of the <metadata> CDATA. A regex, not DOMParser: this runs
+     once per sidecar and only needs one field out of a file that also carries
+     every stroke. */
+  _title(text) {
+    const m = /"title"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text || '');
+    if (!m) return '';
+    try { return JSON.parse('"' + m[1] + '"'); } catch (e) { return m[1]; }
+  }
+
+  onOpen() {
+    this.modalEl.addClass('nx-skpick-modal');
+    const c = this.contentEl;
+    c.createEl('h3', { cls: 'nx-skpick-title', text: 'Insert a scribble block' });
+
+    const blank = c.createDiv('nx-skpick-new');
+    setIcon(blank.createDiv('nx-skpick-new-ic'), 'pencil-line');
+    blank.createDiv({ cls: 'nx-skpick-new-lbl', text: this.opts.blankLabel || 'Blank sketch' });
+    blank.createDiv({ cls: 'nx-skpick-new-sub', text: this.opts.blankSub || 'A fresh pad in this note' });
+    blank.tabIndex = 0;
+    const pickBlank = () => { this.close(); this.onPick(null); };
+    blank.onclick = pickBlank;
+    blank.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickBlank(); } };
+
+    const files = this.plugin.app.vault.getFiles()
+      .filter(f => f.extension === 'svg' && f.path.startsWith(this.plugin._sketchFolder() + '/'))
+      .sort((a, b) => b.stat.mtime - a.stat.mtime);
+
+    /* Scribble notes are whole drawing PAGES, not sidecars — they get their own
+       row, and go into the block as `note: [[…]]` rather than an id: the link
+       is what survives renaming the note. Metadata cache only, no reads. */
+    const scribbleNotes = this.plugin.app.vault.getMarkdownFiles()
+      .filter(f => this.plugin._isScribbleNote((this.plugin.app.metadataCache.getFileCache(f) || {}).frontmatter))
+      .sort((a, b) => b.stat.mtime - a.stat.mtime);
+
+    if (!files.length && !scribbleNotes.length) {
+      c.createDiv({ cls: 'nx-skpick-empty', text: 'No drawings yet — the blank pad above is the way in.' });
+      window.setTimeout(() => blank.focus(), 0);
+      return;
+    }
+
+    if (scribbleNotes.length) {
+      c.createDiv({ cls: 'nx-skpick-label', text: 'Scribble notes — embedded live, edits go both ways' });
+      const row = c.createDiv('nx-skpick-notes');
+      scribbleNotes.slice(0, 40).forEach(f => {
+        const it = row.createDiv('nx-skpick-note');
+        it.tabIndex = 0;
+        setIcon(it.createDiv('nx-skpick-note-ic'), 'file-text');
+        it.createDiv({ cls: 'nx-skpick-note-name', text: f.basename });
+        const take = () => { this.close(); this.onPick({ note: f.basename }); };
+        it.onclick = take;
+        it.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); take(); } };
+      });
+    }
+
+    if (!files.length) { window.setTimeout(() => blank.focus(), 0); return; }
+
+    c.createDiv({ cls: 'nx-skpick-label', text: 'Or embed one you already have' });
+    const search = c.createEl('input', { cls: 'nx-skpick-search',
+      attr: { type: 'text', placeholder: 'Search by title, note or id…' } });
+    const grid = c.createDiv('nx-skpick-grid');
+
+    // The id reads `sketch-<note>-<tail>`; the note part is worth showing on its
+    // own line, and it is all we have until the alias is read.
+    const born = (base) => {
+      const m = /^sketch-(.*)-[a-z0-9]{4}$/i.exec(base);
+      return m ? m[1].replace(/-/g, ' ') : base;
+    };
+    const label = (f) => this.titles.get(f.path) || born(f.basename);
+
+    const render = () => {
+      const q = (search.value || '').toLowerCase().trim();
+      grid.empty();
+      const hits = files.filter(f => !q ||
+        f.basename.toLowerCase().includes(q) || label(f).toLowerCase().includes(q));
+      if (!hits.length) { grid.createDiv({ cls: 'nx-skpick-empty', text: 'Nothing matches.' }); return; }
+      hits.slice(0, 120).forEach(f => {
+        const card = grid.createDiv('nx-skpick-card');
+        card.tabIndex = 0;
+        const img = card.createEl('img', { cls: 'nx-skpick-thumb' });
+        img.src = this.plugin.app.vault.getResourcePath(f);
+        img.alt = '';
+        card.createDiv({ cls: 'nx-skpick-name', text: label(f) });
+        card.createDiv({ cls: 'nx-skpick-meta', text: f.basename });
+        const take = () => { this.close(); this.onPick({ id: f.basename }); };
+        card.onclick = take;
+        card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); take(); } };
+      });
+    };
+    search.addEventListener('input', render);
+    render();
+    window.setTimeout(() => blank.focus(), 0);
+
+    // Aliases trickle in; re-render once they are all here rather than per file.
+    Promise.all(files.slice(0, 200).map(f => this.plugin.app.vault.cachedRead(f)
+      .then(t => { const t2 = this._title(t); if (t2) this.titles.set(f.path, t2); })
+      .catch(() => {})))
+      .then(() => { if (this.contentEl.isConnected && this.titles.size) render(); });
+  }
+  onClose() { this.contentEl.empty(); }
+}
+
 /* Callout colors are stored as "r, g, b" (Obsidian's --callout-color format,
    identical to eth-p Callout Manager). These convert to/from the hex a color
    picker speaks. Empty string = unset → inherit the theme default. */
 
-module.exports = { NexusPopupMenu, NexusIconPickerModal };
+module.exports = { NexusPopupMenu, NexusIconPickerModal, NexusSketchPickerModal };

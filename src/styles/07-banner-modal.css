@@ -76,3 +76,17 @@
   width: 44px; height: 3px; border-radius: 3px; background: var(--interactive-accent);
 }
 
+/* ── narrow / phone ────────────────────────────────────────────────────────
+   210px tiles leave one image per row on a phone — two smaller ones show far
+   more of the library per screen, and the action row stops being three
+   squeezed slivers. */
+@media (max-width: 620px) {
+  .nx-banner-actions { flex-wrap: wrap; gap: 6px; }
+  .nx-banner-action { flex: 1 1 30%; padding: 10px 6px; }
+  .nx-banner-action-label { font-size: .76em; text-align: center; }
+  .nx-banner-groups { max-height: 62vh; }
+  .nx-banner-cards { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 9px; }
+  .nx-banner-card img { height: 88px; }
+  .nx-banner-import-bar button { padding: 9px 16px; }
+}
+

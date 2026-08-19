@@ -197,4 +197,10 @@
   .nx-board-col { flex: 1 1 auto; min-width: 0; width: 100%; }
   .nx-board-list { max-height: none; }
   .nx-board-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  /* The tools push off the right edge next to a title + tally chips — give
+     them their own row, with the search field taking the space it needs. */
+  .nx-board-tools { margin-left: 0; width: 100%; }
+  .nx-board-search { flex: 1 1 auto; width: auto; min-width: 0; padding: 7px 12px; }
+  .nx-board-modebtn, .nx-board-gear { padding: 7px; }
+  .nx-board-tally { flex-basis: 100%; }
 }

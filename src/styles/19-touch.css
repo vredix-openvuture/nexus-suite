@@ -1,0 +1,53 @@
+/* ============================================================================
+ *  NEXUS SUITE — touch devices
+ *
+ *  The cross-cutting half of mobile support; the per-module narrow layouts
+ *  live in each module's own file as a media query. Two things belong to no
+ *  module in particular:
+ *    1. anything the desktop layout only reveals on :hover is simply
+ *       unreachable with a finger, and
+ *    2. a 15px glyph in a 26px box is well under any sane touch target.
+ *
+ *  Gated on body.is-mobile rather than (pointer: coarse) — the media query
+ *  misreports on pen tablets (a stylus reads as a fine pointer), which is
+ *  exactly the device that needs this most. Last file in the bundle, so these
+ *  win over the module rules they adjust.
+ * ========================================================================== */
+
+/* ── Hover-only affordances: visible from the start ── */
+body.is-mobile .nx-orph-more,
+body.is-mobile .nx-ink-tile-edit { opacity: .75; }
+body.is-mobile .nx-ws-tile-actions { opacity: .85; }
+
+/* ── Icon-only controls: pad the box out, leave the glyph alone ── */
+body.is-mobile .nx-multirow-del,
+body.is-mobile .nx-proprow-del,
+body.is-mobile .nx-prop-toggle { width: 34px; height: 34px; }
+body.is-mobile .nx-tp-icon,
+body.is-mobile .nx-board-modebtn,
+body.is-mobile .nx-board-gear { padding: 7px; }
+body.is-mobile .nx-sk-btn { width: 34px; height: 34px; }
+body.is-mobile .nx-sk-fav { width: 32px; height: 32px; }
+body.is-mobile .nx-cp-calpanel-x { padding: 4px 10px; }
+body.is-mobile .nx-cp-calrow { padding: 9px 6px; }
+body.is-mobile .nx-bgstep-btn { width: 30px; height: 30px; }
+body.is-mobile .nx-popmenu-item { padding: 12px; }
+body.is-mobile .nx-iconpicker-grid { grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); }
+
+/* ── Text fields at 16px: anything smaller makes the mobile webview zoom the
+      whole page on focus, and it never zooms back out on its own. ── */
+body.is-mobile .nx-multirow-input,
+body.is-mobile .nx-proprow-key,
+body.is-mobile .nx-proprow-val,
+body.is-mobile .nx-tp-new-input,
+body.is-mobile .nx-board-search,
+body.is-mobile .nx-iconpicker-search,
+body.is-mobile .nx-tagren-input,
+body.is-mobile .nx-banner-import-input { font-size: 16px; }
+
+/* ── Popovers built at a fixed pixel width (pen/palette/colour menus) must
+      never be wider than the screen. The colour wheel keeps its 216px: its
+      hue-ring mask is cut at fixed pixel radii, so scaling it would misalign
+      the band — it fits on any phone anyway. ── */
+body.is-mobile .nx-sk-pop,
+body.is-mobile .nx-ac-dropdown { max-width: calc(100vw - 16px); }
