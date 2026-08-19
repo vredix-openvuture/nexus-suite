@@ -17,11 +17,21 @@ function nxAutocomplete(inputEl, suggestFn, onPick) {
   const place = () => {
     if (!dd) { dd = document.body.createDiv('nx-ac-dropdown'); }
     const r = inputEl.getBoundingClientRect();
+    // Under the field by default — but on a phone with the keyboard up there
+    // is usually no room down there, and a list hanging off the bottom edge
+    // can't be scrolled into view. Flip above the field instead, and cap the
+    // height at whatever space that side actually has.
+    const below = window.innerHeight - r.bottom - 8;
+    const above = r.top - 8;
+    const flip = below < 132 && above > below;
+    const cap = Math.max(96, Math.min(240, flip ? above : below));
     dd.style.cssText =
-      'position:fixed !important;z-index:999999;max-height:240px;overflow-y:auto;' +
+      'position:fixed !important;z-index:999999;max-height:' + cap + 'px;overflow-y:auto;' +
       'background:var(--background-secondary,#2a2a2a);border:1px solid var(--background-modifier-border,#444);' +
       'border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.4);padding:4px;' +
-      'left:' + r.left + 'px;top:' + (r.bottom + 3) + 'px;width:' + r.width + 'px;';
+      'left:' + r.left + 'px;width:' + r.width + 'px;' +
+      (flip ? 'bottom:' + (window.innerHeight - r.top + 3) + 'px;'
+            : 'top:' + (r.bottom + 3) + 'px;');
   };
   const mkItem = (text, i, clickable) => {
     const el = dd.createDiv('nx-ac-item');

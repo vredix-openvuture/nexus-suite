@@ -23,6 +23,22 @@
   border-style: dashed !important; opacity: .85;
 }
 
+/* Narrow pane / phone: the 48px group gap and the 34+34px separator above are
+   desktop breathing room — on a phone they indent the tools column halfway
+   across the hero and push buttons off it. The groups stack there (see the
+   container queries in 04-homepage.css), so a hairline rule ABOVE the tools
+   separates them instead of one beside. */
+@container nxhome (max-width: 620px) {
+  .nx-home-actions { gap: 16px !important; }
+  .nx-home-tools-wrap { gap: 10px; width: 100%; justify-content: center; }
+  .nx-home-tools-wrap > .nx-home-actions-grp + .nx-home-actions-grp,
+  .nx-home-tools-right {
+    margin-left: 0; padding-left: 0; border-left: none;
+  }
+  .nx-home-tools { padding-left: 0; border-left: none; }
+  .nx-home-btn.nx-home-btn-icononly { width: 42px; height: 42px; }
+}
+
 /* Keep absolute children (e.g. gears) inside the stat tile, don't escape */
 .nx-home-stat { position: relative; }
 

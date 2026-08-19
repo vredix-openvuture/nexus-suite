@@ -16,3 +16,7 @@ _pre-split-backup/
 
 # Geparkte Features: liegen nur lokal, sind nicht Teil des Releases.
 .ideas/
+
+# Syncthing conflict copies (main.sync-conflict-…): artefacts of the vault sync,
+# never something to commit.
+*.sync-conflict-*

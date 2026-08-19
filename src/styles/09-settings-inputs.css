@@ -3,6 +3,7 @@
 .nx-settings-nav {
   flex: 0 0 188px; display: flex; flex-direction: column; gap: 2px;
   position: sticky; top: 0;
+  min-width: 0;
 }
 /* Section label above each block of tabs — the nav reads as ordered steps
    instead of one long undifferentiated list. */
@@ -52,6 +53,79 @@
 .nx-settings-body .nx-set-enable .setting-item-name { font-weight: 600; }
 .nx-settings-body .nx-set-sub { padding-top: 4px; padding-bottom: 14px; border-top: none; }
 .nx-settings-body .nx-set-sub .setting-item-name { font-size: .85em; color: var(--text-muted); padding-left: 14px; }
+
+/* Back out of a module — the narrow layout's only exit, hidden everywhere else. */
+.nx-settings-back { display: none; }
+.nx-settings-back-ic { display: flex; }
+.nx-settings-back-ic .svg-icon { width: 16px; height: 16px; }
+
+/* ── Mid-width: a window/panel narrow enough that 188px of rail hurts, but
+      still wide enough for two columns. Only the rail gives way. ── */
+@media (max-width: 860px) {
+  .nx-settings { gap: 14px; }
+  .nx-settings-nav { flex: 0 0 154px; }
+  .nx-settings-tab { padding: 8px 9px; gap: 8px; }
+  .nx-settings-tab-label { font-size: .88em; }
+}
+
+/* ── Narrow (phone, or a settings window squeezed hard): rail + panel become
+      ONE drill-down column. Two columns here would wrap every setting row into
+      rubble — which is exactly what made the tab unusable on mobile.
+      `is-narrow` / `is-panel` are set from settings.js via matchMedia. ── */
+.nx-settings.is-narrow { display: block; }
+.nx-settings.is-narrow .nx-settings-nav {
+  position: static; flex: none; width: auto; gap: 1px;
+}
+.nx-settings.is-narrow .nx-settings-body { display: none; }
+.nx-settings.is-narrow.is-panel .nx-settings-nav { display: none; }
+.nx-settings.is-narrow.is-panel .nx-settings-body { display: block; }
+/* Rows, not a rail: full width, thumb-sized, with a chevron that says "opens". */
+.nx-settings.is-narrow .nx-settings-tab {
+  padding: 12px 12px; gap: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: 0;
+}
+.nx-settings.is-narrow .nx-settings-tab.is-active { background: transparent; }
+.nx-settings.is-narrow .nx-settings-tab-label { font-size: 1em; }
+.nx-settings.is-narrow .nx-settings-tab::after {
+  content: ''; margin-left: auto; flex: 0 0 auto;
+  width: 7px; height: 7px; opacity: .6;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+.nx-settings.is-narrow .nx-settings-navgroup { margin-top: 18px; padding-bottom: 4px; }
+.nx-settings.is-narrow .nx-settings-back {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin: 0 0 12px; padding: 7px 14px 7px 9px;
+  border-radius: 999px; cursor: pointer;
+  font-size: .88em; color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+.nx-settings.is-narrow .nx-settings-back:active { color: var(--text-normal); }
+
+/* Very narrow: a name on the left and a control on the right don't both fit —
+   let the row stack instead of squeezing the control to nothing. Obsidian only
+   does this for its own phone layout, not for a narrow desktop window. */
+@media (max-width: 480px) {
+  .nx-settings-root .setting-item {
+    flex-direction: column; align-items: stretch; gap: 8px;
+  }
+  .nx-settings-root .setting-item-info { margin-right: 0; }
+  .nx-settings-root .setting-item-control {
+    justify-content: flex-start; flex-wrap: wrap; width: 100%;
+  }
+  .nx-settings-root .setting-item-control input[type="text"],
+  .nx-settings-root .setting-item-control input[type="number"],
+  .nx-settings-root .setting-item-control select,
+  .nx-settings-root .setting-item-control textarea { max-width: 100%; }
+  /* A toggle belongs beside its name, not on a line of its own. */
+  .nx-settings-root .setting-item:has(.checkbox-container) {
+    flex-direction: row; align-items: center;
+  }
+  .nx-settings-root .setting-item:has(.checkbox-container) .setting-item-control {
+    width: auto; justify-content: flex-end;
+  }
+}
 
 
 /* ── Multi-line input (Folders/Tags/Properties: one line per entry) ── */

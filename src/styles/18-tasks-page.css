@@ -208,3 +208,21 @@
   .nx-tp-list { padding: 8px 14px 12px; }
   .nx-tp-new { padding: 10px 14px 14px; }
 }
+
+/* ── phone: the tree costs a third of the screen before a single task shows,
+      and every row is a finger target, not a mouse target. ── */
+@media (max-width: 620px) {
+  .nx-tp-side { max-height: 32vh; padding: 10px 8px 12px; }
+  .nx-tp-card { height: 62px; }
+  .nx-tp-sub { padding-top: 8px; padding-bottom: 8px; }
+  .nx-tp-all { padding: 9px 10px; }
+  .nx-tp-icon { padding: 7px; }
+  /* Title on its own line, controls below — otherwise the segmented control
+     and the sort dropdown squeeze the project name to two characters. */
+  .nx-tp-title { width: 100%; font-size: 1.2em; }
+  .nx-tp-tools { margin-left: 0; flex-wrap: wrap; }
+  .nx-tp-segbtn { padding: 6px 13px; }
+  .nx-tp-select { padding: 6px 8px; }
+  .nx-tp-task { padding: 10px 8px; }
+  .nx-tp-new-input { padding: 9px 12px; }
+}

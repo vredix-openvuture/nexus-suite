@@ -132,3 +132,58 @@
 .nx-conflict-v.nx-server { background: color-mix(in srgb, var(--wl-color5, #1b3854) 22%, transparent); }
 .nx-conflict-v.nx-mine { background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%, transparent); }
 .nx-conflict-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+/* ── narrow pane / phone ───────────────────────────────────────────────────
+   Seven columns survive in the month (that IS the month), but everything
+   inside them has to shrink; the week view does not — seven ~45px columns are
+   unreadable, so it stacks into one row per day. */
+@media (max-width: 620px) {
+  .nx-calpage-inner { padding: 12px 12px 18px; }
+  .nx-cp-head { gap: 8px 10px; margin-bottom: 12px; }
+  .nx-cp-title { font-size: 1.22rem; width: 100%; }
+  .nx-cp-title .nx-cp-sub { font-size: .85rem; }
+  .nx-cp-actions { margin-left: 0; }
+  /* thumb-sized hit targets */
+  .nx-cp-btn { height: 34px; min-width: 34px; }
+  .nx-cp-segbtn { padding: 7px 13px; }
+
+  /* The panel is a 262px popover pinned under a header that now wraps to two
+     lines — as a bottom sheet it can neither collide with the header nor hang
+     off the right edge, and it sits where a thumb reaches. */
+  .nx-cp-calpanel {
+    top: auto; bottom: 12px; left: 12px; right: 12px;
+    width: auto; max-height: 52vh;
+  }
+
+  /* month: no room for 92px rows plus full chips */
+  .nx-cp-dowrow { gap: 2px; }
+  .nx-cp-month { grid-auto-rows: minmax(56px, 1fr); gap: 2px; }
+  .nx-cp-dow { font-size: .62rem; padding: 2px 3px; }
+  .nx-cp-day { min-height: 56px; padding: 3px 2px; border-radius: 6px; }
+  .nx-cp-daynum { font-size: .72rem; padding: 0 3px; }
+  .nx-cp-chip { padding: 0 3px; gap: 3px; font-size: .6rem; border-radius: 3px; }
+  .nx-cp-chip-time { display: none; }   /* the title matters more than the hour */
+  .nx-cp-more { font-size: .62rem; }
+
+  /* week: one row per day, the list itself scrolling (min-height:0 — a flex
+     item won't shrink below its content without it, and the page would
+     overflow instead of the week scrolling) */
+  .nx-cp-week {
+    grid-template-columns: 1fr; grid-auto-rows: min-content; gap: 6px;
+    min-height: 0; overflow-y: auto;
+  }
+  .nx-cp-wcol { overflow: visible; padding: 6px 8px; }
+  .nx-cp-wcol-head { justify-content: flex-start; gap: 9px; }
+  .nx-cp-week .nx-cp-chip { padding: 4px 8px; font-size: .84rem; border-radius: 5px; }
+  .nx-cp-week .nx-cp-chip-time { display: block; }
+
+  /* agenda: an 88px right-aligned time column halves the text width */
+  .nx-cp-arow { align-items: flex-start; gap: 8px; }
+  .nx-cp-atime { flex: 0 0 auto; min-width: 3.6em; text-align: left; padding-top: 5px; }
+
+  /* modals: label columns give way to the values */
+  .nx-conflict-grid { grid-template-columns: minmax(52px, auto) 1fr 1fr; gap: 3px 6px; }
+  .nx-conflict-v { font-size: .78rem; }
+  .nx-event-ro { flex-direction: column; gap: 1px; margin: 7px 0; }
+  .nx-event-ro-k { flex: none; }
+}

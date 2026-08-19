@@ -166,3 +166,31 @@
 .nx-ink-tile-edit .svg-icon { width: 14px; height: 14px; }
 .nx-ink-tile:hover .nx-ink-tile-edit { opacity: 1; }
 
+/* ── narrow / phone ────────────────────────────────────────────────────────
+   50% of a phone's width is a thumbnail, not a page: the PDF viewer takes the
+   whole column. Its toolbar drops its rigid thirds and wraps instead of
+   pushing the page controls off screen, and the TOC stacks above the pages
+   (its open width comes from setTocOpen in main.js, which matches this
+   breakpoint). */
+@media (max-width: 620px) {
+  .internal-embed.pdf-embed.nx-ink-pdf-viewer { width: 100% !important; max-width: 100% !important; }
+  .nx-ink-note .internal-embed.image-embed img { max-width: 100%; max-height: 62vh; }
+
+  .nx-ink-pdf-toolbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 10px; }
+  .nx-ink-pdf-toolbar-group:last-child { justify-content: center; }
+  .nx-ink-pdf-nav { padding: 6px 12px; }
+
+  .nx-ink-pdf-body { flex-direction: column; }
+  .nx-ink-pdf-toc { max-height: 42vh; border-right: none; }
+  .nx-ink-pdf-toc-thumbs { grid-template-columns: repeat(3, 1fr); }
+  /* Book mode side-by-side halves each page again — stack them. */
+  .nx-ink-pdf-pages.nx-ink-pdf-book { display: block; }
+  .nx-ink-pdf-pages.nx-ink-pdf-book .nx-ink-pdf-canvas { width: 100%; }
+  .nx-ink-pdf-pages.nx-ink-pdf-book .nx-ink-pdf-canvas + .nx-ink-pdf-canvas { margin-top: 10px; }
+
+  .nx-ink-gallery-inner { padding: 14px 14px 22px; }
+  .nx-ink-gallery-grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 14px; }
+  /* No hover on touch — the edit affordance has to be there from the start. */
+  .nx-ink-tile-edit { opacity: 1; }
+}
+
