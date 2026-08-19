@@ -3,7 +3,9 @@
 /* ============================================================================
  *  NEXUS SUITE · views · tasks page
  *  The task counterpart of the full-page calendar: a project tree on the left,
- *  the selected project's tasks on the right.
+ *  the selected project's tasks on the right — as a LIST or as a BOARD (kanban
+ *  columns, see lib/taskboard.js). Both read the same task notes; the mode is
+ *  only a way of looking at them.
  *
  *  The tree is the vault's project notes (nexus-parent = the edge), the list is
  *  their task notes — nothing here holds state of its own, so the page always
@@ -18,8 +20,10 @@ const { ItemView, Notice, moment, setIcon } = require('obsidian');
 const { TASKS_VIEW } = require('../constants.js');
 const { nxPinMenuItem } = require('../lib/helpers.js');
 const tasks = require('../lib/tasks.js');
+const { NexusTaskBoard } = require('../lib/taskboard.js');
 
 const STATES = [['open', 'Open'], ['done', 'Done'], ['all', 'All']];
+const MODES = [['list', 'List'], ['board', 'Board']];
 const SORTS = [['smart', 'Due date'], ['priority', 'Priority'], ['title', 'A–Z'], ['project', 'Project']];
 
 function priorityLabel(p) {
@@ -36,6 +40,7 @@ class NexusTasksPageView extends ItemView {
     this.sel = v.selected || '';                       // '' = every project
     this.state = v.state || 'open';
     this.sort = v.sort || 'smart';
+    this.mode = v.mode === 'board' ? 'board' : 'list';
     this.expanded = new Set(v.expanded || []);
   }
   getViewType() { return TASKS_VIEW; }
@@ -63,7 +68,7 @@ class NexusTasksPageView extends ItemView {
 
   persist() {
     const s = this.plugin.settings.tasksCalendar;
-    s.tasksView = { selected: this.sel, state: this.state, sort: this.sort, expanded: Array.from(this.expanded) };
+    s.tasksView = { selected: this.sel, state: this.state, sort: this.sort, mode: this.mode, expanded: Array.from(this.expanded) };
     this.plugin.saveSettings();
   }
 
@@ -256,6 +261,7 @@ class NexusTasksPageView extends ItemView {
       });
     };
     seg(STATES, this.state, (id) => { this.state = id; this.persist(); this.render(); });
+    seg(MODES, this.mode, (id) => { this.mode = id; this.persist(); this.render(); });
     const sortSel = tools.createEl('select', { cls: 'nx-tp-select' });
     SORTS.forEach(([id, label]) => sortSel.createEl('option', { value: id, text: label }));
     sortSel.value = this.sort;
@@ -272,11 +278,20 @@ class NexusTasksPageView extends ItemView {
     });
     const syncBtn = tool('refresh-cw', 'Sync now', async () => {
       syncBtn.addClass('is-spinning');
+      if (this.board) this.board.remote = null;      // ask the server for its columns again
       const r = await this.plugin.syncTaskCal();
       syncBtn.removeClass('is-spinning');
       if (r && r.lines && r.lines.length) new Notice('Nexus sync\n' + r.lines.join('\n'), 7000);
       this.render();
     });
+
+    if (this.mode === 'board') {
+      // Sorting is a list idea — on the board the column IS the order, so the
+      // sort dropdown only decides the order inside a column.
+      if (!this.board) this.board = new NexusTaskBoard(this);
+      this.board.render(main, d);
+      return;
+    }
 
     const list = main.createDiv('nx-tp-list');
     const items = this.visible(d);

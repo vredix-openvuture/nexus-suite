@@ -26,6 +26,7 @@ const { CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EX
 const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusAgenda } = require('./lib/agenda.js');
 const { NexusBoard } = require('./lib/board.js');
+const { NexusKanban } = require('./lib/kanban.js');
 const { NexusEditorial } = require('./lib/editorial.js');
 const { NexusFocus } = require('./lib/focus.js');
 const { NexusFolderNotes } = require('./lib/foldernotes.js');
@@ -83,6 +84,7 @@ module.exports = class NexusSuite extends Plugin {
     this._guard('sprint', () => { this.sprint = new NexusSprint(this); this.sprint.init(); });
     this._guard('editorial', () => { this.editorial = new NexusEditorial(this); this.editorial.init(); });
     this._guard('board', () => { this.board = new NexusBoard(this); this.board.init(); });
+    this._guard('kanban', () => { this.kanban = new NexusKanban(this); this.kanban.init(); });
     // ── Agenda code block (one day: events + tasks + backlinks, for daily notes) ──
     this._guard('agenda', () => { this.agenda = new NexusAgenda(this); this.agenda.init(); });
 

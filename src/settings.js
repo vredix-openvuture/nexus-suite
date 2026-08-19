@@ -16,9 +16,10 @@ const { NexusTagRenameModal } = require('./modals/tags.js');
 const { nxAllTagCounts, nxFilesWithTag, nxRenameTag } = require('./lib/tagtools.js');
 const { FN_TYPES } = require('./lib/foldernotes.js');
 const { nxAutocomplete, nxMultiRow } = require('./lib/inputs.js');
+const { nxAllFolders } = require('./lib/helpers.js');
 const calstore = require('./lib/calstore.js');
 const tasks = require('./lib/tasks.js');
-const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_STATES } = require('./constants.js');
+const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
@@ -138,6 +139,7 @@ class NexusSettingsTab extends PluginSettingTab {
         { id: 'folderNotes',   icon: 'folder-open',      fn: (e) => this.tFolderNotes(e) },
         { id: 'icons',         icon: 'shapes',           fn: (e) => this.tIcons(e) },
         { id: 'board',         icon: 'layout-grid',      fn: (e) => this.tBoard(e) },
+        { id: 'kanban',        icon: 'square-kanban',    fn: (e) => this.tKanban(e) },
         { id: 'hider',         icon: 'eye-off',          fn: (e) => this.tHider(e) },
       ] },
       { title: 'In the note', tabs: [
@@ -196,6 +198,44 @@ class NexusSettingsTab extends PluginSettingTab {
       });
     });
     renderBody();
+  }
+
+  /* Kanban — the ```nexus-kanban``` boards plus the columns of the task board.
+     Both are only defaults: a board keeps its own columns in its own block, and
+     a Vikunja project brings the columns its server has. */
+  tKanban(e) {
+    const s = this.plugin.settings.kanban;
+    this.head(e, s);
+
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A board is a ```nexus-kanban``` block inside an ordinary note — columns and cards live in the block itself, so the board is one hand-editable text and works without the plugin.' });
+
+    nxMultiRow(e, 'Columns of a new board', 'One per row. Names decide the colour: “Erledigt”/“Done” is the done column, “In Arbeit”/“Doing” the active one.',
+      (s.buckets || []).join('\n'), '\n', 'Backlog',
+      async (v) => { s.buckets = v.split('\n').map(x => x.trim()).filter(Boolean); await this.save(); });
+
+    new Setting(e).setName('Folder for new notes')
+      .setDesc('Where “Create a note for this card” puts the note. Empty = next to the board note. A single board can override this with its own “notes:” line.')
+      .addText(t => { t.setPlaceholder('Projects').setValue(s.notesFolder || '')
+        .onChange(async v => { s.notesFolder = (v || '').trim().replace(/^\/|\/$/g, ''); await this.save(); });
+        nxAutocomplete(t.inputEl, () => nxAllFolders(this.app), async (v) => { s.notesFolder = v; await this.save(); }); });
+
+    new Setting(e).setName('Folder for new boards')
+      .setDesc('Where the “New kanban board” command creates its note. Empty = the vault root.')
+      .addText(t => { t.setPlaceholder('Boards').setValue(s.boardsFolder || '')
+        .onChange(async v => { s.boardsFolder = (v || '').trim().replace(/^\/|\/$/g, ''); await this.save(); });
+        nxAutocomplete(t.inputEl, () => nxAllFolders(this.app), async (v) => { s.boardsFolder = v; await this.save(); }); });
+
+    new Setting(e).setName('Narrow columns').setDesc('Fits more columns on screen. Per board via “compact: true”.')
+      .addToggle(t => t.setValue(!!s.compact).onChange(async v => { s.compact = v; await this.save(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Task board' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The board mode of the tasks page. A task remembers its column in its own note (“bucket:”). A Vikunja project uses the columns of its kanban view instead — dragging a card there moves it on the server.' });
+    const tk = (this.plugin.settings.tasksCalendar.tasks = this.plugin.settings.tasksCalendar.tasks || {});
+    nxMultiRow(e, 'Columns', 'One per row. The last-but-any column named “Erledigt”/“Done” completes a task that is dropped into it.',
+      ((tk.buckets && tk.buckets.length ? tk.buckets : TASK_BUCKETS)).join('\n'), '\n', 'Backlog',
+      async (v) => { tk.buckets = v.split('\n').map(x => x.trim()).filter(Boolean); await this.save(); this.plugin.refreshCalendarViews(); });
   }
 
   tBanner(e) {
