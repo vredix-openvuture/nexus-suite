@@ -1,0 +1,248 @@
+/* ── KANBAN ────────────────────────────────────────────────────────────────
+   Two boards, one language:
+     .nx-kb   the ```nexus-kanban``` block inside a note (columns + cards)
+     .nx-tb   the board mode of the tasks page (the same task notes as cards)
+   Column colour comes from what the column IS (open / doing / waiting / done),
+   set as --nx-kb-kind from JS, so both recolour with the palette. */
+
+.nx-kb {
+  --nx-kb-kind: var(--text-muted);
+  --nx-kb-col-w: 260px;
+  margin: 0.6em 0 1em;
+}
+.nx-kb.is-compact { --nx-kb-col-w: 210px; }
+
+/* Obsidian hangs an edit frame + "</>" button on every rendered code block as
+   soon as you hover it — right on top of the column tools. Same fix the board
+   and sketch blocks already use. */
+.cm-preview-code-block:has(.nx-kb),
+.cm-embed-block:has(.nx-kb),
+.markdown-rendered .el-pre:has(.nx-kb) {
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+.cm-preview-code-block:has(.nx-kb):hover,
+.cm-embed-block:has(.nx-kb):hover { box-shadow: none !important; }
+.cm-preview-code-block:has(.nx-kb) .edit-block-button,
+.cm-embed-block:has(.nx-kb) .edit-block-button,
+.markdown-rendered .el-pre:has(.nx-kb) .edit-block-button { display: none !important; }
+
+/* ── head ── */
+.nx-kb-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 9px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.nx-kb-title {
+  font-family: var(--font-text, inherit);
+  font-weight: 600; font-size: 1.15em; color: var(--text-normal);
+}
+.nx-kb-count { font-size: .76em; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.nx-kb-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.nx-kb-tool {
+  display: inline-flex; padding: 4px; border-radius: 6px; cursor: pointer; color: var(--text-faint);
+}
+.nx-kb-tool:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-kb-tool .svg-icon { width: 15px; height: 15px; }
+.nx-kb-empty { padding: 18px 6px; color: var(--text-faint); font-size: .88em; }
+
+/* ── columns ── */
+/* stretch, not flex-start: columns of equal height read as one board, and a
+   short column still offers its full drop area. */
+.nx-kb-cols {
+  display: flex; gap: 12px; align-items: stretch;
+  overflow-x: auto; padding-bottom: 8px;
+}
+.nx-kb-cols .nx-kb-cards { flex: 1; }
+.nx-kb-col,
+.nx-tb-col {
+  flex: 0 0 var(--nx-kb-col-w, 260px); min-width: var(--nx-kb-col-w, 260px);
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 9px;
+  border-radius: var(--radius-m, 10px);
+  background: color-mix(in srgb, var(--nx-kb-kind) 6%, var(--background-secondary));
+  border: 1px solid color-mix(in srgb, var(--nx-kb-kind) 22%, var(--background-modifier-border));
+  border-top: 2px solid color-mix(in srgb, var(--nx-kb-kind) 60%, transparent);
+  transition: background .12s ease, border-color .12s ease;
+}
+.nx-kb-col.is-over,
+.nx-tb-col.is-over {
+  background: color-mix(in srgb, var(--nx-kb-kind) 16%, var(--background-secondary));
+  border-color: var(--nx-kb-kind);
+}
+.nx-kb-col-head,
+.nx-tb-col-head { display: flex; align-items: center; gap: 7px; padding: 1px 2px 2px; }
+.nx-kb-col-dot,
+.nx-tb-col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--nx-kb-kind); }
+.nx-kb-col-title,
+.nx-tb-col-title {
+  flex: 1; min-width: 0; font-size: .86em; font-weight: 600; color: var(--text-normal);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-kb-col-count,
+.nx-tb-col-count {
+  font-size: .72em; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--nx-kb-kind) 75%, var(--text-normal));
+  background: color-mix(in srgb, var(--nx-kb-kind) 15%, transparent);
+}
+/* Over the WIP limit — the one place the board raises its voice. */
+.nx-kb-col-count.is-over,
+.nx-tb-col-count.is-over {
+  color: var(--text-on-accent, #fff);
+  background: var(--color-red, #e5544a);
+}
+.nx-kb-col-menu {
+  display: inline-flex; padding: 2px; border-radius: 5px; cursor: pointer; color: var(--text-faint);
+}
+.nx-kb-col-menu:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-kb-col-menu .svg-icon { width: 14px; height: 14px; }
+
+.nx-kb-cards,
+.nx-tb-cards {
+  display: flex; flex-direction: column; gap: 7px;
+  min-height: 24px; max-height: 62vh; overflow-y: auto;
+}
+
+/* ── cards ── */
+.nx-kb-card,
+.nx-tb-card {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px; border-radius: var(--radius-s, 8px); cursor: pointer;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  transition: transform .1s ease, border-color .1s ease, opacity .12s ease;
+  touch-action: none;                 /* the card doubles as a drag handle */
+}
+.nx-kb-card:hover,
+.nx-tb-card:hover { border-color: var(--nx-kb-kind); transform: translateY(-1px); }
+.nx-kb-card.is-dragging,
+.nx-tb-card.is-dragging { opacity: .35; }
+.nx-kb-card.is-done .nx-kb-card-t,
+.nx-tb-card.is-done .nx-tb-card-t { text-decoration: line-through; color: var(--text-faint); }
+/* The card points at a note that isn't there (renamed, deleted) — say so
+   instead of showing a card that does nothing when clicked. */
+.nx-kb-card.is-missing { border-style: dashed; }
+.nx-kb-card.is-missing .nx-kb-card-ic { color: var(--color-red, #e5544a); }
+.nx-tb-card.is-busy { opacity: .5; pointer-events: none; }
+
+.nx-kb-check,
+.nx-tb-check { margin: 2px 0 0; flex-shrink: 0; }
+.nx-kb-card-body,
+.nx-tb-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.nx-kb-card-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.nx-kb-card-ic { display: inline-flex; flex-shrink: 0; color: var(--text-faint); }
+.nx-kb-card-ic .svg-icon { width: 13px; height: 13px; }
+.nx-kb-card-t,
+.nx-tb-card-t {
+  font-size: .9em; line-height: 1.35; color: var(--text-normal);
+  overflow-wrap: anywhere;
+}
+.nx-kb-card-meta,
+.nx-tb-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.nx-kb-card-menu {
+  position: absolute; top: 4px; right: 4px;
+  display: inline-flex; padding: 2px; border-radius: 5px;
+  color: var(--text-faint); opacity: 0; transition: opacity .1s ease;
+}
+.nx-kb-card:hover .nx-kb-card-menu { opacity: 1; }
+.nx-kb-card-menu:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-kb-card-menu .svg-icon { width: 13px; height: 13px; }
+/* No hover on a touch screen — the menu has to be reachable there too. */
+body.is-mobile .nx-kb-card-menu { opacity: .6; }
+
+/* ── chips ── */
+.nx-kb-due, .nx-tb-due,
+.nx-kb-tag,
+.nx-tb-prio, .nx-tb-chip, .nx-tb-pending {
+  font-size: .7em; padding: 1px 7px; border-radius: 999px;
+  color: var(--text-muted); background: var(--background-modifier-border);
+  white-space: nowrap;
+}
+.nx-kb-due.is-today, .nx-tb-due.is-today {
+  color: var(--text-on-accent, #fff); background: var(--interactive-accent);
+}
+.nx-kb-due.is-late, .nx-tb-due.is-late {
+  color: var(--text-on-accent, #fff); background: var(--color-red, #e5544a);
+}
+.nx-kb-tag { color: var(--text-accent); background: color-mix(in srgb, var(--text-accent) 14%, transparent); }
+.nx-tb-prio.is-high { color: var(--text-on-accent, #fff); background: var(--color-red, #e5544a); }
+.nx-tb-prio.is-medium { color: var(--color-orange, #d8a24a); background: color-mix(in srgb, var(--color-orange, #d8a24a) 16%, transparent); }
+.nx-tb-rep { display: inline-flex; color: var(--text-faint); }
+.nx-tb-rep .svg-icon { width: 12px; height: 12px; }
+.nx-tb-pending { font-style: italic; }
+
+/* ── new card ── */
+.nx-kb-add,
+.nx-tb-add {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 6px; border-radius: var(--radius-s, 8px);
+  border: 1px dashed var(--background-modifier-border);
+  color: var(--text-faint);
+}
+.nx-kb-add:focus-within,
+.nx-tb-add:focus-within { border-color: var(--interactive-accent); border-style: solid; }
+.nx-kb-add-ic, .nx-tb-add-ic { display: inline-flex; }
+.nx-kb-add-ic .svg-icon, .nx-tb-add-ic .svg-icon { width: 13px; height: 13px; }
+.nx-kb-add-input,
+.nx-tb-add-input {
+  flex: 1; min-width: 0;
+  border: none; background: transparent; color: var(--text-normal);
+  font-size: .85em; padding: 2px 0;
+}
+.nx-kb-add-input:focus, .nx-tb-add-input:focus { outline: none; }
+
+/* ── drag ── */
+.nx-kb-ghost {
+  position: fixed; z-index: 999999; pointer-events: none;
+  max-width: 240px; padding: 5px 10px; border-radius: 7px;
+  font-size: .82em; color: var(--text-normal);
+  background: var(--background-secondary);
+  border: 1px solid var(--interactive-accent);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .35);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Where the card would land — a line, not a placeholder box, so the column
+   does not jump around while dragging. */
+.nx-kb-mark {
+  height: 2px; border-radius: 2px; margin: -3px 0;
+  background: var(--interactive-accent);
+}
+
+/* ── task board (tasks page) ────────────────────────────────────────────────
+   Lives inside the page's right half, so it scrolls sideways on its own and
+   the columns take the full height they can get. */
+.nx-tb {
+  --nx-kb-kind: var(--text-muted);
+  --nx-kb-col-w: 260px;
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 14px 16px;
+  overflow: hidden;
+}
+.nx-tb-warn {
+  font-size: .78em; color: var(--text-muted);
+  padding: 6px 10px; border-radius: 7px;
+  background: color-mix(in srgb, var(--color-orange, #d8a24a) 14%, transparent);
+}
+.nx-tb-cols {
+  flex: 1; min-height: 0;
+  display: flex; gap: 12px; align-items: stretch;
+  overflow-x: auto; overflow-y: hidden; padding-bottom: 6px;
+}
+.nx-tb-col { align-self: stretch; }
+.nx-tb-cards { flex: 1; max-height: none; }
+/* A column that only exists because a task note says so (renamed column, or a
+   Vikunja bucket that is gone) — visibly not part of the configured board. */
+.nx-tb-col.is-stray { border-style: dashed; }
+.nx-tb-none { padding: 8px 4px; text-align: center; font-size: .78em; color: var(--text-faint); }
+
+/* ── phone: columns full width, stacked ── */
+@media (max-width: 620px) {
+  .nx-kb-cols, .nx-tb-cols { flex-direction: column; overflow-x: visible; }
+  .nx-kb-col, .nx-tb-col { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .nx-kb-cards, .nx-tb-cards { max-height: 46vh; }
+}

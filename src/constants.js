@@ -34,6 +34,11 @@ const TIMER_VIEW = 'nx-timers';   // running timers move here when the dashboard
 
 const INK_VIEW = 'nx-ink-gallery';
 
+/* Columns of the task board when nothing else says otherwise. Also the
+   fallback at every read site: loadSettings only merges one level deep, so a
+   vault that already has `tasksCalendar.tasks` never sees a new nested key. */
+const TASK_BUCKETS = ['Backlog', 'In Arbeit', 'Wartet', 'Erledigt'];
+
 const DEFAULT_SETTINGS = {
   banner:     { enabled: true,  height: 250, fade: true, folder: 'attachments/banners', behindTabs: true,
                 nameTemplate: '{{name}}', defaultGroup: '', collapsed: {}, bgStrength: 4.5,
@@ -57,7 +62,7 @@ const DEFAULT_SETTINGS = {
     accounts: [],        // {id,kind,label,serverUrl,username,principalHref,homeSet,calendars:[{id,href,display,color,component,enabled,ctag,syncToken}]} — NO secrets (localStorage)
     localCalendars: [],  // {id,name,color}
     hiddenCalendars: [], // per-calendar visibility toggle (calKey strings that are HIDDEN)
-    tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local' } },
+    tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local', buckets: TASK_BUCKETS.slice() } },
   propertyHider: { enabled: true, hidden: [], reveal: false },
   callouts:   { enabled: true, migrated: false, items: [] },
   workspaces: { enabled: true, selectMode: 'release' },
@@ -75,6 +80,11 @@ const DEFAULT_SETTINGS = {
     excludeFolders: [], supportedTypes: ['md', 'canvas', 'base'] },
   icons:      { enabled: true, map: {} },
   board:      { enabled: true, statusProperty: 'status' },
+  /* Kanban: the standalone ```nexus-kanban``` boards. The task board on the
+     tasks page has no switch of its own — it is a way of looking at the tasks
+     module and lives and dies with it. */
+  kanban:     { enabled: true, buckets: ['Backlog', 'In Arbeit', 'Erledigt'],
+                notesFolder: '', boardsFolder: '', compact: false },
   tagTools:   { enabled: true },
   /* Writing aids. Each sub-feature has its own switch — the `enabled` flag
      only gates them all at once. */
@@ -249,6 +259,7 @@ const NX_MODULES = {
   sprint:        { name: 'Sprint',       sub: 'Timed writing against a word goal' },
   editorial:     { name: 'Editorial',    sub: 'Margin notes, pull quotes, drop caps, ornaments' },
   board:         { name: 'Board',        sub: 'Every note of a folder as cards inside a normal note' },
+  kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note — plus the board view of your tasks' },
 };
 
 /* Checklist states (see styles/19-task-states.css). The character is what goes
@@ -279,4 +290,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_STATES };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };

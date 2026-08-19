@@ -413,7 +413,24 @@ function taskRecord(file, fm) {
     done: String(fm.status || '') === 'completed',
     due, dueDay: due ? due.slice(0, 10) : '', timed: due.length > 10 ? due.slice(11, 16) : '',
     priority: parseInt(fm.priority, 10) || 0, repeat: String(fm.repeat || ''),
+    // Which column of the task board it sits in. Empty = the first column, so
+    // an untouched vault has no `bucket:` lines at all.
+    bucket: String(fm.bucket || '').trim(),
   };
+}
+
+/* ── move a task into a board column ──
+     The column lives in the task note like every other task field. An empty
+     title means the first column, which is the absence of a value — writing
+     "bucket: Backlog" into every note would be noise. */
+async function setTaskBucket(plugin, task, title) {
+  const file = task && task.file ? task.file : task;
+  if (!(file instanceof TFile)) return false;
+  const want = String(title || '').trim();
+  await plugin.app.fileManager.processFrontMatter(file, fm => {
+    if (!want) delete fm.bucket; else fm.bucket = want;
+  });
+  return true;
 }
 function listTasks(plugin) {
   const app = plugin.app, items = itemsFolder(plugin) + '/', out = [];
@@ -451,7 +468,7 @@ function listProjects(plugin) {
 
 module.exports = {
   createProject, createTask, addTaskToProject, setTaskDone, setChecklistBox,
-  taskState, taskStateOf, onProjectNoteModify, listProjects, advanceDue,
+  taskState, taskStateOf, onProjectNoteModify, listProjects, advanceDue, setTaskBucket,
   listTasks, listProjectNotes, taskRecord, linkName,
   projectPath, taskPath, freeTaskPath, projectsFolder, itemsFolder, sanitize,
   checklistLine, parseTaskLine, linkRe,

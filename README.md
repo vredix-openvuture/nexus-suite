@@ -22,6 +22,7 @@ run what you use.
 | **Calendar** | Month view over your daily notes | calendar |
 | **CalDAV** | Server accounts, local calendars, events, tasks | — |
 | **Search** | Weighted over title, tags, headings, properties, text | omnisearch |
+| **Kanban** | Boards with columns and cards in a note, plus the board view of your tasks | kanban |
 | **Workspaces** | Save and switch pane layouts | — |
 
 Built for a card-based vault layout and designed to work on mobile as well as
@@ -101,6 +102,72 @@ project note; a repeating task advances its due date instead of closing.
 A note whose name holds no date falls back to today, so the block is never a
 dead end. `Insert an agenda block` in the command palette writes the skeleton.
 
+## Kanban
+
+Two boards, one idea: a column is a state, a card is a thing, dragging one
+changes the other.
+
+### A board in a note
+
+A ```` ```nexus-kanban ```` block **is** the board — the columns and the cards
+live inside the fence, so the board is one hand-editable text that travels with
+the note and still says something without the plugin:
+
+````md
+```nexus-kanban
+title: Roadmap
+notes: Projects/Roadmap
+## Backlog
+- [ ] Rework the tab bar
+- [ ] [[Kanban module|Kanban]] @2026-08-25 #plugin
+## In Arbeit @2
+- [ ] Vikunja buckets
+## Erledigt
+- [x] Pinned tabs
+```
+````
+
+* `## Heading` = a column, `@2` behind it = its WIP limit (the count turns red
+  above it).
+* `- [ ] text` = a card, `[x]` = done, `[[Note]]` / `[[Note|Title]]` links it to
+  a note, `@2026-08-25` a due date, `#tag` a tag.
+* Drag with mouse or finger, between and inside columns. Dropping into a column
+  whose name reads as "done" ticks the card; dragging it back out unticks it.
+* A card can **get** a note: *Create a note for this card* writes it into the
+  `notes:` folder (or next to the board), links it and opens it. *Link an
+  existing note* points the card at one you already have.
+* Anything the parser doesn't understand is written back untouched — a rewrite
+  can't eat a line you typed.
+
+| Key | Values | Default |
+|---|---|---|
+| `title` | board title | the note's name |
+| `notes` | folder for notes created from cards | the board note's folder |
+| `template` | note used as the body for new cards' notes | — |
+| `compact` | `true` = narrower columns | `false` |
+| `due` / `tags` / `counts` | `false` hides that part of a card / the head | on |
+
+`New kanban board (note)` and `Insert a kanban board` are in the command
+palette; the default columns come from Settings → Kanban.
+
+### Your tasks as a board
+
+The tasks page (`Open the tasks page`) has a **List / Board** switch. The board
+shows the same task notes as cards:
+
+* a task remembers its column in its own note (`bucket:`),
+* the "done" column and the checkbox mean the same thing — dropping a card there
+  completes the task,
+* a column that only exists because a task note names it shows up dashed at the
+  right, so nothing disappears when you rename a column.
+
+**Vikunja projects bring their own columns.** For a project synced from Vikunja
+the board uses the buckets of the project's kanban view and pushes a drag
+straight back to the server; the `bucket:` line in the note is the offline copy,
+so the board still reads correctly on the tablet, where no sync runs. Without a
+credential on the device (or without a kanban view on the server) it falls back
+to your own columns and says so.
+
 ## Build & source layout
 
 The plugin **source** lives in `src/`. Obsidian still only ever loads the
@@ -140,10 +207,12 @@ src/
     calstore.js      event cache + local calendars as vault JSON, so mobile renders offline
     tasks.js         projects & tasks as Markdown — the .md files are the source of truth
     agenda.js        the ```nexus-agenda``` block: one day (events + tasks + backlinks) in a note
+    kanban.js        the ```nexus-kanban``` block: the board IS the block's text (columns + cards)
+    taskboard.js     the board mode of the tasks page; Vikunja projects use their server buckets
   views/
     calendar.js      NexusCalendarView (sidebar)
     calendarpage.js  full-page calendar (month/week/day), renders from the cache
-    taskspage.js     full-page tasks: project tree + the selected project's tasks
+    taskspage.js     full-page tasks: project tree + the selected project's tasks, as list or board
     timers.js        timer sidebar view + done/config modals
     ink.js           ink-capture gallery view + tag modal
     sketch.js        Quick Sketch — vector drawing engine + SVG (de)serialization

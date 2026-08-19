@@ -5,12 +5,18 @@
  *  Generic name-input modal.
  * ========================================================================== */
 
-const { Modal } = require('obsidian');
+const { Modal, SuggestModal } = require('obsidian');
 const { nxMultiRow } = require('../lib/inputs.js');
 
 /* Small text prompt (e.g. for the filename). openAndGet() → Promise<string|null> */
 class NexusNameModal extends Modal {
-  constructor(app, title, def) { super(app); this.title = title; this.def = def; this.value = null; }
+  /* `allowEmpty` = an empty field is an ANSWER, not a mistake — that is how a
+     due date gets cleared. Without it an empty input falls back to the default,
+     which would make "remove this value" impossible. */
+  constructor(app, title, def, allowEmpty) {
+    super(app);
+    this.title = title; this.def = def; this.value = null; this.allowEmpty = !!allowEmpty;
+  }
   openAndGet() { return new Promise(res => { this._resolve = res; this.open(); }); }
   onOpen() {
     const { contentEl } = this;
@@ -18,7 +24,7 @@ class NexusNameModal extends Modal {
     const inp = contentEl.createEl('input', { type: 'text' });
     inp.value = this.def || '';
     inp.style.width = '100%';
-    const commit = () => { this.value = inp.value.trim() || this.def; this.close(); };
+    const commit = () => { this.value = this.allowEmpty ? inp.value.trim() : (inp.value.trim() || this.def); this.close(); };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
     const row = contentEl.createDiv();
     row.style.marginTop = '12px'; row.style.textAlign = 'right';
@@ -60,4 +66,29 @@ class NexusConfirmModal extends Modal {
    same nxMultiRow + autocomplete idiom as the property-filter tag fields
    elsewhere. Skip/Esc leaves tags empty — always addable later from the gallery. */
 
-module.exports = { NexusConfirmModal, NexusNameModal };
+/* Pick one entry out of a list of strings (note paths, mostly). A plain
+   SuggestModal so it behaves like Obsidian's own quick switcher — typing
+   filters, Enter picks, Esc cancels. */
+class NexusNamePickModal extends SuggestModal {
+  constructor(app, placeholder, items, onPick) {
+    super(app);
+    this.items = items || [];
+    this.onPick = onPick;
+    this.setPlaceholder(placeholder || 'Pick one');
+  }
+  getSuggestions(q) {
+    const s = String(q || '').trim().toLowerCase();
+    if (!s) return this.items.slice(0, 200);
+    return this.items.filter(x => x.toLowerCase().includes(s)).slice(0, 200);
+  }
+  renderSuggestion(item, el) {
+    // File name big, folder small — the same shape the quick switcher uses, so
+    // two notes with the same name stay tellable apart.
+    const cut = item.lastIndexOf('/');
+    el.createDiv({ cls: 'nx-pick-name', text: (cut < 0 ? item : item.slice(cut + 1)).replace(/\.md$/, '') });
+    if (cut > 0) el.createDiv({ cls: 'nx-pick-path', text: item.slice(0, cut) });
+  }
+  onChooseSuggestion(item) { this.onPick(item); }
+}
+
+module.exports = { NexusConfirmModal, NexusNameModal, NexusNamePickModal };

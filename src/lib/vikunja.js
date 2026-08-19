@@ -63,6 +63,57 @@ class VikunjaClient {
   deleteTask(id) { return this._req('DELETE', '/tasks/' + id).then(() => true); }
   createProject(project) { return this._req('PUT', '/projects', project).then(r => r.json); }
 
+  /* ── Kanban ──
+     Vikunja ≥ 0.24 (this server: v2.x) hangs the kanban buckets off a project
+     VIEW, not off the project: /projects/{p}/views → the one with
+     view_kind "kanban" → /projects/{p}/views/{v}/buckets, each bucket carrying
+     its tasks. Older servers exposed /projects/{p}/buckets directly, so both
+     paths are tried and the caller only ever sees buckets. */
+  listViews(projectId) { return this._req('GET', '/projects/' + projectId + '/views').then(r => r.json || []); }
+  async kanbanViewId(projectId) {
+    if (this._views && this._views[projectId] !== undefined) return this._views[projectId];
+    let id = null;
+    try {
+      const views = await this.listViews(projectId);
+      const kb = (Array.isArray(views) ? views : []).find(v => String(v.view_kind || v.viewKind || '').toLowerCase() === 'kanban');
+      if (kb) id = kb.id;
+    } catch (e) { if (e.status !== 404) throw e; }
+    this._views = this._views || {};
+    this._views[projectId] = id;
+    return id;
+  }
+  /* → [{id, title, limit, position, taskIds:[…]}] (empty when the project has
+       no kanban view — the caller then falls back to its own columns). */
+  async listBuckets(projectId) {
+    const viewId = await this.kanbanViewId(projectId);
+    const path = viewId != null
+      ? '/projects/' + projectId + '/views/' + viewId + '/buckets'
+      : '/projects/' + projectId + '/buckets';
+    let raw;
+    try { raw = await this._getPaged(path); }
+    catch (e) { if (e.status === 404) return []; throw e; }
+    return (raw || []).map(b => ({
+      id: b.id, title: b.title || '', limit: parseInt(b.limit, 10) || 0,
+      position: b.position || 0,
+      taskIds: (b.tasks || []).map(t => String(t.id)),
+    }));
+  }
+  async moveTaskToBucket(projectId, bucketId, taskId) {
+    const viewId = await this.kanbanViewId(projectId);
+    const body = { task_id: parseInt(taskId, 10) || taskId, bucket_id: bucketId };
+    const path = viewId != null
+      ? '/projects/' + projectId + '/views/' + viewId + '/buckets/' + bucketId + '/tasks'
+      : '/projects/' + projectId + '/buckets/' + bucketId + '/tasks';
+    return (await this._req('POST', path, body)).json;
+  }
+  async createBucket(projectId, title) {
+    const viewId = await this.kanbanViewId(projectId);
+    const path = viewId != null
+      ? '/projects/' + projectId + '/views/' + viewId + '/buckets'
+      : '/projects/' + projectId + '/buckets';
+    return (await this._req('PUT', path, { title })).json;
+  }
+
   /* A project's background image (upload provider) as raw bytes, or null when
      there is none / the fetch fails — a missing banner must never fail a sync. */
   async getBackground(projectId) {
