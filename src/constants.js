@@ -121,7 +121,10 @@ const DEFAULT_SETTINGS = {
      applyPinnedTabs): pinned in Obsidian's own sense, close button hidden,
      reopened by the watchdog if something detaches them anyway. */
   pinnedTabs: { home: false, calendar: false, tasks: false },
-  theme:      { palette: 'nexus', gap: null, radius: null, homeGap: null, homePad: null, homeCols: 24, homeRow: 40 },
+  /* `style` = the SHAPE of the interface (see THEME_STYLES), `palette` only its
+     colours. Changing the style changes what the app looks like; changing the
+     palette tints whatever the style built. */
+  theme:      { style: 'mirobo', palette: 'nexus', gap: null, radius: null, homeGap: null, homePad: null, homeCols: 24, homeRow: 40 },
 };
 
 /* WMO weather codes → short text (open-meteo) */
@@ -195,6 +198,23 @@ const NX_GREETINGS = {
   hacker:    (h, n) => 'root@' + (n || 'nexus') + ':~$ welcome',
 };
 
+/* ── INTERFACE STYLES ───────────────────────────────────────────────────────
+   Each one sets a body class the theme (and the plugin's own CSS) reacts to.
+   They are shapes, not colours: every style works with every palette.
+
+     mirobo  the card look Nexus was built as — each pane a rounded, tinted
+             chip floating on the desk, named after the velumeron/quickshell
+             style it copies.
+     plain   "almost nothing": no chips, no gaps, no tint. One flat surface,
+             hairlines instead of borders, small radii — the Notion end of the
+             range, where the writing is the only thing with any weight. */
+const THEME_STYLES = {
+  mirobo: { cls: 'nx-style-mirobo', name: 'Mirobo · cards',
+            sub: 'Every pane a rounded, tinted card on a desk — the Nexus signature' },
+  plain:  { cls: 'nx-style-plain', name: 'Almost nothing',
+            sub: 'Flat surfaces, hairlines, barely any radius — everything steps back behind the text' },
+};
+
 /* Fixed color palettes → override the wallust --wl-* slots (color3 = accent,
    color0 = dark base, color5 = border source). "dynamic" = wallust snippet
    (only follows the wallpaper when the Velumeron desktop shell is running).
@@ -213,6 +233,28 @@ const NX_GREETINGS = {
    lives in color0 (base) · color3 (accent) · color5 (second hue) · color15. */
 const PALETTES = {
   nexus:      { background: '#26121b', foreground: '#f0d9cd', color0: '#26121b', color1: '#ce3737', color2: '#c9863f', color3: '#fb6734', color4: '#1b3854', color5: '#1b3854', color6: '#3d6d8c', color7: '#e7d2c7', color8: '#8a6a63', color9: '#e5544a', color10: '#d8a24a', color11: '#fb8b4e', color12: '#4d7ea0', color13: '#6b1a34', color14: '#5a86a4', color15: '#ffe7dc' },
+  /* The two plain ones. Unlike the signature palettes these also carry `dark`
+     and `light` blocks: the theme derives its surfaces by mixing the accent
+     into them, and a neutral scheme is defined by NOT doing that. `slots` are
+     the --wl-* values everything else (graph, tags, folder tints) reads. */
+  dark:       { slots: { background: '#191919', foreground: '#d4d4d4', color0: '#191919', color1: '#eb5757', color2: '#4dab9a', color3: '#2383e2', color4: '#529cca', color5: '#2f2f2f', color6: '#529cca', color7: '#d4d4d4', color8: '#9b9b9b', color9: '#ff7369', color10: '#4dab9a', color11: '#ffa344', color12: '#529cca', color13: '#9a6dd7', color14: '#529cca', color15: '#ffffff' },
+                dark: { '--nx-desk': '#191919', '--nx-chip': '#191919', '--nx-chip-side': '#202020', '--nx-floor': '#202020',
+                        '--nx-elevated': '#2a2a2a', '--nx-border': '#2f2f2f',
+                        '--nx-fg': '#d4d4d4', '--nx-fg-muted': '#9b9b9b', '--nx-fg-bright': '#ffffff',
+                        '--nx-accent': '#2383e2', '--nx-accent-fg': '#6aa9ea', '--nx-on-accent': '#ffffff' },
+                light: { '--nx-desk': '#ffffff', '--nx-chip': '#ffffff', '--nx-chip-side': '#f7f7f5', '--nx-floor': '#f7f7f5',
+                         '--nx-elevated': '#ffffff', '--nx-border': '#e9e9e7',
+                         '--nx-fg': '#37352f', '--nx-fg-muted': '#787774', '--nx-fg-bright': '#1a1a19',
+                         '--nx-accent': '#2383e2', '--nx-accent-fg': '#1b6fc0', '--nx-on-accent': '#ffffff' } },
+  light:      { slots: { background: '#ffffff', foreground: '#37352f', color0: '#ffffff', color1: '#eb5757', color2: '#0f7b6c', color3: '#2383e2', color4: '#2383e2', color5: '#e9e9e7', color6: '#529cca', color7: '#37352f', color8: '#787774', color9: '#d44c47', color10: '#0f7b6c', color11: '#d9730d', color12: '#2383e2', color13: '#9065b0', color14: '#529cca', color15: '#1a1a19' },
+                dark: { '--nx-desk': '#191919', '--nx-chip': '#191919', '--nx-chip-side': '#202020', '--nx-floor': '#202020',
+                        '--nx-elevated': '#2a2a2a', '--nx-border': '#2f2f2f',
+                        '--nx-fg': '#d4d4d4', '--nx-fg-muted': '#9b9b9b', '--nx-fg-bright': '#ffffff',
+                        '--nx-accent': '#2383e2', '--nx-accent-fg': '#6aa9ea', '--nx-on-accent': '#ffffff' },
+                light: { '--nx-desk': '#ffffff', '--nx-chip': '#ffffff', '--nx-chip-side': '#f7f7f5', '--nx-floor': '#f7f7f5',
+                         '--nx-elevated': '#ffffff', '--nx-border': '#e9e9e7',
+                         '--nx-fg': '#37352f', '--nx-fg-muted': '#787774', '--nx-fg-bright': '#1a1a19',
+                         '--nx-accent': '#2383e2', '--nx-accent-fg': '#1b6fc0', '--nx-on-accent': '#ffffff' } },
   azure:      { background: '#0a0e16', foreground: '#e6edf6', color0: '#0a0e16', color1: '#ff6b6b', color2: '#56d364', color3: '#4a9eff', color4: '#7cb0ff', color5: '#ff6b6b', color6: '#56c9d3', color7: '#d4dcea', color8: '#5f6b80', color9: '#ff8a8a', color10: '#7ee08c', color11: '#ffc266', color12: '#9cc2ff', color13: '#ff9db0', color14: '#7adbe4', color15: '#f4f8ff' },
   teal:       { background: '#08110f', foreground: '#e4efea', color0: '#08110f', color1: '#f2766b', color2: '#5fd39a', color3: '#2dd4bf', color4: '#38bdf8', color5: '#f0a830', color6: '#34d3c3', color7: '#d0e2db', color8: '#5e7168', color9: '#ff8f84', color10: '#7fe0b0', color11: '#f7c05a', color12: '#66cffb', color13: '#4de0cd', color14: '#7ee4d6', color15: '#eefaf6' },
   emerald:    { background: '#0a0f0b', foreground: '#e8f0e5', color0: '#0a0f0b', color1: '#ef6f6f', color2: '#34d399', color3: '#34d399', color4: '#56b6e0', color5: '#e8b84b', color6: '#45cfa8', color7: '#d3e2ce', color8: '#63745f', color9: '#ff8a8a', color10: '#63e0a8', color11: '#f2ca63', color12: '#78c8ea', color13: '#9ee0b4', color14: '#6fddc0', color15: '#f1faee' },
@@ -238,7 +280,7 @@ const PALETTES = {
    hotkeys and everything already stored in data.json. */
 const NX_MODULES = {
   homepage:      { name: 'Dashboard',    sub: 'Rendered start page with cards, stats and quick actions' },
-  theme:         { name: 'Theme',        sub: 'Colour palette, spacing and corner radius' },
+  theme:         { name: 'Theme',        sub: 'Interface style, colour palette, spacing and corner radius' },
   explorer:      { name: 'Explorer',     sub: 'Folder cards and the ribbon in the file tree' },
   folderNotes:   { name: 'Folder Notes', sub: 'A note that belongs to a folder, opened by clicking it' },
   icons:         { name: 'Icons',        sub: 'An icon for any folder or file in the explorer' },
@@ -290,4 +332,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, THEME_STYLES, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };

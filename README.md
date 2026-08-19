@@ -6,7 +6,7 @@ run what you use.
 | Module | What it does | Replaces |
 |---|---|---|
 | **Dashboard** | Rendered start page: cards, stats, quick actions | homepage plugins |
-| **Theme** | Colour palette, spacing, corner radius | style-settings |
+| **Theme** | Interface style, colour palette, spacing, corner radius | style-settings |
 | **Explorer** | Folder cards and ribbon in the file tree | — |
 | **Folder Notes** | A note per folder + folder-overview blocks | folder-notes |
 | **Icons** | An icon for any folder or file | icon-folder |
@@ -41,6 +41,34 @@ BRAT checks for a new release on every Obsidian start and updates in place.
 
 The matching theme lives at
 [vredix-openvuture/nexus-theme](https://github.com/vredix-openvuture/nexus-theme).
+
+## Look: style + palette
+
+Two independent decisions, both in Settings → Theme:
+
+**Style** — the *shape* of the interface:
+
+| Style | What it does |
+|---|---|
+| **Mirobo · cards** (default) | Every pane is a rounded, tinted card floating on a desk — the Nexus signature, named after the velumeron/quickshell look it copies |
+| **Almost nothing** | No cards, no gaps, no tint. One flat surface, hairlines instead of borders, 4px radii — the Notion end of the range. The accent survives only where it means something: active, due, done |
+
+The style also reaches the plugin's own surfaces (dashboard, boards, tasks page,
+agenda, banner), so the app changes as a whole and not just around the edges.
+Card gap and corner radius are Mirobo settings — "Almost nothing" has no cards
+to space out, so those two sliders disappear with it.
+
+**Palette** — the *colour* of whatever the style built. Six Nexus signature
+palettes (Ember & Prussian is the default), the built-in ones (Dracula, Nord,
+Gruvbox, …), plus two plain ones:
+
+| Palette | |
+|---|---|
+| **Dark · plain** | Neutral greys on near-black, one blue accent — picking it also puts Obsidian in dark mode |
+| **Light · plain** | Neutral greys on white — and switches Obsidian to light mode |
+
+Those two are the ones to pair with "Almost nothing" for the full Notion look;
+every other combination works as well.
 
 ## Tasks
 
