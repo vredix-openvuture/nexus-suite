@@ -19,7 +19,7 @@ const { nxAutocomplete, nxMultiRow } = require('./lib/inputs.js');
 const { nxAllFolders } = require('./lib/helpers.js');
 const calstore = require('./lib/calstore.js');
 const tasks = require('./lib/tasks.js');
-const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
+const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
@@ -977,6 +977,30 @@ class NexusSettingsTab extends PluginSettingTab {
       this.app.workspace.getLeavesOfType('nx-homepage').forEach(l => { try { l.view.render(); } catch (e) {} });
     };
 
+    /* STYLE first: it decides what the app looks like, the palette only tints
+       whatever it built. Radio rows rather than a dropdown — with two entries
+       the descriptions are the whole point, and they don't fit in an option. */
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Style' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The shape of the interface. Every style works with every palette below.' });
+    const styleWrap = e.createDiv('nx-stylepick');
+    Object.entries(THEME_STYLES).forEach(([id, meta]) => {
+      const row = styleWrap.createDiv('nx-stylepick-row' + ((s.style || 'mirobo') === id ? ' is-active' : ''));
+      const mark = row.createDiv('nx-stylepick-mark');
+      setIcon(mark, (s.style || 'mirobo') === id ? 'check' : 'circle');
+      const body = row.createDiv('nx-stylepick-body');
+      body.createDiv({ cls: 'nx-stylepick-name', text: meta.name });
+      body.createDiv({ cls: 'nx-stylepick-sub', text: meta.sub });
+      row.createDiv('nx-stylepick-demo is-' + id).innerHTML =
+        '<span></span><span></span><span></span>';
+      row.onclick = async () => {
+        if ((s.style || 'mirobo') === id) return;
+        s.style = id;
+        await apply();
+        this.display();
+      };
+    });
+
     // Nexus signature family — pretty labels + a fixed order (default first).
     const NX_PAL_LABELS = {
       nexus:   'Nexus · Ember & Prussian (default)',
@@ -985,15 +1009,25 @@ class NexusSettingsTab extends PluginSettingTab {
       emerald: 'Emerald & Gold',
       slate:   'Slate & Cyan',
       sunset:  'Sunset · Amber & Rose',
+      dark:    'Dark · plain (follows dark mode)',
+      light:   'Light · plain (follows light mode)',
     };
-    const NX_PAL_ORDER = ['nexus', 'azure', 'teal', 'emerald', 'slate', 'sunset'];
+    const NX_PAL_ORDER = ['nexus', 'azure', 'teal', 'emerald', 'slate', 'sunset', 'dark', 'light'];
     new Setting(e).setName('Color palette').setDesc('A Nexus signature palette (Ember & Prussian is the default) or a built-in theme. "Velumeron" follows your wallpaper live — see the note below.')
       .addDropdown(dd => {
         NX_PAL_ORDER.forEach(k => dd.addOption(k, NX_PAL_LABELS[k]));
         Object.keys(PALETTES).forEach(k => { if (!NX_PAL_ORDER.includes(k)) dd.addOption(k, k[0].toUpperCase() + k.slice(1)); });
         dd.addOption('dynamic', 'Velumeron (Desktop shell)');
         dd.setValue(s.palette || 'nexus');
-        dd.onChange(async v => { s.palette = v; await apply(); });
+        dd.onChange(async v => {
+          s.palette = v;
+          // "Dark"/"Light" are the two neutral ones — they ARE a light or dark
+          // scheme, so they also put Obsidian in that mode instead of showing a
+          // dark palette on a light app.
+          const mode = v === 'dark' ? 'obsidian' : v === 'light' ? 'moonstone' : '';
+          if (mode) { try { this.app.changeTheme(mode); } catch (err) { console.error('[nexus-suite] theme mode', err); } }
+          await apply();
+        });
       });
 
     const note = e.createEl('p', { cls: 'setting-item-description' });
@@ -1013,8 +1047,13 @@ class NexusSettingsTab extends PluginSettingTab {
     slider('Homepage · Card base height', 'homeRow', 20, 160, 40);
     slider('Homepage · Card gap', 'homeGap', 4, 40, 12);
     slider('Homepage · Edge padding', 'homePad', 8, 80, 30);
-    slider('Theme · Card gap (global)', 'gap', 4, 32, 12);
-    slider('Theme · Corner radius (global)', 'radius', 0, 28, 12);
+    if ((s.style || 'mirobo') !== 'plain') {
+      slider('Theme · Card gap (global)', 'gap', 4, 32, 12);
+      slider('Theme · Corner radius (global)', 'radius', 0, 28, 12);
+    } else {
+      e.createEl('p', { cls: 'setting-item-description',
+        text: 'Card gap and corner radius belong to the Mirobo style — "Almost nothing" has no cards to space out.' });
+    }
   }
   tSearch(e) {
     const s = this.plugin.settings.search;

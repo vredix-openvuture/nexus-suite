@@ -1,0 +1,187 @@
+/* ── STYLE "ALMOST NOTHING" · the plugin's own surfaces ────────────────────
+   The theme flattens Obsidian (theme.css §21, same body class); this file does
+   the same to what the plugin draws. Otherwise the app would go flat and the
+   dashboard, the boards and the tasks page would keep floating rounded, tinted
+   cards in the middle of it.
+
+   Rule of thumb, everywhere below: one hairline instead of a border, 4–6px
+   instead of 10–15px radius, the surface colour instead of an accent tint. The
+   accent survives only where it MEANS something — active, due, done.
+
+   Last file in the bundle on purpose: these are corrections to the module
+   styles above and must win at equal specificity. */
+
+body.nx-style-plain {
+  --nx-home-gap: 10px;
+}
+
+/* ── pinned tabs: plain icon buttons, no accent chip ── */
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"],
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"],
+body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:hover,
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:hover,
+body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"]:hover {
+  background-color: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 7%, transparent) !important;
+}
+body.nx-style-plain.nx-pin-home  .workspace-split.mod-root .workspace-tab-header[data-type="nx-homepage"].is-active,
+body.nx-style-plain.nx-pin-cal   .workspace-split.mod-root .workspace-tab-header[data-type="nx-calendar-page"].is-active,
+body.nx-style-plain.nx-pin-tasks .workspace-split.mod-root .workspace-tab-header[data-type="nx-tasks"].is-active {
+  background-color: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 10%, transparent) !important;
+  box-shadow: none !important;
+}
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon,
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon,
+body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-icon {
+  color: var(--nx-fg-muted, var(--text-muted)) !important;
+}
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"].is-active .workspace-tab-header-inner-icon,
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"].is-active .workspace-tab-header-inner-icon,
+body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"].is-active .workspace-tab-header-inner-icon {
+  color: var(--nx-fg-bright, var(--text-normal)) !important;
+}
+
+/* ── dashboard: cards become areas, separated by their own edge only ── */
+body.nx-style-plain .nx-home-card,
+body.nx-style-plain .nx-home-stat,
+body.nx-style-plain.nx-blocked.theme-dark .nx-home-card:not(.nx-noborder),
+body.nx-style-plain.nx-blocked.theme-dark .nx-home-stat {
+  border-radius: 5px !important;
+  border: 1px solid var(--nx-border, var(--background-modifier-border)) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+body.nx-style-plain.nx-blocked.theme-dark .nx-home-card:not(.nx-noborder):hover,
+body.nx-style-plain .nx-home-card:hover {
+  background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 4%, transparent) !important;
+}
+body.nx-style-plain .nx-home-hero,
+body.nx-style-plain .nx-home-img,
+body.nx-style-plain .nx-home-card-img { border-radius: 5px !important; }
+
+/* ── banner: a picture, not a rounded plate ── */
+body.nx-style-plain .nx-banner,
+body.nx-style-plain .nx-banner-img { border-radius: 0 !important; }
+
+/* ── kanban + task board: columns without tint, cards without weight ── */
+body.nx-style-plain .nx-kb-col,
+body.nx-style-plain .nx-tb-col {
+  background: transparent !important;
+  border: 1px solid var(--nx-border, var(--background-modifier-border)) !important;
+  border-top: 1px solid var(--nx-border, var(--background-modifier-border)) !important;
+  border-radius: 5px !important;
+}
+body.nx-style-plain .nx-kb-col.is-over,
+body.nx-style-plain .nx-tb-col.is-over {
+  background: color-mix(in srgb, var(--nx-kb-kind) 10%, transparent) !important;
+  border-color: var(--nx-kb-kind) !important;
+}
+body.nx-style-plain .nx-kb-card,
+body.nx-style-plain .nx-tb-card {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 4%, transparent);
+  border-color: transparent;
+}
+body.nx-style-plain .nx-kb-card:hover,
+body.nx-style-plain .nx-tb-card:hover {
+  transform: none;
+  border-color: var(--nx-border, var(--background-modifier-border));
+}
+/* The column's own colour shrinks to its dot — the header stays plain text. */
+body.nx-style-plain .nx-kb-col-count,
+body.nx-style-plain .nx-tb-col-count {
+  color: var(--text-muted) !important;
+  background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 8%, transparent) !important;
+}
+body.nx-style-plain .nx-kb-col-count.is-over,
+body.nx-style-plain .nx-tb-col-count.is-over {
+  color: var(--text-on-accent, #fff) !important;
+  background: var(--color-red, #e5544a) !important;
+}
+
+/* ── tasks page: the project tree is a list, not a stack of image cards ── */
+body.nx-style-plain .nx-tp-side {
+  background: var(--nx-chip-side, var(--background-secondary)) !important;
+  border-right: 1px solid var(--nx-border, var(--background-modifier-border));
+}
+body.nx-style-plain .nx-tp-card {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 7px 10px !important;
+  border-radius: 4px !important;
+  background-image: none !important;
+  border: none !important;
+}
+body.nx-style-plain .nx-tp-card::after,
+body.nx-style-plain .nx-tp-card-stripe { display: none !important; }
+body.nx-style-plain .nx-tp-card.is-active,
+body.nx-style-plain .nx-tp-sub.is-active,
+body.nx-style-plain .nx-tp-all.is-active {
+  background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 9%, transparent) !important;
+}
+body.nx-style-plain .nx-tp-task { border-radius: 4px; }
+
+/* ── calendar + agenda: grid lines instead of tiles ── */
+body.nx-style-plain .nx-cal-day,
+body.nx-style-plain .nx-calp-day,
+body.nx-style-plain .nx-agenda-item,
+body.nx-style-plain .nx-agenda-sec { border-radius: 4px !important; }
+body.nx-style-plain .nx-agenda {
+  border: none !important;
+  border-left: 2px solid var(--nx-border, var(--background-modifier-border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+/* ── the style picker itself (Settings → Theme) ─────────────────────────────
+   Two rows, each with a three-bar sketch of what the style does to a pane —
+   rounded floating chips vs. flat areas with a hairline. It is a picture of the
+   decision, which a dropdown option can't be. */
+.nx-stylepick { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; }
+.nx-stylepick-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-primary);
+}
+.nx-stylepick-row:hover { border-color: var(--interactive-accent); }
+.nx-stylepick-row.is-active {
+  border-color: var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 8%, transparent);
+}
+.nx-stylepick-mark { display: inline-flex; color: var(--text-faint); flex-shrink: 0; }
+.nx-stylepick-row.is-active .nx-stylepick-mark { color: var(--interactive-accent); }
+.nx-stylepick-mark .svg-icon { width: 16px; height: 16px; }
+.nx-stylepick-body { flex: 1; min-width: 0; }
+.nx-stylepick-name { font-weight: 600; color: var(--text-normal); }
+.nx-stylepick-sub { font-size: .82em; color: var(--text-muted); }
+.nx-stylepick-demo {
+  flex-shrink: 0; align-self: center;         /* a tall row must not stretch it */
+  display: flex; gap: 4px; align-items: stretch;
+  width: 74px; height: 34px; padding: 3px;
+  background: var(--background-secondary);
+}
+.nx-stylepick-demo.is-mirobo { border-radius: 8px; gap: 4px; padding: 4px; }
+.nx-stylepick-demo.is-mirobo span {
+  flex: 1; border-radius: 5px;
+  background: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+}
+/* The plain sketch is the point of the picker, so it has to be readable: one
+   narrower "sidebar" pane in the panel tone, the rest the page tone, split by
+   the same hairline the style uses. */
+.nx-stylepick-demo.is-plain {
+  border-radius: 3px; gap: 0; padding: 0;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+.nx-stylepick-demo.is-plain span {
+  flex: 1; border-radius: 0; background: var(--background-primary);
+  border-right: 1px solid var(--background-modifier-border);
+}
+.nx-stylepick-demo.is-plain span:first-child { flex: 0 0 22px; background: var(--background-secondary); }
+.nx-stylepick-demo.is-plain span:last-child { border-right: none; }

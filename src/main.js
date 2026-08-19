@@ -22,7 +22,7 @@ const { CalDavClient } = require('./lib/caldav.js');
 const { VikunjaClient } = require('./lib/vikunja.js');
 const { NexusConflictModal } = require('./modals/conflict.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
-const { CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
+const { CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
 const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusAgenda } = require('./lib/agenda.js');
 const { NexusBoard } = require('./lib/board.js');
@@ -3666,11 +3666,27 @@ module.exports = class NexusSuite extends Plugin {
      spacing/sizes as CSS variables on <body> (override the theme defaults). */
   applyThemeSettings() {
     const t = this.settings.theme || {};
+
+    /* The STYLE is the shape of the interface — one body class, and the theme
+       plus the plugin's own CSS build a different app around it. Set before the
+       palette so a style switch never renders half-tinted. */
+    const style = THEME_STYLES[t.style] ? t.style : 'mirobo';
+    Object.keys(THEME_STYLES).forEach(k => document.body.classList.toggle(THEME_STYLES[k].cls, k === style));
+
     let pel = document.getElementById('nx-palette-style');
     if (t.palette && t.palette !== 'dynamic' && PALETTES[t.palette]) {
       if (!pel) { pel = document.createElement('style'); pel.id = 'nx-palette-style'; document.head.appendChild(pel); }
-      const decl = Object.entries(PALETTES[t.palette]).map(([k, v]) => '--wl-' + k + ': ' + v + ';').join(' ');
-      pel.textContent = 'body.theme-dark, body.theme-light { ' + decl + ' }';
+      const p = PALETTES[t.palette];
+      // A palette is either a flat map of --wl-* slots, or {slots, dark, light}
+      // when it also has to pin the derived surfaces (the neutral ones do —
+      // see PALETTES). `body.theme-*` outranks the theme's own `.theme-*`.
+      const slots = p.slots || p;
+      const vars = (obj) => Object.entries(obj).map(([k, v]) => k + ': ' + v + ';').join(' ');
+      const css = ['body.theme-dark, body.theme-light { '
+        + Object.entries(slots).map(([k, v]) => '--wl-' + k + ': ' + v + ';').join(' ') + ' }'];
+      if (p.dark) css.push('body.theme-dark { ' + vars(p.dark) + ' }');
+      if (p.light) css.push('body.theme-light { ' + vars(p.light) + ' }');
+      pel.textContent = css.join('\n');
     } else if (pel) { pel.remove(); }
 
     /* Flat "70s color-block" surfaces (theme.css section 20) — only for the
@@ -3680,8 +3696,11 @@ module.exports = class NexusSuite extends Plugin {
 
     const b = document.body;
     const setv = (k, v) => { if (v == null || v === '') b.style.removeProperty(k); else b.style.setProperty(k, v + 'px'); };
-    setv('--nx-gap', t.gap);
-    setv('--nx-radius', t.radius);
+    // Card gap and corner radius describe the mirobo cards. In "almost nothing"
+    // there are none, and an inline value from an earlier session would beat the
+    // style's own tokens (inline > class) and put the gaps back.
+    setv('--nx-gap', style === 'plain' ? null : t.gap);
+    setv('--nx-radius', style === 'plain' ? null : t.radius);
     setv('--nx-home-gap', t.homeGap);
     setv('--nx-home-pad', t.homePad);
     setv('--nx-home-row', t.homeRow);
