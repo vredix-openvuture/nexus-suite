@@ -37,18 +37,42 @@ body.nx-hide-explorer-buttons .workspace-leaf-content[data-type="file-explorer"]
 
 
 /* ── PINNED NEXUS TABS ──
-   A pinned page (dashboard / calendar / tasks) shrinks to its bare icon and
-   loses the close button, so it reads as a fixed button rather than a document
-   that happens to be open. The JS side sets the body class, pins the leaf in
-   Obsidian's own sense and reopens the page if it is detached anyway
-   (see main.js · applyPinnedTabs / guardPinnedTabs). */
+   A pinned page (dashboard / calendar / tasks) sits in the tab bar as a SQUARE
+   icon button — no title, no close X, no pin glyph — so it reads as a fixed
+   button rather than a document that happens to be open. The JS side sets the
+   body class, pins the leaf in Obsidian's own sense and reopens the page if it
+   is detached anyway (see main.js · applyPinnedTabs / guardPinnedTabs).
+
+   The button needs an EXPLICIT width: `width: auto` collapsed it to the bare
+   3px+3px padding, because .workspace-tab-header-inner is `width:100%` +
+   `overflow:hidden` and therefore contributes nothing to the tab's intrinsic
+   size. Square = the tab pill's own height (bar height minus its padding). */
+body.nx-pin-home,
+body.nx-pin-cal,
+body.nx-pin-tasks {
+  --nx-pin-size: calc(var(--nx-bar-h, 38px) - 2 * var(--nx-tab-gap, 5px));
+}
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"],
 body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"],
 body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] {
   flex: 0 0 auto !important;
-  width: auto !important;
-  min-width: 0 !important;
-  max-width: none !important;
+  width:     var(--nx-pin-size) !important;
+  min-width: var(--nx-pin-size) !important;
+  max-width: var(--nx-pin-size) !important;
+  padding: 0 !important;
+  /* Accent chip: tinted at rest so the row reads as an app bar next to the
+     document tabs, with a hairline ring instead of a border (a border would
+     shrink the 28px box). */
+  background-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 12%,
+                              var(--nx-chip-side, var(--background-secondary))) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,
+              var(--nx-accent, var(--interactive-accent)) 22%, transparent) !important;
+}
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:hover,
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:hover,
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"]:hover {
+  background-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%,
+                              var(--nx-chip-side, var(--background-secondary))) !important;
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-title,
 body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-title,
@@ -56,22 +80,53 @@ body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-hea
   display: none !important;
 }
 /* Both the close X and the pin glyph Obsidian swaps in for pinned tabs — either
-   one would close or unpin the page behind the user's back. */
+   one would close or unpin the page behind the user's back. The pin is NOT the
+   close button: Obsidian hides that one and adds its own status icon next to it
+   (updateHeader → .workspace-tab-header-status-icon.mod-pinned), so the status
+   container has to go too — otherwise a stray accent-coloured pin is the only
+   thing left inside the button. */
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-close-button,
 body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-close-button,
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-close-button {
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-close-button,
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-status-container,
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-status-container,
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-status-container {
   display: none !important;
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner,
 body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner,
 body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner {
-  padding-inline: 8px;
-  justify-content: center;
+  padding: 0 !important;
+  justify-content: center !important;
   gap: 0;
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon,
 body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon,
 body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-icon {
-  margin: 0;
-  color: var(--nx-accent, var(--interactive-accent));
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 1;
+  --icon-size: 17px;
+  --icon-stroke: 1.8px;
+  color: var(--nx-accent-fg, var(--nx-accent, var(--interactive-accent))) !important;
+}
+/* Active = the page you are looking at: the chip deepens, the icon stays accent.
+   Specificity has to clear the theme's own active-tab rule
+   (body.nx-blocked.theme-dark .mod-root .workspace-tab-header.is-active, also
+   !important) — hence the extra .workspace-split.mod-root in the chain, so this
+   lands the same way on every palette instead of depending on load order. */
+body.nx-pin-home  .workspace-split.mod-root .workspace-tab-header[data-type="nx-homepage"].is-active,
+body.nx-pin-cal   .workspace-split.mod-root .workspace-tab-header[data-type="nx-calendar-page"].is-active,
+body.nx-pin-tasks .workspace-split.mod-root .workspace-tab-header[data-type="nx-tasks"].is-active {
+  background-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 28%,
+                              var(--nx-chip-side, var(--background-secondary))) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb,
+              var(--nx-accent, var(--interactive-accent)) 38%, transparent) !important;
+}
+/* The buttons are a GROUP: a little extra air before the first real document
+   tab. :has() picks whichever pinned button happens to be the last one. */
+body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:has(+ .workspace-tab-header:not(:is([data-type="nx-homepage"], [data-type="nx-calendar-page"], [data-type="nx-tasks"]))),
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:has(+ .workspace-tab-header:not(:is([data-type="nx-homepage"], [data-type="nx-calendar-page"], [data-type="nx-tasks"]))),
+body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"]:has(+ .workspace-tab-header:not(:is([data-type="nx-homepage"], [data-type="nx-calendar-page"], [data-type="nx-tasks"]))) {
+  margin-inline-end: 6px !important;
 }
