@@ -19,7 +19,7 @@ const { nxAutocomplete, nxMultiRow } = require('./lib/inputs.js');
 const { nxAllFolders } = require('./lib/helpers.js');
 const calstore = require('./lib/calstore.js');
 const tasks = require('./lib/tasks.js');
-const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
+const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
@@ -1001,33 +1001,53 @@ class NexusSettingsTab extends PluginSettingTab {
       };
     });
 
-    // Nexus signature family — pretty labels + a fixed order (default first).
-    const NX_PAL_LABELS = {
-      nexus:   'Nexus · Ember & Prussian (default)',
-      azure:   'Azure & Coral',
-      teal:    'Teal & Amber',
-      emerald: 'Emerald & Gold',
-      slate:   'Slate & Cyan',
-      sunset:  'Sunset · Amber & Rose',
-      minimal: 'Minimal · follows light / dark mode',
-    };
-    const NX_PAL_ORDER = ['nexus', 'minimal', 'azure', 'teal', 'emerald', 'slate', 'sunset'];
-    new Setting(e).setName('Color palette').setDesc('A Nexus signature palette (Ember & Prussian is the default), the neutral "Minimal" one, or a built-in theme. "Velumeron" follows your wallpaper live — see the note below.')
-      .addDropdown(dd => {
-        NX_PAL_ORDER.forEach(k => dd.addOption(k, NX_PAL_LABELS[k]));
-        Object.keys(PALETTES).forEach(k => { if (!NX_PAL_ORDER.includes(k)) dd.addOption(k, k[0].toUpperCase() + k.slice(1)); });
-        dd.addOption('dynamic', 'Velumeron (Desktop shell)');
-        dd.setValue(s.palette || 'nexus');
-        dd.onChange(async v => { s.palette = v; await apply(); });
-      });
+    /* PALETTE: a swatch you can look at, not a name with its colours spelled
+       out after it. The disc shows the four slots the theme actually builds
+       everything from — ground, accent, second hue, ink — so two palettes of
+       the same family stay tellable apart at a glance. Names and order live in
+       constants.js (PALETTE_NAMES / PALETTE_GROUPS), like every other table. */
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Colour palette' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The colour of whatever the style built.' });
 
-    const note = e.createEl('p', { cls: 'setting-item-description' });
-    note.createEl('b', { text: 'Velumeron (Desktop shell)' });
-    note.createSpan({ text: ' pulls its colours live from wallust so the theme recolours together with your wallpaper and the desktop bar. This only works on a system running the ' });
-    note.createEl('b', { text: 'Velumeron desktop shell' });
-    note.createSpan({ text: ' (which feeds the wallust snippet). Anywhere else — a plain desktop, or the tablet/phone — pick a fixed palette instead; ' });
-    note.createEl('b', { text: 'Nexus' });
-    note.createSpan({ text: ' is the recommended default and looks right everywhere.' });
+    const isDark = document.body.classList.contains('theme-dark');
+    /* "Minimal" keeps its slots per mode, so the disc has to show the mode you
+       are actually in — otherwise it advertises a white palette to someone
+       sitting in the dark one. */
+    const slotOf = (id, key, fb) => {
+      if (id === 'dynamic') return 'var(--wl-' + key + ', ' + fb + ')';
+      const p = PALETTES[id] || {};
+      const mode = (isDark ? p.dark : p.light) || {};
+      return mode['--wl-' + key] || (p.slots || p)[key] || fb;
+    };
+    const disc = (id) => 'conic-gradient(from -45deg, ' +
+      slotOf(id, 'color0', '#222') + ' 0 25%, ' +
+      slotOf(id, 'color3', '#4a9eff') + ' 0 50%, ' +
+      slotOf(id, 'color5', '#888') + ' 0 75%, ' +
+      slotOf(id, 'color15', '#fff') + ' 0)';
+
+    const pick = e.createDiv('nx-palpick');
+    PALETTE_GROUPS.forEach(g => {
+      pick.createDiv({ cls: 'nx-palpick-group', text: g.title });
+      const row = pick.createDiv('nx-palpick-row');
+      g.ids.forEach(id => {
+        const cur = (s.palette || 'nexus') === id;
+        const tile = row.createDiv('nx-palpick-tile' + (cur ? ' is-active' : ''));
+        tile.setAttribute('aria-label', PALETTE_NAMES[id] || id);
+        tile.createDiv('nx-palpick-disc').style.background = disc(id);
+        tile.createDiv({ cls: 'nx-palpick-name', text: PALETTE_NAMES[id] || id });
+        tile.onclick = async () => {
+          if ((s.palette || 'nexus') === id) return;
+          s.palette = id;
+          await apply();
+          this.display();
+        };
+      });
+    });
+
+    const note = e.createEl('p', { cls: 'setting-item-description nx-palpick-note' });
+    note.createEl('b', { text: 'Velumeron' });
+    note.createSpan({ text: ' is the only live one: it pulls its colours from wallust, so the theme recolours together with your wallpaper and the desktop bar. That needs a machine running the Velumeron shell — anywhere else (a plain desktop, the tablet) pick a fixed palette.' });
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Spacing & sizes' });
     const slider = (name, key, min, max, def) => new Setting(e).setName(name)

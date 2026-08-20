@@ -50,7 +50,7 @@ Two independent decisions, both in Settings → Theme:
 
 | Style | What it does |
 |---|---|
-| **Mirobo · cards** (default) | Every pane is a rounded, tinted card floating on a desk — the Nexus signature, named after the velumeron/quickshell look it copies |
+| **Mirobo** (default) | Every pane is a rounded, tinted card floating on a desk — the Nexus signature, named after the velumeron/quickshell look it copies |
 | **Almost nothing** | No cards, no gaps, no tint — the Notion end of the range: system sans, a 708px text column, 24px line height, headings by size and weight only, links underlined in text colour, red inline code on one grey surface, grey callouts, hairline tables, a 14px sidebar. The accent survives only where it means something: active, due, done |
 
 The style also reaches the plugin's own surfaces (dashboard, boards, tasks page,
@@ -58,9 +58,12 @@ agenda, banner), so the app changes as a whole and not just around the edges.
 Card gap and corner radius are Mirobo settings — "Almost nothing" has no cards
 to space out, so those two sliders disappear with it.
 
-**Palette** — the *colour* of whatever the style built. Six Nexus signature
-palettes (Ember & Prussian is the default), the built-in ones (Dracula, Nord,
-Gruvbox, …), plus two plain ones:
+**Palette** — the *colour* of whatever the style built. Picked from swatches,
+not from names: each one is a disc in four quarters — ground, accent, second
+hue, ink, the slots the theme derives everything from — next to a plain name.
+Grouped as **Nexus** (the six signature palettes), **Neutral**, **Classics**
+(Catppuccin, Dracula, Everforest, Gruvbox, Nord, Solarized, Tokyo Night) and
+**Live**:
 
 | Palette | |
 |---|---|
