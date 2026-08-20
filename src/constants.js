@@ -209,7 +209,7 @@ const NX_GREETINGS = {
              hairlines instead of borders, small radii — the Notion end of the
              range, where the writing is the only thing with any weight. */
 const THEME_STYLES = {
-  mirobo: { cls: 'nx-style-mirobo', name: 'Mirobo · cards',
+  mirobo: { cls: 'nx-style-mirobo', name: 'Mirobo',
             sub: 'Every pane a rounded, tinted card on a desk — the Nexus signature' },
   plain:  { cls: 'nx-style-plain', name: 'Almost nothing',
             sub: 'Flat surfaces, hairlines, barely any radius — everything steps back behind the text' },
@@ -264,6 +264,28 @@ const PALETTES = {
   everforest: { background: '#2d353b', foreground: '#d3c6aa', color0: '#2d353b', color1: '#e67e80', color2: '#a7c080', color3: '#dbbc7f', color4: '#7fbbb3', color5: '#d699b6', color6: '#83c092', color7: '#d3c6aa', color8: '#859289', color9: '#e67e80', color10: '#a7c080', color11: '#dbbc7f', color12: '#7fbbb3', color13: '#d699b6', color14: '#83c092', color15: '#d3c6aa' },
   tokyonight: { background: '#1a1b26', foreground: '#c0caf5', color0: '#1a1b26', color1: '#f7768e', color2: '#9ece6a', color3: '#7aa2f7', color4: '#7dcfff', color5: '#bb9af7', color6: '#7dcfff', color7: '#c0caf5', color8: '#414868', color9: '#f7768e', color10: '#9ece6a', color11: '#e0af68', color12: '#7aa2f7', color13: '#bb9af7', color14: '#7dcfff', color15: '#c0caf5' },
 };
+
+/* ── PALETTE NAMES + ORDER ──────────────────────────────────────────────────
+   A palette is picked by looking at it, so the label only has to NAME it — the
+   colours are in the swatch next to it, not in the text. Grouped by what the
+   palette IS, and inside a group by how likely it is to be wanted: the default
+   first, the classics alphabetically.
+
+   `dynamic` is not in PALETTES — it means "no fixed palette, follow the live
+   wallust snippet" (Velumeron desktop shell). */
+const PALETTE_NAMES = {
+  nexus: 'Nexus', azure: 'Azure', teal: 'Teal', emerald: 'Emerald', slate: 'Slate', sunset: 'Sunset',
+  minimal: 'Minimal',
+  catppuccin: 'Catppuccin', dracula: 'Dracula', everforest: 'Everforest', gruvbox: 'Gruvbox',
+  nord: 'Nord', solarized: 'Solarized', tokyonight: 'Tokyo Night',
+  dynamic: 'Velumeron',
+};
+const PALETTE_GROUPS = [
+  { title: 'Nexus', ids: ['nexus', 'azure', 'teal', 'emerald', 'slate', 'sunset'] },
+  { title: 'Neutral', ids: ['minimal'] },
+  { title: 'Classics', ids: ['catppuccin', 'dracula', 'everforest', 'gruvbox', 'nord', 'solarized', 'tokyonight'] },
+  { title: 'Live', ids: ['dynamic'] },
+];
 
 /* Render markdown (new + old API) */
 
@@ -328,4 +350,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PEN_IDS, THEME_STYLES, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, THEME_STYLES, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };
