@@ -51,7 +51,7 @@ Two independent decisions, both in Settings → Theme:
 | Style | What it does |
 |---|---|
 | **Mirobo · cards** (default) | Every pane is a rounded, tinted card floating on a desk — the Nexus signature, named after the velumeron/quickshell look it copies |
-| **Almost nothing** | No cards, no gaps, no tint. One flat surface, hairlines instead of borders, 4px radii — the Notion end of the range. The accent survives only where it means something: active, due, done |
+| **Almost nothing** | No cards, no gaps, no tint — the Notion end of the range: system sans, a 708px text column, 24px line height, headings by size and weight only, links underlined in text colour, red inline code on one grey surface, grey callouts, hairline tables, a 14px sidebar. The accent survives only where it means something: active, due, done |
 
 The style also reaches the plugin's own surfaces (dashboard, boards, tasks page,
 agenda, banner), so the app changes as a whole and not just around the edges.
@@ -64,10 +64,9 @@ Gruvbox, …), plus two plain ones:
 
 | Palette | |
 |---|---|
-| **Dark · plain** | Neutral greys on near-black, one blue accent — picking it also puts Obsidian in dark mode |
-| **Light · plain** | Neutral greys on white — and switches Obsidian to light mode |
+| **Minimal** | Neutral greys with one blue accent, and the only palette that follows Obsidian's own light/dark mode: white page and #f7f7f5 sidebar in light, #191919 and #202020 in dark |
 
-Those two are the ones to pair with "Almost nothing" for the full Notion look;
+Minimal is the one to pair with "Almost nothing" for the full Notion look;
 every other combination works as well.
 
 ## Tasks

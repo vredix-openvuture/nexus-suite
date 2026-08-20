@@ -1009,25 +1009,16 @@ class NexusSettingsTab extends PluginSettingTab {
       emerald: 'Emerald & Gold',
       slate:   'Slate & Cyan',
       sunset:  'Sunset · Amber & Rose',
-      dark:    'Dark · plain (follows dark mode)',
-      light:   'Light · plain (follows light mode)',
+      minimal: 'Minimal · follows light / dark mode',
     };
-    const NX_PAL_ORDER = ['nexus', 'azure', 'teal', 'emerald', 'slate', 'sunset', 'dark', 'light'];
-    new Setting(e).setName('Color palette').setDesc('A Nexus signature palette (Ember & Prussian is the default) or a built-in theme. "Velumeron" follows your wallpaper live — see the note below.')
+    const NX_PAL_ORDER = ['nexus', 'minimal', 'azure', 'teal', 'emerald', 'slate', 'sunset'];
+    new Setting(e).setName('Color palette').setDesc('A Nexus signature palette (Ember & Prussian is the default), the neutral "Minimal" one, or a built-in theme. "Velumeron" follows your wallpaper live — see the note below.')
       .addDropdown(dd => {
         NX_PAL_ORDER.forEach(k => dd.addOption(k, NX_PAL_LABELS[k]));
         Object.keys(PALETTES).forEach(k => { if (!NX_PAL_ORDER.includes(k)) dd.addOption(k, k[0].toUpperCase() + k.slice(1)); });
         dd.addOption('dynamic', 'Velumeron (Desktop shell)');
         dd.setValue(s.palette || 'nexus');
-        dd.onChange(async v => {
-          s.palette = v;
-          // "Dark"/"Light" are the two neutral ones — they ARE a light or dark
-          // scheme, so they also put Obsidian in that mode instead of showing a
-          // dark palette on a light app.
-          const mode = v === 'dark' ? 'obsidian' : v === 'light' ? 'moonstone' : '';
-          if (mode) { try { this.app.changeTheme(mode); } catch (err) { console.error('[nexus-suite] theme mode', err); } }
-          await apply();
-        });
+        dd.onChange(async v => { s.palette = v; await apply(); });
       });
 
     const note = e.createEl('p', { cls: 'setting-item-description' });
