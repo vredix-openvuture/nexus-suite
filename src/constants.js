@@ -44,7 +44,10 @@ const DEFAULT_SETTINGS = {
                 nameTemplate: '{{name}}', defaultGroup: '', collapsed: {}, bgStrength: 4.5,
                 /* image separator — the last shape used, so the next one starts there */
                 sepHeight: 26, sepPosition: 50, sepFade: false, sepRound: true,
-                handScale: 1.45 },   // handwritten note font, as a factor of the app's font size
+                /* Handwritten note font as a factor of the app's font size. 1.54 is
+                   measured, not guessed: Grape Nuts' x-height is 0.35em against a
+                   sans' 0.54em, so 0.54/0.35 puts both at the same READ size. */
+                handScale: 1.54 },
   hider:      { enabled: false, tooltips: false, scrollbars: false, status: false,
                 titlebar: false, vaultname: false, tabbar: false, instructions: false,
                 ribbon: false, explorerButtons: false },

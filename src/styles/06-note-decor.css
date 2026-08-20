@@ -66,19 +66,56 @@
    cascades to BOTH views with no specificity fights. 'Grape Nuts' is registered
    as an @font-face data-URI by the plugin (registerFonts) → works on mobile too.
    Mono uses the platform's built-in monospace, so nothing to bundle there. */
+/* Every note font is (family + factor). The factor exists because two fonts at
+   the same px are not the same SIZE to read: Grape Nuts' x-height is 0.35em
+   where a sans sits at 0.54em, so at 16px it looks two thirds as big. Measured,
+   not guessed — 0.54/0.35 = 1.54 (adjustable: Settings → Banner).
+
+   The size is computed from --nx-base-size (the app's own text size, published
+   by main.js · applyHandFont) rather than pinned in px, so Obsidian's font-size
+   setting and ⌘+/− keep working inside a styled note. */
+.nx-font-mono,
+.nx-font-hand {
+  --font-text-size: calc(var(--nx-base-size, 16px) * var(--nx-font-scale, 1));
+
+  /* The frontmatter is part of the note, so it changes with it — otherwise a
+     handwritten note carries a block of 13px interface text at the top and the
+     two halves of the same note disagree about how big text is. Core sizes the
+     properties off --font-smaller (0.875em) of the INTERFACE font, which never
+     sees the note's own size. */
+  --metadata-label-font: var(--font-text);
+  --metadata-input-font: var(--font-text);
+  /* 0.8 lands the LABEL at the same read size a normal note gives it. Core
+     multiplies two em steps there (0.85 from the theme's key row × 0.875 from
+     --font-smaller); an absolute calc() interrupts that chain, so the product
+     goes in directly — measured back against a normal note, not derived. */
+  --metadata-label-font-size: calc(var(--font-text-size) * 0.8);
+  --metadata-input-font-size: calc(var(--font-text-size) * 0.875);
+}
 .nx-font-mono {
   --font-text: var(--font-monospace);
+  /* A monospace face carries the same x-height as the sans it replaces (both
+     0.54em, measured) — it reads wider, not smaller, so it needs no bump. */
+  --nx-font-scale: var(--nx-mono-scale, 1);
 }
 .nx-font-hand {
   --font-text: 'Grape Nuts';
-  /* Grape Nuts has a small x-height and needs a bump — but as a FACTOR of the
-     app's own font size, never a fixed px: --font-text-size IS Obsidian's font
-     size setting, and pinning it here made the handwritten note the one place
-     where that setting (and ⌘+/−) did nothing. The px value is computed in
-     main.js · applyHandFont, because a custom property cannot be defined in
-     terms of itself. */
-  --font-text-size: var(--nx-hand-size, 23px);
+  --nx-font-scale: var(--nx-hand-scale, 1.54);
 }
+/* The properties block would otherwise keep the interface font; the VALUE side
+   is left to inherit the note's text size, exactly as it does in a normal note
+   (only the label takes the smaller step above). */
+.nx-font-mono .metadata-property,
+.nx-font-hand .metadata-property { font-family: var(--font-text); }
+/* An <input> does not inherit its font — without this the property NAME stays
+   in the interface sans while its value is handwritten, and the two disagree
+   about how big the same line is. */
+.nx-font-mono .metadata-property-key-input,
+.nx-font-hand .metadata-property-key-input,
+.nx-font-mono .metadata-property-value input,
+.nx-font-hand .metadata-property-value input,
+.nx-font-mono .metadata-property-value textarea,
+.nx-font-hand .metadata-property-value textarea { font-family: var(--font-text); }
 
 /* Button for the note background (to the left of the banner icon) */
 .nx-bg-btn {
