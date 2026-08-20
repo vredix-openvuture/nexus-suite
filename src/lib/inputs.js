@@ -275,4 +275,64 @@ function nxIconField(app, parent, name, desc, getVal, onChange, def) {
    showAtPosition) so it stays a drop-in replacement for `new Menu()`. Position
    args are ignored — the window is centered with a backdrop + close button. */
 
-module.exports = { nxAutocomplete, nxMultiRow, nxPropsToRules, nxPropRows, nxPropRulesToGroups, nxPropGroups, nxIconField };
+/* ── Descriptions → tooltips ─────────────────────────────────────────────────
+   A settings page used to explain itself in a paragraph under every single row,
+   which turned each tab into a wall of text you had to read past to find the
+   switch you came for. This folds every description away behind a small ⓘ next
+   to the name it belongs to: hover shows Obsidian's own tooltip, and a click
+   unfolds the text in place — the tablet has no hover, so a tooltip alone would
+   simply hide the explanation there.
+
+   It runs over the finished DOM instead of at 126 call sites, so pages written
+   later are covered without anyone remembering to do it.
+
+   `root` = the container a settings tab just rendered into. */
+function nxFoldDescriptions(root) {
+  if (!root) return;
+
+  const hint = (host, list) => {
+    const text = list.map(el => (el.textContent || '').trim()).filter(Boolean).join('\n\n');
+    if (!host || !text) { list.forEach(el => { if (!(el.textContent || '').trim()) el.remove(); }); return; }
+    list.forEach(el => el.addClass('nx-folded'));
+    const btn = host.createSpan({ cls: 'nx-hint' });
+    setIcon(btn, 'info');
+    btn.setAttribute('aria-label', text);
+    btn.tabIndex = 0;
+    const toggle = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const open = !list[0].hasClass('is-open');
+      list.forEach(el => el.toggleClass('is-open', open));
+      btn.toggleClass('is-open', open);
+    };
+    btn.addEventListener('click', toggle);
+    btn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') toggle(ev); });
+  };
+
+  // 1. one row, one description
+  root.querySelectorAll('.setting-item').forEach(item => {
+    const desc = item.querySelector(':scope > .setting-item-info > .setting-item-description');
+    if (!desc || desc.hasClass('nx-folded')) return;
+    hint(item.querySelector(':scope > .setting-item-info > .setting-item-name'), [desc]);
+  });
+
+  // 2. section intros: the heading above them carries the icon (an h3 inside it
+  //    keeps the icon on the title's line instead of below it)
+  root.querySelectorAll('.nx-cardcfg-sec, .nx-settings-head').forEach(head => {
+    const list = [];
+    let n = head.nextElementSibling;
+    while (n && n.matches('p.setting-item-description')) { list.push(n); n = n.nextElementSibling; }
+    if (list.length) hint(head.querySelector('h3') || head, list);
+  });
+
+  // 3. a paragraph that explains the row above it rather than a section
+  root.querySelectorAll('p.setting-item-description').forEach(p => {
+    if (p.hasClass('nx-folded')) return;
+    const prev = p.previousElementSibling;
+    if (prev && prev.hasClass('setting-item')) {
+      hint(prev.querySelector('.setting-item-name'), [p]);
+    }
+  });
+}
+
+module.exports = { nxAutocomplete, nxFoldDescriptions, nxMultiRow, nxPropsToRules, nxPropRows, nxPropRulesToGroups, nxPropGroups, nxIconField };
