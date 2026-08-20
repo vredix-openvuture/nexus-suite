@@ -233,28 +233,24 @@ const THEME_STYLES = {
    lives in color0 (base) · color3 (accent) · color5 (second hue) · color15. */
 const PALETTES = {
   nexus:      { background: '#26121b', foreground: '#f0d9cd', color0: '#26121b', color1: '#ce3737', color2: '#c9863f', color3: '#fb6734', color4: '#1b3854', color5: '#1b3854', color6: '#3d6d8c', color7: '#e7d2c7', color8: '#8a6a63', color9: '#e5544a', color10: '#d8a24a', color11: '#fb8b4e', color12: '#4d7ea0', color13: '#6b1a34', color14: '#5a86a4', color15: '#ffe7dc' },
-  /* The two plain ones. Unlike the signature palettes these also carry `dark`
-     and `light` blocks: the theme derives its surfaces by mixing the accent
-     into them, and a neutral scheme is defined by NOT doing that. `slots` are
-     the --wl-* values everything else (graph, tags, folder tints) reads. */
-  dark:       { slots: { background: '#191919', foreground: '#d4d4d4', color0: '#191919', color1: '#eb5757', color2: '#4dab9a', color3: '#2383e2', color4: '#529cca', color5: '#2f2f2f', color6: '#529cca', color7: '#d4d4d4', color8: '#9b9b9b', color9: '#ff7369', color10: '#4dab9a', color11: '#ffa344', color12: '#529cca', color13: '#9a6dd7', color14: '#529cca', color15: '#ffffff' },
-                dark: { '--nx-desk': '#191919', '--nx-chip': '#191919', '--nx-chip-side': '#202020', '--nx-floor': '#202020',
+  /* The plain one. Unlike the signature palettes it carries `dark` and `light`
+     blocks: the theme derives its surfaces by mixing the accent into them, and
+     a neutral scheme is defined by NOT doing that. Those blocks hold the mode's
+     --wl-* slots too, so "Minimal" simply IS light or dark — whichever mode
+     Obsidian is in. `slots` are what both modes share. */
+  minimal:    { slots: { color1: '#eb5757', color2: '#0f7b6c', color3: '#2383e2', color4: '#529cca', color6: '#529cca', color9: '#d44c47', color10: '#4dab9a', color11: '#d9730d', color12: '#529cca', color13: '#9065b0', color14: '#529cca' },
+                dark: { '--wl-background': '#191919', '--wl-foreground': '#d4d4d4', '--wl-color0': '#191919', '--wl-color5': '#2f2f2f', '--wl-color7': '#d4d4d4', '--wl-color8': '#9b9b9b', '--wl-color15': '#ffffff',
+                        '--nx-desk': '#191919', '--nx-chip': '#191919', '--nx-chip-side': '#202020', '--nx-floor': '#202020',
                         '--nx-elevated': '#2a2a2a', '--nx-border': '#2f2f2f',
                         '--nx-fg': '#d4d4d4', '--nx-fg-muted': '#9b9b9b', '--nx-fg-bright': '#ffffff',
-                        '--nx-accent': '#2383e2', '--nx-accent-fg': '#6aa9ea', '--nx-on-accent': '#ffffff' },
-                light: { '--nx-desk': '#ffffff', '--nx-chip': '#ffffff', '--nx-chip-side': '#f7f7f5', '--nx-floor': '#f7f7f5',
+                        '--nx-accent': '#2383e2', '--nx-accent-fg': '#6aa9ea', '--nx-on-accent': '#ffffff',
+                        '--nx-code': '#ff7369', '--nx-surface-2': 'rgba(255, 255, 255, 0.055)' },
+                light: { '--wl-background': '#ffffff', '--wl-foreground': '#37352f', '--wl-color0': '#ffffff', '--wl-color5': '#e9e9e7', '--wl-color7': '#37352f', '--wl-color8': '#787774', '--wl-color15': '#1a1a19',
+                         '--nx-desk': '#ffffff', '--nx-chip': '#ffffff', '--nx-chip-side': '#f7f7f5', '--nx-floor': '#f7f7f5',
                          '--nx-elevated': '#ffffff', '--nx-border': '#e9e9e7',
                          '--nx-fg': '#37352f', '--nx-fg-muted': '#787774', '--nx-fg-bright': '#1a1a19',
-                         '--nx-accent': '#2383e2', '--nx-accent-fg': '#1b6fc0', '--nx-on-accent': '#ffffff' } },
-  light:      { slots: { background: '#ffffff', foreground: '#37352f', color0: '#ffffff', color1: '#eb5757', color2: '#0f7b6c', color3: '#2383e2', color4: '#2383e2', color5: '#e9e9e7', color6: '#529cca', color7: '#37352f', color8: '#787774', color9: '#d44c47', color10: '#0f7b6c', color11: '#d9730d', color12: '#2383e2', color13: '#9065b0', color14: '#529cca', color15: '#1a1a19' },
-                dark: { '--nx-desk': '#191919', '--nx-chip': '#191919', '--nx-chip-side': '#202020', '--nx-floor': '#202020',
-                        '--nx-elevated': '#2a2a2a', '--nx-border': '#2f2f2f',
-                        '--nx-fg': '#d4d4d4', '--nx-fg-muted': '#9b9b9b', '--nx-fg-bright': '#ffffff',
-                        '--nx-accent': '#2383e2', '--nx-accent-fg': '#6aa9ea', '--nx-on-accent': '#ffffff' },
-                light: { '--nx-desk': '#ffffff', '--nx-chip': '#ffffff', '--nx-chip-side': '#f7f7f5', '--nx-floor': '#f7f7f5',
-                         '--nx-elevated': '#ffffff', '--nx-border': '#e9e9e7',
-                         '--nx-fg': '#37352f', '--nx-fg-muted': '#787774', '--nx-fg-bright': '#1a1a19',
-                         '--nx-accent': '#2383e2', '--nx-accent-fg': '#1b6fc0', '--nx-on-accent': '#ffffff' } },
+                         '--nx-accent': '#2383e2', '--nx-accent-fg': '#1b6fc0', '--nx-on-accent': '#ffffff',
+                         '--nx-code': '#eb5757', '--nx-surface-2': 'rgba(135, 131, 120, 0.15)' } },
   azure:      { background: '#0a0e16', foreground: '#e6edf6', color0: '#0a0e16', color1: '#ff6b6b', color2: '#56d364', color3: '#4a9eff', color4: '#7cb0ff', color5: '#ff6b6b', color6: '#56c9d3', color7: '#d4dcea', color8: '#5f6b80', color9: '#ff8a8a', color10: '#7ee08c', color11: '#ffc266', color12: '#9cc2ff', color13: '#ff9db0', color14: '#7adbe4', color15: '#f4f8ff' },
   teal:       { background: '#08110f', foreground: '#e4efea', color0: '#08110f', color1: '#f2766b', color2: '#5fd39a', color3: '#2dd4bf', color4: '#38bdf8', color5: '#f0a830', color6: '#34d3c3', color7: '#d0e2db', color8: '#5e7168', color9: '#ff8f84', color10: '#7fe0b0', color11: '#f7c05a', color12: '#66cffb', color13: '#4de0cd', color14: '#7ee4d6', color15: '#eefaf6' },
   emerald:    { background: '#0a0f0b', foreground: '#e8f0e5', color0: '#0a0f0b', color1: '#ef6f6f', color2: '#34d399', color3: '#34d399', color4: '#56b6e0', color5: '#e8b84b', color6: '#45cfa8', color7: '#d3e2ce', color8: '#63745f', color9: '#ff8a8a', color10: '#63e0a8', color11: '#f2ca63', color12: '#78c8ea', color13: '#9ee0b4', color14: '#6fddc0', color15: '#f1faee' },

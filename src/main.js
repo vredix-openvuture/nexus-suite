@@ -3666,6 +3666,11 @@ module.exports = class NexusSuite extends Plugin {
      spacing/sizes as CSS variables on <body> (override the theme defaults). */
   applyThemeSettings() {
     const t = this.settings.theme || {};
+    // "Dark" and "Light" were two entries for one neutral scheme (0.20.0) —
+    // they are now the single "Minimal" palette, which follows Obsidian's own
+    // light/dark mode. Fold the old ids over instead of leaving those vaults on
+    // a palette that no longer exists.
+    if (t.palette === 'dark' || t.palette === 'light') { t.palette = 'minimal'; this.saveSettings(); }
 
     /* The STYLE is the shape of the interface — one body class, and the theme
        plus the plugin's own CSS build a different app around it. Set before the
