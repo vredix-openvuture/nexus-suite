@@ -1612,7 +1612,14 @@ module.exports = class NexusSuite extends Plugin {
   /* ---- Callouts ---- */
   /* Inject one <style> that sets --callout-icon + --callout-color per type,
      light/dark aware. Same result as eth-p Callout Manager, but managed here. */
+  /* "168, 130, 255" (Callout Manager's storage form) → rgb(168, 130, 255).
+     Anything that already reads as a colour — #hex, rgb(), a var() — is passed
+     through untouched. */
   applyCallouts() {
+    const calloutColor = (v) => {
+      const t = String(v || '').trim();
+      return /^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$/.test(t) ? 'rgb(' + t + ')' : t;
+    };
     if (!this._calloutStyle) this._calloutStyle = document.head.createEl('style', { attr: { id: 'nx-callouts' } });
     const s = this.settings.callouts;
     if (!s.enabled) { this._calloutStyle.textContent = ''; return; }
@@ -1622,19 +1629,19 @@ module.exports = class NexusSuite extends Plugin {
       const id = (c.id || '').toLowerCase().trim();
       if (!id) continue;
       const sel = `.callout[data-callout="${esc(id)}"]`;
-      // Emitted as a BARE "r, g, b" triplet — that is Obsidian's convention for
-      // --callout-color (core: `--callout-default: var(--color-blue-rgb)`) and
-      // every core rule consumes it as rgb(var(--callout-color)) /
-      // rgba(var(--callout-color), .1). Wrapping it in rgb() here would nest a
-      // colour inside rgb()'s channel args → invalid → core silently drops the
-      // title/icon colour for exactly the custom types we manage. Same triplet
-      // form the eth-p Callout Manager stores, so the migration is 1:1.
+      // --callout-color is a COLOUR, not a triplet: Obsidian defines its own as
+      // `--callout-quote: #9e9e9e` / `var(--color-blue)` and consumes them as
+      // `color-mix(in oklch, var(--callout-color) 10%, transparent)` and
+      // `color: var(--callout-color)`. (It used to be a bare "r, g, b" triplet —
+      // that is what the eth-p Callout Manager still stores and what we migrate
+      // from, so the value is wrapped on the way out. Emitting the raw triplet
+      // made every rule that consumes it silently drop: colour-less callouts.)
       const decl = [];
-      if (c.color) decl.push(`--callout-color:${c.color};`);
+      if (c.color) decl.push(`--callout-color:${calloutColor(c.color)};`);
       if (c.icon) decl.push(`--callout-icon:${c.icon.startsWith('lucide-') ? c.icon : 'lucide-' + c.icon};`);
       if (decl.length) css += `${sel}{${decl.join('')}}\n`;
-      if (c.colorLight) css += `.theme-light ${sel}{--callout-color:${c.colorLight};}\n`;
-      if (c.colorDark)  css += `.theme-dark ${sel}{--callout-color:${c.colorDark};}\n`;
+      if (c.colorLight) css += `.theme-light ${sel}{--callout-color:${calloutColor(c.colorLight)};}\n`;
+      if (c.colorDark)  css += `.theme-dark ${sel}{--callout-color:${calloutColor(c.colorDark)};}\n`;
     }
     this._calloutStyle.textContent = css;
   }
@@ -3741,12 +3748,17 @@ module.exports = class NexusSuite extends Plugin {
      px value. It cannot be a calc() in the stylesheet — --font-text-size is
      exactly the variable being overridden, and a custom property defined in
      terms of itself is invalid at computed-value time. */
+  /* The app's own text size, published so the note-font styles can compute
+     from it (a custom property cannot be defined in terms of itself, which is
+     why this detour through JS exists at all). The per-font factor lives in
+     CSS — see styles/06-note-decor.css. */
   applyHandFont() {
-    const scale = Number((this.settings.banner || {}).handScale) || 1.45;
     let base = 0;
     try { base = parseFloat(this.app.vault.getConfig('baseFontSize')); } catch (e) {}
     if (!base) base = parseFloat(getComputedStyle(document.body).getPropertyValue('--font-text-size')) || 16;
-    document.body.style.setProperty('--nx-hand-size', (Math.round(base * scale * 10) / 10) + 'px');
+    const b = document.body;
+    b.style.setProperty('--nx-base-size', base + 'px');
+    b.style.setProperty('--nx-hand-scale', String(Number((this.settings.banner || {}).handScale) || 1.54));
   }
 
   applyRibbon() {
