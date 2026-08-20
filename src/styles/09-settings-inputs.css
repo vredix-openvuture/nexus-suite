@@ -339,3 +339,31 @@
 .nx-palpick-name { font-size: .86em; color: var(--text-normal); }
 .nx-palpick-tile.is-active .nx-palpick-name { font-weight: 600; }
 .nx-palpick-note { margin-top: 10px; }
+
+
+/* ── Folded descriptions ────────────────────────────────────────────────────
+   Every explanation on a settings page sits behind this ⓘ (lib/inputs.js ·
+   nxFoldDescriptions): hover for the tooltip, click to unfold it in place —
+   the tablet has no hover, so the click is not a nicety. */
+.nx-hint {
+  display: inline-flex; align-items: center; justify-content: center;
+  vertical-align: middle; margin-left: 6px;
+  width: 18px; height: 18px; border-radius: 4px;
+  color: var(--text-faint); cursor: help;
+  transition: color .1s ease, background .1s ease;
+}
+.nx-hint:hover,
+.nx-hint:focus-visible { color: var(--text-accent); background: var(--background-modifier-hover); }
+.nx-hint.is-open { color: var(--text-accent); }
+.nx-hint .svg-icon { width: 14px; height: 14px; }
+.nx-cardcfg-sec .nx-hint,
+.nx-settings-head h3 .nx-hint { margin-left: 8px; }
+
+.setting-item-description.nx-folded { display: none; }
+.setting-item-description.nx-folded.is-open { display: block; }
+/* An unfolded section intro should read as the aside it is, not as body copy. */
+p.setting-item-description.nx-folded.is-open {
+  margin: 2px 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--background-modifier-border);
+}

@@ -15,7 +15,7 @@ const { NexusConfirmModal, NexusNameModal } = require('./modals/misc.js');
 const { NexusTagRenameModal } = require('./modals/tags.js');
 const { nxAllTagCounts, nxFilesWithTag, nxRenameTag } = require('./lib/tagtools.js');
 const { FN_TYPES } = require('./lib/foldernotes.js');
-const { nxAutocomplete, nxMultiRow } = require('./lib/inputs.js');
+const { nxAutocomplete, nxFoldDescriptions, nxMultiRow } = require('./lib/inputs.js');
 const { nxAllFolders } = require('./lib/helpers.js');
 const calstore = require('./lib/calstore.js');
 const tasks = require('./lib/tasks.js');
@@ -183,6 +183,9 @@ class NexusSettingsTab extends PluginSettingTab {
       // carries that, so nothing has to be memorised.
       if (m.sub) head.createDiv({ cls: 'nx-settings-head-sub', text: m.sub });
       t.fn(body);
+      // Every page says less: the explanations move into an ⓘ next to the name
+      // they belong to (see lib/inputs.js · nxFoldDescriptions).
+      nxFoldDescriptions(body);
       nav.querySelectorAll('.nx-settings-tab').forEach(el => el.toggleClass('is-active', el.getAttribute('data-id') === this.active));
     };
     groups.forEach(g => {
