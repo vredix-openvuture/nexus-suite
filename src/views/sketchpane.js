@@ -37,7 +37,10 @@ class NexusSketchPaneView extends ItemView {
   }
 
   async onOpen() { if (this.id) await this.render(); }
-  async onClose() { this.surface = null; }
+  async onClose() {
+    if (this.surface) this.surface.destroy();   // writes out anything the commit debounce still holds
+    this.surface = null;
+  }
 
   async render() {
     const root = this.contentEl;
@@ -66,6 +69,7 @@ class NexusSketchPaneView extends ItemView {
       bgOpacity: data.bgOpacity != null ? data.bgOpacity : s.bgOpacity,
       bgColor: s.bgColor,
       autoGrow: true,                       // a pane is a workbench, not a preview
+      pageZoom: true,                       // pinch magnifies the sheet; out stops at 1× = normal
       strokes: data.strokes || [],
       resizable: true,
       onCommit: () => this.save(surface),
@@ -87,6 +91,13 @@ class NexusSketchPaneView extends ItemView {
       if (surface.H < want) surface.setHeight(want);
     };
     requestAnimationFrame(ensurePaper);
+
+    const zoomPill = root.createDiv({ cls: 'nx-sk-zoompill', text: '100%' });
+    zoomPill.onclick = () => surface.setPageZoom(1);
+    surface.onZoom = (z) => {
+      root.toggleClass('is-zoomed', z > 1.01);
+      zoomPill.setText(Math.round(z * 100) + '%');
+    };
 
     this.plugin._buildSketchBar(bar, surface, s, {
       mode: 'full',
@@ -110,8 +121,10 @@ class NexusSketchPaneView extends ItemView {
   }
   trimAndClose() {
     if (this.surface) {
+      this.surface.setPageZoom(1);
       this.surface.setHeight(0);                                  // back to content height
       if (this.surface.strokes.length) this.surface.persist();
+      else this.surface.flush();
     }
     this.leaf.detach();
   }

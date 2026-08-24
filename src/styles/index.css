@@ -20,3 +20,10 @@
 @import "./19-task-states.css";
 @import "./20-kanban.css";
 @import "./21-style-plain.css";
+
+/* Cross-cutting touch rules — MUST stay last: they adjust the module rules
+   above and win by load order, not by specificity. This import was lost in a
+   Syncthing conflict on 2026-08-05, so the whole file has been dead weight ever
+   since: none of the mobile touch targets or the 16px form fields (which stop
+   the webview from zooming the page on focus) were ever in the build. */
+@import "./19-touch.css";

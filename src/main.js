@@ -97,6 +97,14 @@ module.exports = class NexusSuite extends Plugin {
       if (v && v.file === f) this.refreshBanner();
     }));
     this.registerEvent(this.app.workspace.on("resize", () => this.refreshBanner()));
+    // The link cache finishes filling AFTER the first notes have already
+    // rendered — on mobile noticeably later. Without this, a banner whose
+    // [[link]] could not be resolved at render time simply stayed missing until
+    // something else happened to trigger a refresh.
+    this.registerEvent(this.app.metadataCache.on('resolved', () => {
+      this._bannerRetries = 0;
+      this.refreshBanner();
+    }));
     // On load, render for the already-open note (fires no event).
     // Twice: immediately + delayed, because the layout measurement (grey bar /
     // full width) has not settled on the first pass.
@@ -122,27 +130,39 @@ module.exports = class NexusSuite extends Plugin {
       const key = propKeyAt(e);
       if (key) this._watchForPropMenu(key);
     }, { capture: true });
-    // Mobile: a long press does NOT fire `contextmenu` — Obsidian opens the
-    // property menu from its own hold timer, so the desktop path never ran and
-    // "Hide property" was missing on the tablet. Arm the same watcher from the
-    // touch instead: after the press has lasted long enough to be a hold, it
-    // waits for whatever menu appears and injects into that. A short tap clears
-    // the timer, and an armed watcher that never sees a menu simply expires.
-    this.registerDomEvent(document, 'touchstart', (e) => {
+    // Mobile: a long press does NOT fire `contextmenu`. Obsidian opens the
+    // property menu from its own hold timer (and on some builds a plain tap on
+    // the key opens it too) — neither is something a plugin can hook. So we
+    // don't try to predict the gesture at all: any press over a property arms a
+    // watcher, and whatever menu turns up next gets the item.
+    //
+    // The previous version ran its own 300ms hold timer and cancelled it on the
+    // first `touchmove`. On a phone a finger always drifts a pixel or two during
+    // a long press, so the timer was cancelled before it ever fired and "Hide
+    // property" never appeared — the bug this replaces. Only a real drag
+    // (> DRAG_PX, i.e. a scroll) disarms it now.
+    const DRAG_PX = 14;
+    let propTouch = null;
+    const armProp = (e) => {
       const key = propKeyAt(e);
       if (!key) return;
-      // Snapshot the open menus NOW, not when the timer fires: Obsidian's own
-      // hold timer may beat ours, and a menu that is already there when the
-      // watcher starts would count as "not new" and never get the item.
-      const known = new Set(document.body.querySelectorAll('.menu'));
-      window.clearTimeout(this._propHoldT);
-      this._propHoldT = window.setTimeout(() => this._watchForPropMenu(key, known), 300);
+      const t = (e.touches && e.touches[0]) || e;
+      propTouch = { x: t.clientX, y: t.clientY };
+      // Snapshot the menus open RIGHT NOW: Obsidian's own hold timer may beat
+      // us to it, and a menu that already existed must not count as "new".
+      this._watchForPropMenu(key, new Set(document.body.querySelectorAll('.menu')), 3000);
+    };
+    this.registerDomEvent(document, 'touchstart', armProp, { capture: true, passive: true });
+    // Pen and touch both go through pointerdown; mouse is already covered by the
+    // contextmenu path above and must not arm a watcher on every left-click.
+    this.registerDomEvent(document, 'pointerdown', (e) => { if (e.pointerType !== 'mouse') armProp(e); }, { capture: true, passive: true });
+    this.registerDomEvent(document, 'touchmove', (e) => {
+      if (!propTouch) return;
+      const t = e.touches && e.touches[0];
+      if (t && Math.hypot(t.clientX - propTouch.x, t.clientY - propTouch.y) > DRAG_PX) { propTouch = null; this._stopPropMenuWatch(); }
     }, { capture: true, passive: true });
-    const cancelHold = () => window.clearTimeout(this._propHoldT);
-    this.registerDomEvent(document, 'touchend', cancelHold, { capture: true, passive: true });
-    this.registerDomEvent(document, 'touchmove', cancelHold, { capture: true, passive: true });
-    this.registerDomEvent(document, 'touchcancel', cancelHold, { capture: true, passive: true });
-    this.register(() => { window.clearTimeout(this._propHoldT); this._stopPropMenuWatch(); });
+    this.registerDomEvent(document, 'touchcancel', () => { propTouch = null; this._stopPropMenuWatch(); }, { capture: true, passive: true });
+    this.register(() => this._stopPropMenuWatch());
 
     // ── Image separator ──
     // A thin strip of a picture instead of a horizontal rule. The block only
@@ -1308,13 +1328,53 @@ module.exports = class NexusSuite extends Plugin {
     value = String(value).trim();
     const wl = value.match(/^!?\[\[([^\]|]+)(\|[^\]]*)?\]\]$/);
     if (wl) {
-      const dest = this.app.metadataCache.getFirstLinkpathDest(wl[1].trim(), sourcePath);
-      return dest ? this.app.vault.getResourcePath(dest) : null;
+      const name = wl[1].trim();
+      const dest = this.app.metadataCache.getFirstLinkpathDest(name, sourcePath);
+      if (dest) return this.app.vault.getResourcePath(dest);
+      // The link cache is not populated yet (the usual case on a cold mobile
+      // start) or the image was moved. Resolve it against the vault ourselves
+      // before giving up — "the banner shows on one device but not the other"
+      // is nearly always this, not a genuinely missing file.
+      const loose = this._findImageLoose(name, sourcePath);
+      if (loose) return this.app.vault.getResourcePath(loose);
+      this._retryBannerSoon();
+      return null;
     }
     if (/^https?:\/\//.test(value)) return value;
-    const f = this.app.vault.getAbstractFileByPath(value);
+    const f = this.app.vault.getAbstractFileByPath(value) || this._findImageLoose(value, sourcePath);
     if (f) return this.app.vault.getResourcePath(f);
-    return value;
+    // NEVER hand an unresolved string back: it used to end up inside url(…),
+    // which renders as a silently broken banner instead of no banner at all.
+    this._retryBannerSoon();
+    return null;
+  }
+
+  /* Best-effort lookup for an image reference the link cache could not resolve:
+     exact path, then relative to the note, then inside the banner folder, and
+     finally a UNIQUE basename match anywhere in the vault. */
+  _findImageLoose(name, sourcePath) {
+    const at = (p) => { const f = p && this.app.vault.getAbstractFileByPath(p); return (f instanceof TFile) ? f : null; };
+    let f = at(name);
+    if (f) return f;
+    const dir = (sourcePath || '').split('/').slice(0, -1).join('/');
+    if (dir) { f = at(dir + '/' + name); if (f) return f; }
+    const root = this.bannerRoot();
+    if (root) { f = at(root + '/' + name); if (f) return f; }
+    const base = name.split('/').pop().toLowerCase();
+    const hits = this.app.vault.getFiles().filter(x =>
+      IMG_EXT.includes(x.extension.toLowerCase()) &&
+      (x.name.toLowerCase() === base || x.basename.toLowerCase() === base));
+    return hits.length === 1 ? hits[0] : null;   // ambiguous → don't guess
+  }
+
+  /* One delayed re-render after a failed resolve, bounded so a reference to a
+     genuinely absent file can never turn into an endless refresh loop. The
+     counter resets whenever the metadata cache reports itself resolved. */
+  _retryBannerSoon() {
+    if (this._bannerRetryT) return;
+    if ((this._bannerRetries || 0) >= 8) return;
+    this._bannerRetries = (this._bannerRetries || 0) + 1;
+    this._bannerRetryT = window.setTimeout(() => { this._bannerRetryT = null; this.refreshBanner(); }, 900);
   }
 
   /* ---- Banner groups ------------------------------------------------------
@@ -1615,14 +1675,44 @@ module.exports = class NexusSuite extends Plugin {
   /* "168, 130, 255" (Callout Manager's storage form) → rgb(168, 130, 255).
      Anything that already reads as a colour — #hex, rgb(), a var() — is passed
      through untouched. */
+  /* Which convention THIS Obsidian build uses for --callout-color.
+     Older builds store a bare "r, g, b" triplet and consume it as
+     `rgba(var(--callout-color), .1)`; current builds store a COLOUR and consume
+     it via `color-mix(… var(--callout-color) …)`. Emitting the wrong form makes
+     every rule that reads the variable drop silently, so the callout loses its
+     fill. That is why one vault could look different on two devices without
+     anything being out of sync: the devices were on different Obsidian
+     versions. Read from Obsidian's OWN value, so it is right on any build. */
+  _calloutTripletMode() {
+    try {
+      const cs = getComputedStyle(document.body);
+      const v = (cs.getPropertyValue('--callout-quote') || cs.getPropertyValue('--callout-note') || '').trim();
+      return /^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$/.test(v);
+    } catch (e) { return false; }
+  }
   applyCallouts() {
+    const triplet = this._calloutTripletMode();
     const calloutColor = (v) => {
       const t = String(v || '').trim();
-      return /^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$/.test(t) ? 'rgb(' + t + ')' : t;
+      const isTriplet = /^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$/.test(t);
+      if (triplet) {
+        if (isTriplet) return t;
+        const m = t.match(/^#([0-9a-f]{6})$/i);
+        if (m) return [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)).join(', ');
+        const m3 = t.match(/^#([0-9a-f]{3})$/i);
+        if (m3) return [0, 1, 2].map(i => parseInt(m3[1][i] + m3[1][i], 16)).join(', ');
+        return t;
+      }
+      return isTriplet ? 'rgb(' + t + ')' : t;
     };
     if (!this._calloutStyle) this._calloutStyle = document.head.createEl('style', { attr: { id: 'nx-callouts' } });
+    // One normalised, ALWAYS-a-colour handle for the theme to consume, whichever
+    // convention this build speaks. Emitted even when the module is switched
+    // off, because the theme's callout fill depends on it. The theme keeps
+    // `var(--nx-callout-c, var(--callout-color))` so it also stands alone.
+    const norm = `.callout{--nx-callout-c:${triplet ? 'rgb(var(--callout-color))' : 'var(--callout-color)'};}\n`;
     const s = this.settings.callouts;
-    if (!s.enabled) { this._calloutStyle.textContent = ''; return; }
+    if (!s.enabled) { this._calloutStyle.textContent = norm; return; }
     const esc = (k) => (window.CSS && CSS.escape) ? CSS.escape(k) : k.replace(/"/g, '\\"');
     let css = '';
     for (const c of s.items) {
@@ -1643,7 +1733,7 @@ module.exports = class NexusSuite extends Plugin {
       if (c.colorLight) css += `.theme-light ${sel}{--callout-color:${calloutColor(c.colorLight)};}\n`;
       if (c.colorDark)  css += `.theme-dark ${sel}{--callout-color:${calloutColor(c.colorDark)};}\n`;
     }
-    this._calloutStyle.textContent = css;
+    this._calloutStyle.textContent = norm + css;
   }
   /* One-time import of the user's existing callouts from the eth-p Callout
      Manager plugin (icons + colors, incl. light/dark colorScheme conditions),
@@ -1703,7 +1793,7 @@ module.exports = class NexusSuite extends Plugin {
      for a menu that is NEW (added after the right-click) and already POPULATED.
      That avoids the old bug of grabbing a stale/hidden leftover `.menu` (which is
      why the item never showed up). The observer self-stops on success/timeout. */
-  _watchForPropMenu(key, knownBefore) {
+  _watchForPropMenu(key, knownBefore, ttl) {
     this._stopPropMenuWatch();
     const known = knownBefore || new Set(document.body.querySelectorAll('.menu'));
     const tryInject = () => {
@@ -1720,7 +1810,7 @@ module.exports = class NexusSuite extends Plugin {
     if (tryInject()) return;                               // menu already open & ready
     this._propObs = new MutationObserver(() => tryInject());
     this._propObs.observe(document.body, { childList: true, subtree: true });
-    this._propTimer = window.setTimeout(() => this._stopPropMenuWatch(), 2200);
+    this._propTimer = window.setTimeout(() => this._stopPropMenuWatch(), ttl || 2200);
   }
   _stopPropMenuWatch() {
     if (this._propObs) { this._propObs.disconnect(); this._propObs = null; }
@@ -2141,6 +2231,14 @@ module.exports = class NexusSuite extends Plugin {
     // rides the separate paperStyle toggle (see _resolvePaperStyle).
     if (paper === 'paperlike') paper = 'paper';
 
+    // Writing the id back modifies the note, which makes Obsidian re-render this
+    // block — while the user may already be drawing on the pad being replaced.
+    // Whatever that outgoing surface holds beyond what reached the file is
+    // carried over here; without it those strokes were simply gone.
+    let carried = data ? data.strokes : [];
+    const outgoing = state.id && this._sketchLive ? this._sketchLive[state.id] : null;
+    if (outgoing && outgoing.strokes && outgoing.strokes.length > carried.length) carried = outgoing.strokes;
+
     const wrap = el.createDiv('nx-sketch');
     // A finger stroke that starts near an edge is a drawer swipe to the mobile
     // gesture recogniser. It skips any subtree marked like this (same lever the
@@ -2156,7 +2254,7 @@ module.exports = class NexusSuite extends Plugin {
       penConfig: (s.penConfig = s.penConfig || {}),   // live reference — pen menu edits apply on the next stroke
       shapeSnap: s.shapeSnap !== false,
       bgType, bgSize, bgOpacity, bgColor: s.bgColor, autoGrow,
-      strokes: data ? data.strokes : [],
+      strokes: carried,
       resizable: true,
       onCommit: () => this._persistSketch(state, surface, ctx, el),
     });
@@ -2190,8 +2288,11 @@ module.exports = class NexusSuite extends Plugin {
       });
     };
     buildInlineBar();
+    // This pad is now the live one for that id — so the NEXT re-render hands
+    // over from here instead of from a stale predecessor.
+    if (state.id) (this._sketchLive = this._sketchLive || {})[state.id] = surface;
     const remembered = state.id && modes[state.id];
-    const hasContent = !!(data && data.strokes && data.strokes.length);
+    const hasContent = !!(carried && carried.length);
     setMode(remembered || (hasContent ? 'view' : 'edit'));
   }
 
@@ -2797,9 +2898,10 @@ module.exports = class NexusSuite extends Plugin {
      the pad back inline and rebuilds the compact bar to reflect any changes. */
   _openSketchFullscreen(surface, pad, wrap, s, rebuildInlineBar) {
     if (document.body.querySelector('.nx-sketch-fs')) return;   // one editor at a time
-    const wasLocked = surface.locked, wasGrow = surface.autoGrow;
+    const wasLocked = surface.locked, wasGrow = surface.autoGrow, wasZoom = surface.pageZoom;
     surface.setLocked(false);                                   // full-size editor always draws
     surface.autoGrow = true;                                    // endless downward while writing
+    surface.pageZoom = true;                                    // pinch magnifies the sheet (out stops at 1× = normal)
     const overlay = document.body.createDiv('nx-sketch-fs');
     overlay.dataset.ignoreSwipe = 'true';   // full-size pad: same reason as the inline one
     const barEl = overlay.createDiv('nx-sketch-bar nx-sketch-fs-bar');
@@ -2826,15 +2928,28 @@ module.exports = class NexusSuite extends Plugin {
     };
     requestAnimationFrame(ensurePaper);
 
+    // Zoom read-out: only visible above 1×, and tapping it goes straight back to
+    // the normal state — the gesture is discoverable, the way out is obvious.
+    const zoomPill = overlay.createDiv({ cls: 'nx-sk-zoompill', text: '100%' });
+    zoomPill.onclick = () => surface.setPageZoom(1);
+    surface.onZoom = (z) => {
+      overlay.toggleClass('is-zoomed', z > 1.01);
+      zoomPill.setText(Math.round(z * 100) + '%');
+    };
+
     const close = () => {
       document.removeEventListener('keydown', onKey, true);
       stage.removeEventListener('scroll', onScroll);
+      surface.setPageZoom(1);                                   // back to normal before the pad returns inline
+      surface.onZoom = null;
+      surface.pageZoom = wasZoom;
       surface.autoGrow = wasGrow;
       surface.setHeight(0);                                     // trim empty bottom back to content (clamps up to content min)
       wrap.appendChild(pad);                                    // …and back inline
       overlay.remove();
       surface.setLocked(wasLocked);
       if (surface.strokes.length) surface.persist();            // save trimmed height (+strokes already auto-saved); skip empty→no premature id
+      else surface.flush();                                     // …but never drop a pending write on the way out
       if (rebuildInlineBar) rebuildInlineBar();
     };
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
@@ -2849,32 +2964,78 @@ module.exports = class NexusSuite extends Plugin {
         state.writing = true;
         state.id = 'sk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         (this._sketchMode = this._sketchMode || {})[state.id] = 'edit';   // stay in edit after the re-render
+        (this._sketchLive = this._sketchLive || {})[state.id] = surface;  // …and hand the strokes over to the pad that replaces this one
         await this.saveSketch(state.id, surface.toSVGString());
-        await this._writeSketchId(ctx, el, state.id);
+        state.bound = await this._writeSketchId(ctx, el, state.id);
         state.writing = false;
       } else {
         await this.saveSketch(state.id, surface.toSVGString());
       }
+      // The note may not have learned the id yet: getSectionInfo() comes up
+      // empty often enough (mobile, and right after a re-render), and the old
+      // code simply returned there. The sidecar existed, the block never got
+      // `id:` — so the next reload rendered an empty pad and the drawing looked
+      // like it had detached itself from the note. Keep retrying on every later
+      // commit until it sticks, and say so if it never does.
+      if (state.id && !state.bound) {
+        state.bound = await this._writeSketchId(ctx, el, state.id);
+        if (!state.bound) {
+          state.bindTries = (state.bindTries || 0) + 1;
+          if (state.bindTries === 3) new Notice('Nexus: this drawing is saved as ' + state.id + '.svg but could not be linked into the note yet.');
+        }
+      }
     } catch (e) { console.error('Nexus: sketch save failed', e); new Notice('Nexus: could not save sketch.'); }
+  }
+
+  /* Index of the ONE `quicksketch` block in `lines` that carries no id, or -1.
+     Deliberately refuses to guess when a note holds several id-less pads —
+     writing the id into the wrong block would be worse than not writing it. */
+  _findIdlessSketchBlock(lines) {
+    const fence = /^\s*(?:`{3,}|~{3,})\s*quicksketch\s*$/i;
+    let found = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (!fence.test(lines[i])) continue;
+      let hasId = false;
+      for (let j = i + 1; j < lines.length; j++) {
+        if (/^\s*(?:`{3,}|~{3,})/.test(lines[j])) break;
+        if (/^\s*id\s*:/i.test(lines[j])) { hasId = true; break; }
+      }
+      if (hasId) continue;
+      if (found >= 0) return -1;   // ambiguous → leave the note alone
+      found = i;
+    }
+    return found;
   }
 
   /* Insert `id: <id>` as the first body line of the code block, so the note
      re-renders bound to the just-written sidecar. Idempotent: bails if the
      block already has an id (guards the reading + live-preview double render). */
   async _writeSketchId(ctx, el, id) {
-    const info = ctx.getSectionInfo(el);
-    if (!info) return;
-    const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath);
-    if (!(file instanceof TFile)) return;
+    const file = ctx && ctx.sourcePath ? this.app.vault.getAbstractFileByPath(ctx.sourcePath) : null;
+    if (!(file instanceof TFile)) return false;
+    const fence = /^\s*(?:`{3,}|~{3,})\s*quicksketch\s*$/i;
+    let done = false;
     const apply = (content) => {
       const lines = content.split('\n');
-      const body = lines.slice(info.lineStart + 1, info.lineEnd);
-      if (body.some(l => /^\s*id\s*:/i.test(l))) return content;   // already assigned
-      lines.splice(info.lineStart + 1, 0, 'id: ' + id);
+      // Preferred: the exact block Obsidian says it is rendering — but only if
+      // the line it points at really is our fence (a stale section info would
+      // otherwise splice an `id:` into unrelated text).
+      const info = ctx.getSectionInfo(el);
+      let start = (info && fence.test(lines[info.lineStart] || '')) ? info.lineStart : this._findIdlessSketchBlock(lines);
+      if (start < 0) return content;
+      for (let i = start + 1; i < lines.length; i++) {
+        if (/^\s*(?:`{3,}|~{3,})/.test(lines[i])) break;
+        if (/^\s*id\s*:/i.test(lines[i])) { done = true; return content; }   // already assigned
+      }
+      lines.splice(start + 1, 0, 'id: ' + id);
+      done = true;
       return lines.join('\n');
     };
-    if (this.app.vault.process) await this.app.vault.process(file, apply);
-    else { const c = await this.app.vault.read(file); const n = apply(c); if (n !== c) await this.app.vault.modify(file, n); }
+    try {
+      if (this.app.vault.process) await this.app.vault.process(file, apply);
+      else { const c = await this.app.vault.read(file); const n = apply(c); if (n !== c) await this.app.vault.modify(file, n); }
+    } catch (e) { console.error('Nexus: could not write the sketch id back', e); return false; }
+    return done;
   }
 
   /* ---- Slate (drawing note) ----

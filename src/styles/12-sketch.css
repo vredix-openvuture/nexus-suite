@@ -174,6 +174,42 @@
 }
 .nx-sketch-bar > .nx-sk-colors::-webkit-scrollbar { display: none; }
 .nx-sketch-bar > .nx-sk-colors > * { flex: 0 0 auto; }
+/* ── Narrow screens: the bar is ONE clipped row (overflow:hidden), and on a
+      phone the tool group alone is wider than the screen — so everything on the
+      right was cut off and unreachable, including the button that CLOSES the
+      full-size editor. Two rows instead: tools scroll sideways, the actions stay
+      pinned to the right edge, and the colour strip drops to its own line. ── */
+@media (max-width: 620px) {
+  .nx-sketch-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    overflow: visible;
+  }
+  .nx-sketch-bar > .nx-sk-spacer { display: none; }
+  .nx-sketch-bar > .nx-sk-grp-tools {
+    flex: 1 1 auto;
+    min-width: 0;                        /* may shrink below its content → never wraps before the actions */
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .nx-sketch-bar > .nx-sk-grp-tools::-webkit-scrollbar { display: none; }
+  .nx-sketch-bar > .nx-sk-grp-actions {
+    flex: 0 0 auto;
+    margin-left: auto;                   /* always reachable at the right edge */
+  }
+  .nx-sketch-bar > .nx-sk-colors {
+    flex: 1 0 100%;                      /* forces the wrap → colours get their own row */
+    order: 3;
+    justify-content: flex-start;
+  }
+  /* Swatches are a touch target here, not a legend — bigger, further apart.
+     (Button sizes are left to 19-touch.css, which loads after this.) */
+  .nx-sk-color { width: 15px; height: 15px; }
+  .nx-sk-colors { gap: 9px; }
+  .nx-sketch-fs-stage { padding: 12px 8px 48px; }
+}
+
 .nx-sk-btn {
   display: flex;
   align-items: center;
@@ -237,6 +273,10 @@
   border-radius: 8px;
   background: var(--background-primary);
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
+  /* Never taller than the screen: on a phone the palette list or the colour
+     picker otherwise runs off the bottom with no way to reach it. */
+  max-height: 76vh;
+  overflow-y: auto;
 }
 .nx-sk-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 8px; }
 
@@ -381,7 +421,21 @@
 }
 .nx-sk-live { pointer-events: none; }
 /* Low-latency live layer: the in-progress stroke is painted here (desynchronized
-   2d context, see sketch.js) and committed to the SVG on release. */
+   2d contexts, see sketch.js) and committed to the SVG on release.
+   TWO stacked canvases — accumulated chunks + the moving tail — inside one
+   wrapper. Pen opacity / blend mode go on the WRAPPER so the pair composites as
+   a single group and their overlap can't stack darker than the final stroke.
+   Deliberately NO transform / will-change / filter here: any of those would
+   promote the canvases onto the normal compositor path and cost back exactly
+   the latency the desynchronized context buys. */
+.nx-sk-livelayer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
 .nx-sk-livecanvas {
   position: absolute;
   inset: 0;
@@ -513,6 +567,30 @@ body.is-mobile .nx-sketch-fs { padding-top: max(env(safe-area-inset-top, 0px), 3
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.18);
 }
 
+/* Zoom read-out for a full-size sheet. Hidden at 1× — it only has something to
+   say once the paper has been magnified — and tapping it returns to normal. */
+.nx-sk-zoompill {
+  position: absolute;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.nx-sketch-fs.is-zoomed .nx-sk-zoompill,
+.nx-skpane.is-zoomed .nx-sk-zoompill { opacity: 1; pointer-events: auto; }
+body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
+
 /* ── COLOUR PICKER — hue ring + inner saturation/value square + opacity ──────
    Tap a selected swatch again (or the custom "+") to open it. Emits #rrggbb
    when fully opaque, else rgba(...). */
@@ -589,8 +667,101 @@ body.is-mobile .nx-sketch-fs { padding-top: max(env(safe-area-inset-top, 0px), 3
 /* ── SKETCH PANE ──
    One sketch as its own tab (views/sketchpane.js): a roomy toolbar on top, the
    paper below in its own scroller so it can grow downward without end. */
-.nx-skpane { display: flex; flex-direction: column; height: 100%; padding: 0; }
+.nx-skpane { position: relative; display: flex; flex-direction: column; height: 100%; padding: 0; }   /* relative → the zoom pill anchors here */
 .nx-skpane-bar { flex: 0 0 auto; border-bottom: 1px solid var(--nx-border, var(--background-modifier-border)); border-radius: 0; }
 .nx-skpane-stage { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 .nx-skpane-stage .nx-sketch-pad { width: 100%; }
 .nx-skpane-back { margin-left: 4px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RECOVERED 2026-08-24. The rules below were written together with
+   modals/pickers.js but never committed, and the working copy was then
+   overwritten by a Syncthing conflict on 2026-08-05 — so the picker modal has
+   been rendering completely unstyled ever since. Restored from the conflict
+   copy, which was the only surviving record of them.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* ── SKETCH PICKER (Insert a sketch) ───────────────────────────────────────
+   Blank pad first — that is still the common case and stays one Enter away —
+   then the drawings that already exist, as thumbnails: a sketch is recognised
+   by looking at it, not by reading its name. */
+.modal.nx-skpick-modal { width: min(760px, 94vw); }
+.nx-skpick-title { margin: 0 0 14px; }
+.nx-skpick-new {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
+  column-gap: 12px; align-items: center;
+  padding: 12px 14px; border-radius: var(--radius-m, 10px); cursor: pointer;
+  border: 1px dashed var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.nx-skpick-new:hover, .nx-skpick-new:focus-visible {
+  border-style: solid; border-color: var(--interactive-accent); outline: none;
+  background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary));
+}
+.nx-skpick-new-ic { grid-row: 1 / 3; display: flex; color: var(--text-accent); }
+.nx-skpick-new-ic .svg-icon { width: 22px; height: 22px; }
+.nx-skpick-new-lbl { font-weight: 600; }
+.nx-skpick-new-sub { font-size: .82em; color: var(--text-muted); }
+
+.nx-skpick-label {
+  margin: 20px 0 8px; font-size: .74em; font-weight: 600;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--text-faint);
+}
+
+/* Scribble notes: a page, not a thumbnail — a chip row reads as "a different kind
+   of thing" without competing with the sketch grid below it. */
+.nx-skpick-notes {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  max-height: 116px; overflow-y: auto;
+}
+.nx-skpick-note {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px 6px 9px; border-radius: 999px; cursor: pointer;
+  font-size: .86em; color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  max-width: 100%;
+}
+.nx-skpick-note:hover { border-color: var(--interactive-accent); }
+.nx-skpick-note:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.nx-skpick-note-ic { display: inline-flex; flex: 0 0 auto; color: var(--text-accent); }
+.nx-skpick-note-ic .svg-icon { width: 15px; height: 15px; }
+.nx-skpick-note-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-skpick-search {
+  width: 100%; margin-bottom: 12px; padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border); border-radius: 8px;
+  background: var(--background-modifier-form-field); color: var(--text-normal);
+}
+.nx-skpick-search:focus { outline: none; border-color: var(--interactive-accent); }
+.nx-skpick-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 12px; max-height: 52vh; overflow-y: auto; padding: 2px;
+}
+.nx-skpick-card {
+  border-radius: var(--radius-m, 10px); overflow: hidden; cursor: pointer;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  transition: transform .1s, border-color .1s;
+}
+.nx-skpick-card:hover { transform: translateY(-2px); border-color: var(--interactive-accent); }
+.nx-skpick-card:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+/* Sketches are ink on light paper — a white mat keeps them readable in a dark
+   theme instead of drowning them in the modal's own surface. */
+.nx-skpick-thumb {
+  display: block; width: 100%; height: 104px; object-fit: contain;
+  background: #f7f6f2; padding: 5px;
+}
+.nx-skpick-name {
+  padding: 7px 9px 0; font-size: .86em; font-weight: 600; color: var(--text-normal);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-skpick-meta {
+  padding: 0 9px 8px; font-size: .7em; color: var(--text-faint);
+  font-family: var(--font-monospace);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-skpick-empty { color: var(--text-muted); font-size: .9em; padding: 14px 2px; grid-column: 1 / -1; }
+
+@media (max-width: 620px) {
+  .nx-skpick-grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 9px; max-height: 46vh; }
+  .nx-skpick-thumb { height: 78px; }
+}

@@ -20,8 +20,10 @@
 const SVGNS = 'http://www.w3.org/2000/svg';
 const LOGICAL_W = 1600;          // fixed logical canvas width (viewBox units)
 const ERASE_R = 16;              // eraser hit radius, viewBox units
-const AUTOGROW_MARGIN = 40;      // auto-grow: start extending when the pen is this close to the bottom
-const AUTOGROW_LOOKAHEAD = 170;  // ...and keep this much blank space below it
+const AUTOGROW_MARGIN = 60;      // auto-grow: start extending when the pen is this close to the bottom
+const AUTOGROW_LOOKAHEAD = 460;  // ...and keep this much blank space below it (big → grows rarely, see _onMove)
+const PREDICT_MAX = 34;          // pen prediction: never draw further than this (viewBox units) past the real tip
+const PAGE_ZOOM_MAX = 5;         // page zoom: how far a full-size sheet may be magnified (1 = normal)
 const PALM_MS = 600;             // palm rejection: ignore touches this soon after any pen contact/hover
 const HOLD_MS = 650;             // shape snap: hold the pen still this long after drawing …
 const HOLD_R = 7;                // … within this radius (viewBox units) to trigger recognition
@@ -356,6 +358,15 @@ function parseColor(c) {
   return null;
 }
 
+/* Split a colour into an OPAQUE colour + its alpha. The live layers always paint
+   opaque and hand the alpha to their wrapper element, so a chunk seam or a
+   tail/chunk overlap can never composite darker than the committed stroke. */
+function splitAlpha(c) {
+  const p = parseColor(c);
+  if (!p || p.a >= 1) return { color: c, alpha: 1 };
+  return { color: `rgb(${p.r}, ${p.g}, ${p.b})`, alpha: p.a };
+}
+
 /* On dark paper, only ink that sits too close to black is lifted; anything with a
    channel brighter than this (HSV value) is a vivid colour and stays as drawn. */
 const INK_LIFT_MAXV = 0.4;
@@ -445,14 +456,27 @@ class NexusSketchSurface {
     this.locked = !!opts.locked;                         // view mode: gestures work, drawing doesn't (see setLocked)
     this.autoGrow = !!opts.autoGrow;                     // extend the canvas down while drawing near the bottom
     this.fixedViewport = !!opts.fixedViewport;           // protokoll paper: no pan, no zoom — only the outer container scrolls
+    // Page zoom (full-size sheets): a pinch magnifies the PAPER — the pad element
+    // gets wider, the SVG re-lays out crisply at that size and the surrounding
+    // scroller handles the rest. That is a different thing from the viewBox zoom
+    // below: an endless sheet must stay scrollable while zoomed, and zooming out
+    // has to stop at 1 = exactly the normal, full-width state.
+    this.pageZoom = !!opts.pageZoom;
+    this.pageScale = 1;
     // Pan/zoom viewport = the visible sub-rect of the canvas (viewBox). Aspect is
     // kept locked to W/H so the element size (height:auto) never jumps. Only pen/
     // mouse draw; fingers pan (1) / pinch-zoom (2). See _touch* below.
     this.viewX = 0; this.viewY = 0; this.viewW = this.W;
     this._touches = new Map();                           // active touch pointers → client coords
     this.onCommit = opts.onCommit || null;
+    this.onZoom = opts.onZoom || null;                   // page-zoom level changed (see setPageZoom)
     this.resizable = !!opts.resizable;
     this.strokes = Array.isArray(opts.strokes) ? JSON.parse(JSON.stringify(opts.strokes)) : [];
+    // Pen prediction (getPredictedEvents) — on by default; the drawn tail is
+    // extended toward where the OS says the pen is going. See _drawLive.
+    this.predict = opts.predict !== false;
+    // ms of quiet before the drawing is written back. See _changed().
+    this.commitDelay = (opts.commitDelay != null) ? opts.commitDelay : 700;
     this.undoStack = []; this.redoStack = [];
     this._pid = 'nxsk-' + Math.random().toString(36).slice(2, 9);
     this._texFilt = this._pid + '-tf'; this._texPat = this._pid + '-tp';   // paper-texture def ids
@@ -488,9 +512,25 @@ class NexusSketchSurface {
     // drawing apps use). SVG only receives the committed stroke on release;
     // updating SVG per-move rides the full compositor pipeline (~2-4 frames
     // behind the pen) no matter how fast our math is.
+    //
+    //  It is split in TWO: `liveCanvas` accumulates the finished chunks of the
+    //  current stroke and is NEVER cleared while drawing; `tipCanvas` carries
+    //  only the short moving tail and is cleared over its dirty rect alone.
+    //  The old single canvas re-filled EVERY chunk of the stroke on EVERY
+    //  pointer event — per-event cost grew with the length of the stroke, which
+    //  is exactly why long handwriting felt heavier than short marks.
+    //  Both live inside one wrapper: pen opacity / blend sit on the WRAPPER, so
+    //  the two layers composite as a single group and their overlap can never
+    //  stack darker than the committed stroke.
+    this.liveLayer = document.createElement('div');
+    this.liveLayer.className = 'nx-sk-livelayer';
     this.liveCanvas = document.createElement('canvas');
     this.liveCanvas.className = 'nx-sk-livecanvas';
-    this.host.appendChild(this.liveCanvas);
+    this.tipCanvas = document.createElement('canvas');
+    this.tipCanvas.className = 'nx-sk-livecanvas nx-sk-tipcanvas';
+    this.liveLayer.appendChild(this.liveCanvas);
+    this.liveLayer.appendChild(this.tipCanvas);
+    this.host.appendChild(this.liveLayer);
     this._livePaths = [];
     this._buildBg();
     this._buildPaperTex();
@@ -629,6 +669,7 @@ class NexusSketchSurface {
     st._raw = null;
     // Full live repaint with the snapped geometry.
     this._chunkStart = 0; this._livePaths = [];
+    this._repaintLive();   // drop the frozen chunks of the pre-snap shape
     this._drawLive();
     try { if (navigator.vibrate) navigator.vibrate(12); } catch (err) {}
   }
@@ -727,11 +768,20 @@ class NexusSketchSurface {
       const f0 = live[0], f1 = live[1];
       const d = Math.hypot(f1.x - f0.x, f1.y - f0.y) || 1;
       if (this._gestMode === 'pending') {
-        if (!this.fixedViewport && Math.abs(d - this._pending.d) > 24) { this._gestMode = 'zoom'; this._gestureRef(); }
+        if (Math.abs(d - this._pending.d) > 24 && (this.pageZoom || !this.fixedViewport)) {
+          this._gestMode = 'zoom';
+          if (this.pageZoom) this._pzStart = { s: this.pageScale, d: this._pending.d || d };
+          else this._gestureRef();
+        }
         else if (this.fixedViewport || Math.hypot(cx - this._pending.cx, cy - this._pending.cy) > 12) this._gestMode = 'scroll';
         else return;   // not decided yet
       }
       if (this._gestMode === 'zoom') {
+        if (this.pageZoom) {
+          const z = this._pzStart;
+          if (z) this.setPageZoom(z.s * (d / (z.d || 1)), cx, cy);
+          return;
+        }
         const g = this._gesture; if (!g || g.anchors.length < 2) return;
         const a0 = g.anchors[0], a1 = g.anchors[1], e = g.e;
         const ca = Math.hypot(a1.cx - a0.cx, a1.cy - a0.cy) || 1;
@@ -747,6 +797,40 @@ class NexusSketchSurface {
       // Fixed viewport (protokoll/slate paper) never scrolls sideways.
       if (!this.fixedViewport) this._scroller.scrollLeft = this._scrollStart.left - (cx - this._pending.cx);
     }
+  }
+  /* Magnify the sheet itself. `s` is clamped to [1 … PAGE_ZOOM_MAX]: zooming
+     OUT can never go past 1, which is the normal full-width state — beyond that
+     there is nothing to show, only empty stage. The pad is sized in real pixels
+     off its own width at scale 1, so the result is identical on every screen,
+     and the SVG re-renders sharp at the new size instead of being upscaled.
+     (ax, ay) is the point on screen to hold still — the pinch centroid. */
+  setPageZoom(s, ax, ay) {
+    if (!this.pageZoom) return;
+    s = Math.max(1, Math.min(PAGE_ZOOM_MAX, s));
+    const sc = this._findScroller();
+    const r = this.host.getBoundingClientRect();
+    const anchorX = (ax != null) ? ax : r.left + r.width / 2;
+    const anchorY = (ay != null) ? ay : r.top;
+    const fx = r.width ? (anchorX - r.left) / r.width : 0.5;
+    const fy = r.height ? (anchorY - r.top) / r.height : 0;
+    if (s === 1) {
+      this._pzBase = 0;
+      this.host.style.width = '';
+      this.host.style.maxWidth = '';
+    } else {
+      if (!this._pzBase) this._pzBase = r.width / (this.pageScale || 1);
+      this.host.style.maxWidth = 'none';   // the stage centres+caps the pad at 1×; zoomed it must be free to overflow
+      this.host.style.width = Math.round(this._pzBase * s) + 'px';
+    }
+    const changed = this.pageScale !== s;
+    this.pageScale = s;
+    if (sc) {
+      const r2 = this.host.getBoundingClientRect();
+      sc.scrollLeft = Math.max(0, sc.scrollLeft + (r2.left + fx * r2.width) - anchorX);
+      sc.scrollTop = Math.max(0, sc.scrollTop + (r2.top + fy * r2.height) - anchorY);
+    }
+    this._ctmInv = null;   // the screen→viewBox matrix just changed
+    if (changed && this.onZoom) this.onZoom(s);
   }
   _applyView() {
     this.viewW = Math.max(this.W / 6, Math.min(this.W, this.viewW));
@@ -798,7 +882,7 @@ class NexusSketchSurface {
     e.preventDefault();
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
     this._ctmInv = this._invCTM();   // cache once per stroke (see _pt)
-    if (this.mode === 'erase') { this._erasing = true; this._eraseSnapped = false; this._eraseAt(this._pt(e)); return; }
+    if (this.mode === 'erase') { this._erasing = true; this._eraseSnapped = false; this._eraseBatch = []; this._eraseAt(this._pt(e)); return; }
     const p = this._pt(e);
     // px → logical units via the current display scale, so "3px" reads as ~3px
     // on screen regardless of pad size (stroke stays resolution-independent).
@@ -817,11 +901,18 @@ class NexusSketchSurface {
     this._vSm = 0; this._lastRawT = e.timeStamp;
     this._chunkStart = 0;
     this._livePaths = [];
+    this._pred = null;
+    this._tipDirty = null;
     this._setupLiveCanvas();
-    // Translucent pens draw at FULL alpha into the canvas and the ELEMENT gets
-    // the opacity — so live chunk overlaps can't stack darker than the final.
-    this.liveCanvas.style.mixBlendMode = pt.blend ? 'multiply' : '';
-    this.liveCanvas.style.opacity = (pt.opacity != null && pt.opacity < 1) ? String(pt.opacity) : '';
+    // Translucent pens draw at FULL alpha into the canvases and the WRAPPER
+    // carries the opacity — the two live layers then composite as ONE group, so
+    // neither a chunk seam nor the tail/chunk overlap can stack darker than the
+    // committed stroke. A colour with its own alpha is hoisted the same way.
+    const lk = splitAlpha(this._inkColor(this.color));
+    this._liveInk = lk.color;
+    const lkA = (pt.opacity != null ? pt.opacity : 1) * lk.alpha;
+    this.liveLayer.style.mixBlendMode = pt.blend ? 'multiply' : '';
+    this.liveLayer.style.opacity = lkA < 1 ? String(lkA) : '';
     this._addPoint(p.x, p.y, this._pressure(e));
     this._drawLive();
     this._holdAnchor = { x: p.x, y: p.y };
@@ -835,6 +926,13 @@ class NexusSketchSurface {
     e.preventDefault();
     const evts = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
     for (const ev of evts) { const p = this._pt(ev); this._addPoint(p.x, p.y, this._pressure(ev), false, ev.timeStamp != null ? ev.timeStamp : e.timeStamp); }
+    // Where the OS thinks the pen is heading. Used ONLY to extend the drawn
+    // tail (see _drawLive) — never recorded, so the saved stroke is unaffected.
+    this._pred = null;
+    if (this.predict && e.getPredictedEvents) {
+      const pe = e.getPredictedEvents();
+      if (pe && pe.length) { const q = this._pt(pe[Math.min(1, pe.length - 1)]); this._pred = [q.x, q.y, this._pressure(e)]; }
+    }
     // Shape snap: any real movement re-anchors and restarts the hold timer;
     // micro-jitter within HOLD_R lets it mature.
     if (this._active._raw && this._holdAnchor && !this._active._snapped) {
@@ -854,8 +952,11 @@ class NexusSketchSurface {
       if (y > this.H - AUTOGROW_MARGIN) {
         this.setHeight(Math.ceil(y + AUTOGROW_LOOKAHEAD));
         this._ctmInv = this._invCTM();
-        this._setupLiveCanvas();   // element grew → resize backing store (clears) …
-        this._drawLive();          // … and repaint chunks + tail
+        // Only a real re-allocation wipes the frozen chunks. The common case —
+        // the visible slice is unchanged, only the paper below got longer —
+        // keeps them and costs nothing.
+        if (this._setupLiveCanvas()) this._repaintLive();
+        this._drawLive();
       }
     }
   }
@@ -863,14 +964,29 @@ class NexusSketchSurface {
     if (e.pointerType === 'touch') { this._touchUp(e); return; }
     this._ctmInv = null;
     if (this._holdTimer) { clearTimeout(this._holdTimer); this._holdTimer = null; }
-    if (this._erasing) { this._erasing = false; this.livePath.removeAttribute('d'); if (this._changedDuringErase) { this._changedDuringErase = false; this._changed(); } return; }
+    if (this._erasing) {
+      this._erasing = false;
+      this.livePath.removeAttribute('d');
+      if (this._eraseBatch && this._eraseBatch.length) { this._pushUndo({ t: 'insert', items: this._eraseBatch }); }
+      this._eraseBatch = null;
+      if (this._changedDuringErase) { this._changedDuringErase = false; this._changed(); }
+      return;
+    }
     if (!this._active) return;
     const st = this._active; this._active = null;
     if (st._raw && !st._snapped) this._addPointFinal(st, st._raw);
     this.livePath.removeAttribute('d');
     this._clearLiveCanvas();   // live layer → replaced by one committed SVG outline
     delete st._raw; delete st._sl; delete st._snapped;   // transient fields — keep the saved stroke lean
-    if (st.points.length) { this._snapshot(); this.strokes.push(st); this._appendStroke(st); this._changed(); }
+    if (st.points.length) {
+      this._pushUndo({ t: 'remove', n: 1 });
+      this.strokes.push(st);
+      this._appendStroke(st);
+      // The very first stroke is written out at once — that write is what
+      // assigns the sketch id and binds the drawing to the note. Everything
+      // after it can wait for the debounce.
+      this._changed(this.strokes.length <= 1);
+    }
   }
   _addPointFinal(st, raw) {
     const last = st.points[st.points.length - 1];
@@ -897,27 +1013,82 @@ class NexusSketchSurface {
       if (visBot > visTop) { top = visTop - r.top; height = visBot - visTop; }
     }
     const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(height * dpr));
-    if (this.liveCanvas.width !== w || this.liveCanvas.height !== h) { this.liveCanvas.width = w; this.liveCanvas.height = h; }
-    this.liveCanvas.style.top = top + 'px';
-    this.liveCanvas.style.bottom = 'auto';
-    this.liveCanvas.style.height = height + 'px';
+    // Report whether the backing store was actually re-allocated — that (and
+    // only that) wipes the frozen chunks, so only then must the caller repaint.
+    const realloc = (this.liveCanvas.width !== w || this.liveCanvas.height !== h);
+    if (realloc) {
+      this.liveCanvas.width = w; this.liveCanvas.height = h;
+      this.tipCanvas.width = w; this.tipCanvas.height = h;
+    }
+    this.liveLayer.style.top = top + 'px';
+    this.liveLayer.style.bottom = 'auto';
+    this.liveLayer.style.height = height + 'px';
     if (!this._lctx) this._lctx = this.liveCanvas.getContext('2d', { desynchronized: true });
+    if (!this._tctx) this._tctx = this.tipCanvas.getContext('2d', { desynchronized: true });
     this._lscale = { s: w / this.viewW, x: this.viewX, y: this.viewY + top * (this.viewW / (r.width || 1)) };
+    return realloc;
   }
-  _clearLiveCanvas() {
-    this._livePaths = [];
-    this.liveCanvas.style.mixBlendMode = '';
-    this.liveCanvas.style.opacity = '';
+  /* viewBox → device-pixel rect for a run of points, padded by the nib radius.
+     Used as the tip layer's dirty rect so a pen event clears ~a nib, not a
+     screenful. */
+  _liveBBox(pts, size) {
+    if (!pts || !pts.length || !this._lscale) return null;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of pts) {
+      if (p[0] < x0) x0 = p[0];
+      if (p[0] > x1) x1 = p[0];
+      if (p[1] < y0) y0 = p[1];
+      if (p[1] > y1) y1 = p[1];
+    }
+    const sc = this._lscale, pad = (size || 4) + 3;
+    return { x: (x0 - pad - sc.x) * sc.s, y: (y0 - pad - sc.y) * sc.s, w: (x1 - x0 + pad * 2) * sc.s, h: (y1 - y0 + pad * 2) * sc.s };
+  }
+  _clearTip() {
+    const c = this._tctx;
+    if (!c) return;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    const d = this._tipDirty;
+    if (d) c.clearRect(d.x - 2, d.y - 2, d.w + 4, d.h + 4);
+    else c.clearRect(0, 0, this.tipCanvas.width, this.tipCanvas.height);
+    this._tipDirty = null;
+  }
+  _paintChunk(d) {
+    const ctx = this._lctx, sc = this._lscale;
+    if (!ctx || !sc) return;
+    ctx.setTransform(sc.s, 0, 0, sc.s, -sc.x * sc.s, -sc.y * sc.s);
+    ctx.fillStyle = this._liveInk;
+    ctx.globalAlpha = 1;   // translucency lives on the WRAPPER (see _onDown) → overlaps stay uniform
+    ctx.fill(new Path2D(d));
+  }
+  /* Full rebuild of the live layer from the frozen chunk list. Only needed when
+     the backing store was re-allocated or the geometry was replaced wholesale
+     (shape snap) — never on the per-event hot path. */
+  _repaintLive() {
     if (!this._lctx) return;
     this._lctx.setTransform(1, 0, 0, 1, 0, 0);
     this._lctx.clearRect(0, 0, this.liveCanvas.width, this.liveCanvas.height);
+    this._tipDirty = null;
+    this._clearTip();
+    for (const d of this._livePaths) this._paintChunk(d);
   }
-  // INCREMENTAL live render on the desynchronized canvas: completed point
-  // ranges are frozen ONCE into cached Path2Ds (overlapping so they union
-  // seamlessly under the same fill); per event we clear + refill the cached
-  // chunks and rebuild only the short tail outline. The tail is extended to
-  // the RAW pen position (st._raw) so the ink visually touches the pen tip —
-  // the streamline smoothing otherwise trails it by design and reads as lag.
+  _clearLiveCanvas() {
+    this._livePaths = [];
+    this._pred = null;
+    this._tipDirty = null;
+    this.liveLayer.style.mixBlendMode = '';
+    this.liveLayer.style.opacity = '';
+    if (this._lctx) { this._lctx.setTransform(1, 0, 0, 1, 0, 0); this._lctx.clearRect(0, 0, this.liveCanvas.width, this.liveCanvas.height); }
+    if (this._tctx) { this._tctx.setTransform(1, 0, 0, 1, 0, 0); this._tctx.clearRect(0, 0, this.tipCanvas.width, this.tipCanvas.height); }
+  }
+  /* INCREMENTAL live render, O(1) per pointer event.
+     · Completed point ranges are frozen ONCE onto the ink layer (overlapping so
+       they union seamlessly under the same fill) and then never touched again.
+     · Only the short tail is redrawn per event, on its own tip layer, and only
+       its dirty rect is cleared.
+     The tail is extended to the RAW pen position (st._raw) so the ink visually
+     touches the nib — the streamline smoothing otherwise trails it by design —
+     and one more step along the PREDICTED heading, which is what removes the
+     last frames of hardware latency. Neither is ever recorded in the stroke. */
   _drawLive() {
     if (!this._active || !this._lctx) return;
     const st = this._active, pts = st.points, CHUNK = 24, OVERLAP = 6;
@@ -927,24 +1098,35 @@ class NexusSketchSurface {
       // Taper only the stroke's true START on the first chunk — interior chunk
       // boundaries must stay full-width or the stroke would pinch mid-line.
       const d = sketchStrokePath(seg, st.size, Object.assign({}, baseO, { taperStart: this._chunkStart === 0 ? st.taper : 0, taperEnd: 0, cap: 'round' }));
-      if (d) this._livePaths.push(new Path2D(d));
+      if (d) { this._livePaths.push(d); this._paintChunk(d); }
       this._chunkStart += CHUNK;
     }
     const tail = pts.slice(this._chunkStart);
     if (st._raw && !st._snapped) {
       const l = tail[tail.length - 1];
       if (!l || Math.hypot(st._raw[0] - l[0], st._raw[1] - l[1]) > 0.3) tail.push(st._raw);
+      const pr = this._pred;
+      if (pr) {
+        const dx = pr[0] - st._raw[0], dy = pr[1] - st._raw[1], L = Math.hypot(dx, dy);
+        // Only ever extend FORWARD: as the pen decelerates into a stop the
+        // predictor can point back along the stroke, which would draw a little
+        // hook at the nib. And clamp the distance — an unbounded guess
+        // overshoots on direction changes and leaves visible whiskers.
+        const prev = tail.length > 1 ? tail[tail.length - 2] : null;
+        const fwd = !prev || ((st._raw[0] - prev[0]) * dx + (st._raw[1] - prev[1]) * dy) >= 0;
+        if (L > 0.4 && fwd) { const k = Math.min(1, PREDICT_MAX / L); tail.push([st._raw[0] + dx * k, st._raw[1] + dy * k, st._raw[2]]); }
+      }
     }
-    const ctx = this._lctx, sc = this._lscale;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this.liveCanvas.width, this.liveCanvas.height);
+    const ctx = this._tctx, sc = this._lscale;
+    if (!ctx || !sc) return;
+    this._clearTip();
     ctx.setTransform(sc.s, 0, 0, sc.s, -sc.x * sc.s, -sc.y * sc.s);
-    ctx.fillStyle = this._inkColor(st.color);
-    ctx.globalAlpha = 1;   // translucency lives on the canvas ELEMENT (see _onDown) → overlaps stay uniform
-    for (const p of this._livePaths) ctx.fill(p);
+    ctx.fillStyle = this._liveInk;
+    ctx.globalAlpha = 1;
     // Tail: start-taper only while un-chunked; end always tapers (the live nib tip).
     const d = sketchStrokePath(tail, st.size, Object.assign({}, baseO, { taperStart: this._chunkStart === 0 ? st.taper : 0, taperEnd: st.taper }));
     if (d) ctx.fill(new Path2D(d));
+    this._tipDirty = this._liveBBox(tail, st.size);
   }
 
   _eraseAt(p) {
@@ -952,7 +1134,10 @@ class NexusSketchSurface {
       const st = this.strokes[i];
       const hitR = st.size / 2 + ERASE_R;
       if (st.points.some(pt => Math.hypot(pt[0] - p.x, pt[1] - p.y) <= hitR)) {
-        if (!this._eraseSnapped) { this._snapshot(); this._eraseSnapped = true; }
+        this._eraseSnapped = true;
+        // Recorded in REMOVAL order with the index that was valid at that
+        // moment; undo replays it backwards, which restores exactly.
+        (this._eraseBatch = this._eraseBatch || []).push({ i, st });
         this.strokes.splice(i, 1);
         this._renderStrokes();
         this._changedDuringErase = true;
@@ -960,8 +1145,17 @@ class NexusSketchSurface {
     }
   }
 
+  /* Outline geometry for a committed stroke, memoised ON the stroke and
+     deliberately NON-ENUMERABLE so it stays out of the JSON that goes into the
+     .svg metadata. Without it every save re-derived the outline of EVERY stroke
+     in the drawing — the cost that made a long page feel heavier with each new
+     stroke, because it ran on the pen-up right before the next one started. */
   _strokeD(st) {
-    return sketchStrokePath(st.points, st.size, { thinning: st.thinning, taperStart: st.taper || 0, taperEnd: st.taper || 0, cap: st.cap, nib: st.nib });
+    if (st._d !== undefined) return st._d;
+    const d = sketchStrokePath(st.points, st.size, { thinning: st.thinning, taperStart: st.taper || 0, taperEnd: st.taper || 0, cap: st.cap, nib: st.nib });
+    try { Object.defineProperty(st, '_d', { value: d, writable: true, configurable: true, enumerable: false }); }
+    catch (e) { st._d = d; }
+    return d;
   }
   /* noStack strokes (highlighter): CONSECUTIVE strokes of the same colour+opacity
      render inside ONE <g fill-opacity> — overlaps inside a group don't darken
@@ -996,8 +1190,87 @@ class NexusSketchSurface {
     for (const st of this.strokes) this._appendStroke(st);
   }
 
-  _snapshot() { this.undoStack.push(JSON.stringify(this.strokes)); if (this.undoStack.length > 120) this.undoStack.shift(); this.redoStack = []; }
-  _changed() { if (this.onCommit) this.onCommit(); }
+  /* Undo/redo as an OP LOG, not as snapshots. The old version stringified the
+     entire drawing on every single stroke and kept up to 120 such copies —
+     O(whole drawing) of main-thread work per pen lift plus an unbounded memory
+     climb on a long page. Each entry describes how to get back one step and
+     returns its own inverse when applied, so undo and redo share one routine.
+       { t:'remove',    n }        drop the last n strokes
+       { t:'insert',    items }    re-insert (replays `items` BACKWARDS)
+       { t:'remove-at', items }    re-remove (replays `items` FORWARDS)
+       { t:'replace',   all }      swap the whole array (clear) */
+  _pushUndo(op) {
+    this.undoStack.push(op);
+    if (this.undoStack.length > 200) this.undoStack.shift();
+    this.redoStack = [];
+  }
+  _applyUndoOp(op) {
+    if (op.t === 'remove') {
+      const items = [];
+      for (let k = 0; k < op.n && this.strokes.length; k++) items.push({ i: this.strokes.length - 1, st: this.strokes.pop() });
+      return { t: 'insert', items };
+    }
+    if (op.t === 'insert') {
+      for (let k = op.items.length - 1; k >= 0; k--) {
+        const it = op.items[k];
+        this.strokes.splice(Math.min(it.i, this.strokes.length), 0, it.st);
+      }
+      return { t: 'remove-at', items: op.items };
+    }
+    if (op.t === 'remove-at') {
+      for (const it of op.items) if (it.i < this.strokes.length) this.strokes.splice(it.i, 1);
+      return { t: 'insert', items: op.items };
+    }
+    if (op.t === 'replace') { const prev = this.strokes; this.strokes = op.all; return { t: 'replace', all: prev }; }
+    return null;
+  }
+
+  /* Writing the sidecar re-serialises the whole drawing and hits the vault.
+     Doing that synchronously on every pen lift meant the NEXT stroke started
+     behind — the single biggest source of "the pen feels sluggish" on a long
+     page. So commits are debounced and a burst of strokes collapses into one
+     write. persist() forces it out now; flush() only if something is pending. */
+  _changed(immediate) {
+    if (!this.onCommit) return;
+    if (immediate) { this._fire(); return; }
+    // A pad that has been torn out of the document must not write back: the id
+    // write-back re-renders the code block, and the OUTGOING pad's pending
+    // commit would then land on top of the surface that replaced it. Only the
+    // timers check this — an explicit persist()/flush() always goes through.
+    const late = () => { if (document.contains(this.host)) this._fire(); else { this._commitT = null; this._commitMaxT = null; this._disarmFlushGuard(); } };
+    if (this._commitT) window.clearTimeout(this._commitT);
+    this._commitT = window.setTimeout(() => { this._commitT = null; late(); }, this.commitDelay);
+    // Hard ceiling — a continuous stream of strokes must still reach disk.
+    if (!this._commitMaxT) this._commitMaxT = window.setTimeout(() => { this._commitMaxT = null; late(); }, Math.max(this.commitDelay * 6, 4000));
+    this._armFlushGuard();
+  }
+  _fire() {
+    if (this._commitT) { window.clearTimeout(this._commitT); this._commitT = null; }
+    if (this._commitMaxT) { window.clearTimeout(this._commitMaxT); this._commitMaxT = null; }
+    this._disarmFlushGuard();
+    if (this.onCommit) this.onCommit();
+  }
+  /* Nothing may be lost when the app goes to the background — on mobile that is
+     the normal way a session ends. Armed only while a write is pending, so no
+     listener outlives an idle pad. */
+  _armFlushGuard() {
+    if (this._flushGuard) return;
+    this._flushGuard = (ev) => {
+      if ((ev && ev.type === 'pagehide') || document.visibilityState === 'hidden') this.flush();
+    };
+    document.addEventListener('visibilitychange', this._flushGuard);
+    window.addEventListener('pagehide', this._flushGuard);
+  }
+  _disarmFlushGuard() {
+    if (!this._flushGuard) return;
+    document.removeEventListener('visibilitychange', this._flushGuard);
+    window.removeEventListener('pagehide', this._flushGuard);
+    this._flushGuard = null;
+  }
+  /* Write a pending change out now. Safe to call when nothing is pending. */
+  flush() { if (this._commitT || this._commitMaxT) this._fire(); }
+  /* Call when the pad goes away for good (view closed, overlay torn down). */
+  destroy() { this.flush(); this._disarmFlushGuard(); }
 
   /* Dark-paper ink inversion. `_inkColor` is applied everywhere a stroke colour
      is painted (live canvas, committed DOM, export) so the flip is consistent and
@@ -1019,6 +1292,7 @@ class NexusSketchSurface {
   setPen(p) { if (PEN_TYPES[p]) this.pen = p; }
   setMode(m) { this.mode = m; }
   setLocked(v) { this.locked = !!v; }
+  getPageZoom() { return this.pageScale; }
   // Rebuild-only (no persist) so slider drags stay cheap; caller calls persist()
   // on release.
   setBackground(type, size, opacity) {
@@ -1048,10 +1322,27 @@ class NexusSketchSurface {
     this._updateInvert();
     if (this._inkInv !== wasInv) this._renderStrokes();   // dark↔light: repaint ink in the (un)inverted colour
   }
-  persist() { this._changed(); }
-  undo() { if (!this.undoStack.length) return; this.redoStack.push(JSON.stringify(this.strokes)); this.strokes = JSON.parse(this.undoStack.pop()); this._renderStrokes(); this._changed(); }
-  redo() { if (!this.redoStack.length) return; this.undoStack.push(JSON.stringify(this.strokes)); this.strokes = JSON.parse(this.redoStack.pop()); this._renderStrokes(); this._changed(); }
-  clear() { if (!this.strokes.length) return; this._snapshot(); this.strokes = []; this._renderStrokes(); this._changed(); }
+  persist() { this._fire(); }
+  undo() {
+    const op = this.undoStack.pop();
+    if (!op) return;
+    const inv = this._applyUndoOp(op);
+    if (inv) this.redoStack.push(inv);
+    this._renderStrokes(); this._changed();
+  }
+  redo() {
+    const op = this.redoStack.pop();
+    if (!op) return;
+    const inv = this._applyUndoOp(op);
+    if (inv) this.undoStack.push(inv);
+    this._renderStrokes(); this._changed();
+  }
+  clear() {
+    if (!this.strokes.length) return;
+    this._pushUndo({ t: 'replace', all: this.strokes });
+    this.strokes = [];
+    this._renderStrokes(); this._changed();
+  }
 
   toSVGString() {
     const meta = JSON.stringify({
