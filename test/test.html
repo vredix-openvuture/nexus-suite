@@ -317,6 +317,36 @@ localStorage.removeItem('nexus-suite-sketchbar');
   ok('stability · with its pen chips rebuilt', t.sub.querySelectorAll('.nx-sk-subpen').length === 5);
 }
 
+
+// ── 16 · the palette hands Obsidian its own accent ─────────────────────────
+{
+  const hsl = window.nxHexToHsl;
+  /* Obsidian's default is hsl(258, 88%, 66%) and its picker writes that colour
+     as #8a5cf6, so round-tripping that hex is what proves the conversion is the
+     same one Obsidian does. */
+  const ob = hsl('#8a5cf6');
+  eq('accent · Obsidian\u2019s own default hex converts back to its own numbers',
+     [ob.h, ob.s, ob.l], [258, 90, 66]);
+
+  const ember = hsl('#fb6734');
+  eq('accent · the Nexus accent is a warm hue, nowhere near 258',
+     [ember.h, ember.s, ember.l], [15, 96, 59]);
+
+  eq('accent · grey has no hue to report', hsl('#808080'), { h: 0, s: 0, l: 50 });
+  eq('accent · white', hsl('#ffffff'), { h: 0, s: 0, l: 100 });
+  eq('accent · black', hsl('#000000'), { h: 0, s: 0, l: 0 });
+  eq('accent · a leading hash is optional', hsl('ff0000'), { h: 0, s: 100, l: 50 });
+  eq('accent · pure green sits at 120', hsl('#00ff00').h, 120);
+  eq('accent · pure blue sits at 240', hsl('#0000ff').h, 240);
+  /* Anything that is not a plain hex must return null rather than a wrong
+     number: a live wallust palette can hold rgb() or a var(), and handing
+     Obsidian a garbage hue is worse than leaving its own alone. */
+  ok('accent · rgb() is refused', hsl('rgb(251, 103, 52)') === null);
+  ok('accent · a short hex is refused', hsl('#fb6') === null);
+  ok('accent · nothing at all is refused', hsl('') === null && hsl(null) === null);
+  eq('accent · surrounding whitespace is tolerated', hsl('  #fb6734  ').h, 15);
+}
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
 out.push('');

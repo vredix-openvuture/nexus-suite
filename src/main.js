@@ -23,7 +23,7 @@ const { VikunjaClient } = require('./lib/vikunja.js');
 const { NexusConflictModal } = require('./modals/conflict.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
 const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
-const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
+const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxHexToHsl, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusAgenda } = require('./lib/agenda.js');
 const { NexusBoard } = require('./lib/board.js');
 const { NexusPlanner } = require('./views/plannerblock.js');
@@ -2507,6 +2507,8 @@ module.exports = class NexusSuite extends Plugin {
     const surface = new NexusSketchSurface(pad, {
       W, H, bg, paper, paperStyle, invertOnDark: s.invertOnDark !== false, ink: s.ink, penSizes: s.penSizes, pen: 'fountain',
       paperWidth: s.paperWidth,   // the cap also travels into the full-size editor, which reparents this very pad
+      pageZoom: true,             // pinch magnifies the SHEET here too — the viewBox zoom it used
+                                  // to do could go in but never out, which is not a zoom
       penConfig: (s.penConfig = s.penConfig || {}),   // live reference — pen menu edits apply on the next stroke
       shapeSnap: s.shapeSnap !== false,
       bgType, bgSize, bgOpacity, bgColor: s.bgColor, autoGrow,
@@ -2530,6 +2532,15 @@ module.exports = class NexusSuite extends Plugin {
       surface.setLocked(m !== 'edit');   // view: pinch/pan still work, drawing doesn't
       if (m === 'view') surface.setHeight(0);   // view is ALWAYS cropped to content (setHeight clamps up to the lowest stroke)
       if (state.id) modes[state.id] = m;
+    };
+    /* Zoomed, the sheet is wider than the note column: the block scrolls
+       sideways, and the pill is the way back to 100% without having to pinch
+       exactly onto it. */
+    const zoomPill = wrap.createDiv({ cls: 'nx-sk-zoompill', text: '100%' });
+    zoomPill.onclick = (e) => { e.stopPropagation(); surface.setPageZoom(1); };
+    surface.onZoom = (z) => {
+      wrap.toggleClass('is-zoomed', Math.abs(z - 1) > 0.01);
+      zoomPill.setText(Math.round(z * 100) + '%');
     };
     const enterBtn = pad.createDiv({ cls: 'nx-sketch-enter', attr: { 'aria-label': 'Edit sketch' } });
     setIcon(enterBtn, 'pencil');
@@ -3882,7 +3893,11 @@ module.exports = class NexusSuite extends Plugin {
       bgSize: (data && data.bgSize) || s.bgSize,
       bgOpacity: (data && data.bgOpacity != null) ? data.bgOpacity : s.bgOpacity,
       bgColor: s.bgColor,
-      autoGrow: true, fixedViewport: true,   // no pan/zoom — the note scroller scrolls
+      autoGrow: true, fixedViewport: true,   // no viewBox PAN — the note scroller scrolls
+      // …but pinch still zooms the sheet. fixedViewport only rules out panning
+      // the viewBox; without this the zoom gesture was never entered at all and
+      // a slate note could not be zoomed by any means.
+      pageZoom: true,
       strokes: data ? data.strokes : [],
       objects: data ? data.objects : [],
       sections: data ? data.sections : [],
@@ -4608,12 +4623,37 @@ module.exports = class NexusSuite extends Plugin {
       // see PALETTES). `body.theme-*` outranks the theme's own `.theme-*`.
       const slots = p.slots || p;
       const vars = (obj) => Object.entries(obj).map(([k, v]) => k + ': ' + v + ';').join(' ');
+      /* Obsidian derives its OWN native controls from --accent-h/-s/-l, which come
+         from the accent picker in Appearance and default to hsl(258, 88%, 66%) —
+         a blue-violet. 41 of its rules read var(--color-accent), and another 24
+         read those raw components, so setting the colour alone still leaves two
+         dozen native surfaces on Obsidian's blue while the theme goes coral.
+         That is why menus and native elements were the things that looked wrong.
+         The palette knows its accent as a hex, so it can hand over the three
+         numbers exactly. */
+      const accent = nxHexToHsl(slots.color3 || slots.color4 || '');
       const css = ['body.theme-dark, body.theme-light { '
-        + Object.entries(slots).map(([k, v]) => '--wl-' + k + ': ' + v + ';').join(' ') + ' }'];
+        + Object.entries(slots).map(([k, v]) => '--wl-' + k + ': ' + v + ';').join(' ')
+        + (accent ? ' --accent-h: ' + accent.h + '; --accent-s: ' + accent.s + '%; --accent-l: ' + accent.l + '%;' : '')
+        + ' }'];
       if (p.dark) css.push('body.theme-dark { ' + vars(p.dark) + ' }');
       if (p.light) css.push('body.theme-light { ' + vars(p.light) + ' }');
       pel.textContent = css.join('\n');
-    } else if (pel) { pel.remove(); }
+    } else {
+      /* The dynamic palette is written by the wallust snippet rather than here,
+         so there are no slots to read from — but Obsidian's accent still has to
+         be told about it, or every native control stays blue-violet while the
+         rest of the app follows the wallpaper. Blank our own rule first, then
+         read --wl-color3 back off the body: that is the live value, whatever
+         set it. */
+      if (pel) pel.textContent = '';
+      const accent = nxHexToHsl(getComputedStyle(document.body).getPropertyValue('--wl-color3'));
+      if (accent) {
+        if (!pel) { pel = document.createElement('style'); pel.id = 'nx-palette-style'; document.head.appendChild(pel); }
+        pel.textContent = 'body.theme-dark, body.theme-light { --accent-h: ' + accent.h
+          + '; --accent-s: ' + accent.s + '%; --accent-l: ' + accent.l + '%; }';
+      } else if (pel) { pel.remove(); }
+    }
 
     /* Flat "70s color-block" surfaces (theme.css section 20) — only for the
        palettes that ship dedicated surface colours. Currently just "nexus". */

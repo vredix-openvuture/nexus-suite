@@ -55,5 +55,5 @@ if (watch) {
   console.log('[nexus-suite] esbuild watching src/ … (Ctrl-C zum Beenden)');
 } else {
   await esbuild.build(opts);
-  console.log(`[nexus-suite] build fertig (${prod ? 'production' : 'dev'}).`);
+  console.log(`[nexus-suite] build done (${prod ? 'production' : 'dev'}).`);
 }

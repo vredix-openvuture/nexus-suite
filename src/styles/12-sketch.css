@@ -101,7 +101,13 @@
 .nx-pk-note .markdown-preview-view { overflow-x: hidden !important; }
 
 /* ── QUICK SKETCH — draw-on-canvas code block (```quicksketch```) ── */
+/* A zoomed sheet is wider than the note column. Without this the extra width is
+   simply clipped and the right-hand side of the drawing is unreachable. */
+.nx-sketch.is-zoomed { overflow-x: auto; overflow-y: hidden; }
+.nx-sketch.is-zoomed .nx-sketch-pad { max-width: none; }
+.nx-sketch.is-zoomed .nx-sk-zoompill { opacity: 1; pointer-events: auto; }
 .nx-sketch {
+  position: relative;
   margin: 0.6em 0;
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m, 8px);

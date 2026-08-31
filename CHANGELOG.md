@@ -2,6 +2,26 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.25.1 — 2026-08-31
+
+### Fixed
+
+- **Quick Sketch could not be zoomed.** In a note and in a slate note the pinch
+  was never recognised at all: both fix the viewport so the note scroller does
+  the scrolling, and the gesture was gated on that same flag. Fixing the
+  viewport now only rules out *panning* it — pinching magnifies the sheet, from
+  0.3× to 5×. A zoomed block scrolls sideways so the right-hand edge of the
+  drawing stays reachable, and a pill in the corner shows the level and returns
+  to 100% on a tap.
+- **Native Obsidian controls ignored the palette.** A menu, a suggestion list, a
+  checkbox, a toggle, a slider and a focus ring are painted by Obsidian from
+  `--accent-h/-s/-l` — three numbers it takes from the accent picker, not from
+  the theme — so they stayed on its default blue-violet while everything else
+  followed the palette. The palette now hands those numbers over, converted from
+  its own accent, and the dynamic wallust palette does the same by reading its
+  live accent back off the page. Needs Nexus theme 0.7.1, which stops leaving
+  the rest of Obsidian's variables unset.
+
 ## 0.25.0 — 2026-08-31
 
 The release that works through `plan.md`: Quick Sketch becomes a notes app, the

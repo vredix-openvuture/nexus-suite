@@ -140,6 +140,28 @@ function stroke(pts) {
 }
 
 {
+  /* The gesture gate is (pageZoom || !fixedViewport). A slate note sets
+     fixedViewport, so without pageZoom the pinch was never entered at all and
+     the page could not be zoomed by any means — which is what was reported. */
+  const slate = makeSurface([], { pageZoom: true, fixedViewport: true });
+  slate._touches = new Map([[1, { x: 100, y: 100 }], [2, { x: 200, y: 100 }]]);
+  slate._gestMode = 'pending';
+  slate._pending = { d: 100, cx: 150, cy: 100 };
+  slate._touches.set(2, { x: 260, y: 100 });   // pinch open by 60px
+  slate._applyGesture();
+  eq('zoom · a fixed viewport still pinches, it just does not pan', slate._gestMode, 'zoom');
+
+  const noZoom = makeSurface([], { fixedViewport: true });
+  noZoom._touches = new Map([[1, { x: 100, y: 100 }], [2, { x: 200, y: 100 }]]);
+  noZoom._gestMode = 'pending';
+  noZoom._pending = { d: 100, cx: 150, cy: 100 };
+  noZoom._touches.set(2, { x: 260, y: 100 });
+  noZoom._applyGesture();
+  ok('zoom · without page zoom a fixed viewport cannot zoom at all',
+     noZoom._gestMode !== 'zoom', 'mode ' + noZoom._gestMode);
+}
+
+{
   // Zooming out past 1 is what gives an endless page an overview.
   const s = makeSurface([], { pageZoom: true });
   s.setPageZoom(0.5);

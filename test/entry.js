@@ -16,6 +16,7 @@ window.sketchExport = require('../src/lib/sketchexport.js');
 window.sketchSearch = require('../src/lib/sketchsearch.js');
 window.fieldScore = require('../src/modals/search.js').fieldScore;
 window.kanbanLib = require('../src/lib/kanban.js');
+window.nxHexToHsl = require('../src/lib/helpers.js').nxHexToHsl;
 window.obsidianStub = require('obsidian');
 window.tasksLib = require('../src/lib/tasks.js');
 window.plannerLib = require('../src/lib/planner.js');

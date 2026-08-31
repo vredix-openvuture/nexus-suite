@@ -131,6 +131,27 @@ function nxRgbToHex(rgb) {
   return '#' + p.slice(0, 3).map(n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')).join('');
 }
 
+/* Hex → the three numbers Obsidian's --accent-h/-s/-l want. Obsidian builds its
+   OWN native controls from those components, not from a colour, so a palette
+   that only sets colours leaves every one of them on Obsidian's default.
+   Returns null for anything that is not a plain six-digit hex. */
+function nxHexToHsl(hex) {
+  const m = /^#?([\da-f]{6})$/i.exec(String(hex || '').trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l: Math.round(l * 100) };
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h;
+  if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return { h: Math.round(h * 60), s: Math.round(s * 100), l: Math.round(l * 100) };
+}
+
 /* Edit ONE callout (type id + icon + base/light/dark color) with a live preview. */
 
 /* ---- Vault suggestion sources (autocomplete in the card config modals) ----
@@ -213,4 +234,4 @@ function nxPinMenuItem(plugin, menu, key) {
     .onClick(() => plugin.setTabPinned(key, !on)));
 }
 
-module.exports = { renderMd, getDailyNoteSettings, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToRgb, nxRgbToHex, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxStartOfWeek, nxWeekdayLabels, nxWeekStartDow };
+module.exports = { renderMd, getDailyNoteSettings, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToHsl, nxHexToRgb, nxRgbToHex, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxStartOfWeek, nxWeekdayLabels, nxWeekStartDow };
