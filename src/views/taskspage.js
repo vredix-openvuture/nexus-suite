@@ -129,7 +129,9 @@ class NexusTasksPageView extends ItemView {
   async toggle(t, done) {
     const res = await tasks.setTaskDone(this.plugin, t.key, done);
     if (res && res.missing) { new Notice('Task note not found: ' + t.key); return; }
-    if (t.project) {
+    // A note that tracks itself is not in a project's checklist, so there is no
+    // line to tick — looking for one would only ever fail quietly.
+    if (t.project && !t.fromNote) {
       try { await tasks.setChecklistBox(this.plugin, t.project, t.key, res && res.repeated ? false : done); } catch (e) {}
     }
     if (res && res.repeated) new Notice('Repeats — next due ' + (res.newDue || '?'));
@@ -339,6 +341,9 @@ class NexusTasksPageView extends ItemView {
     if (pl) meta.createSpan({ cls: 'nx-tp-prio is-' + pl.toLowerCase(), text: pl });
     if (showProject && t.project) meta.createSpan({ cls: 'nx-tp-chip', text: t.project });
     if (t.provider !== 'local' && !t.remoteId) meta.createSpan({ cls: 'nx-tp-pending', text: 'not synced yet' });
+    // Say when the task IS a note: clicking it opens the whole thought, not a
+    // task note that only holds a title.
+    if (t.fromNote) { const n = meta.createSpan({ cls: 'nx-tp-note' }); setIcon(n, 'file-text'); n.setAttribute('aria-label', 'This note is the task'); }
 
     row.onclick = () => this.app.workspace.getLeaf(false).openFile(t.file);
   }

@@ -1717,7 +1717,7 @@ class NexusHomepageView extends ItemView {
     root.toggleClass('is-editing', !!this._editing);
     this._applyHomeBg(root);
     this._liveEls = [];   // Uhr/Timer-Updater sammeln sich pro Render neu
-    this._refCache = {};  // Orphan-Index pro Render einmal bauen, nicht pro Karte
+    this._refCache = {};  // Build the orphan index once per render, not once per card
     this._sketchFmIdx = null;   // frontmatter → sketch owner, same deal
     const inner = root.createDiv('nx-home-inner');
 

@@ -17,6 +17,11 @@
  *  touch-action:none (CSS) stops the page scrolling while drawing = mobile.
  * ========================================================================== */
 
+const sel = require('../lib/sketchselect.js');
+const canvas = require('../lib/sketchcanvas.js');
+const objects = require('../lib/sketchobjects.js');
+const gestures = require('../lib/sketchgestures.js');
+
 const SVGNS = 'http://www.w3.org/2000/svg';
 const LOGICAL_W = 1600;          // fixed logical canvas width (viewBox units)
 const ERASE_R = 16;              // eraser hit radius, viewBox units
@@ -24,6 +29,10 @@ const AUTOGROW_MARGIN = 60;      // auto-grow: start extending when the pen is t
 const AUTOGROW_LOOKAHEAD = 460;  // ...and keep this much blank space below it (big → grows rarely, see _onMove)
 const PREDICT_MAX = 34;          // pen prediction: never draw further than this (viewBox units) past the real tip
 const PAGE_ZOOM_MAX = 5;         // page zoom: how far a full-size sheet may be magnified (1 = normal)
+const PAGE_ZOOM_MIN = 0.3;       // …and how far out, for an overview of a long page (1 = fits the pane)
+const TAP_TRAVEL = 6;          // units a stroke may wander and still count as a tap
+const HANDLE_PX = 11;          // selection handle radius, ON SCREEN — converted to units per pad size
+const SEL_DRAG_PX = 3;         // pointer travel before a press counts as a drag and not a tap
 const PALM_MS = 600;             // palm rejection: ignore touches this soon after any pen contact/hover
 const HOLD_MS = 650;             // shape snap: hold the pen still this long after drawing …
 const HOLD_R = 7;                // … within this radius (viewBox units) to trigger recognition
@@ -450,6 +459,19 @@ class NexusSketchSurface {
     this.streamline = (opts.streamline != null) ? opts.streamline : 0.55;   // fallback if a pen defines none
     this.minDist = (opts.minDist != null) ? opts.minDist : 2;                // viewBox units between samples
     this.mode = 'draw';
+    /* Selection lives here and not in the toolbar: undo, erase and a
+       reload all invalidate it, and they all happen in the engine. */
+    this.selectShape = 'lasso';   // lasso | rect | ellipse
+    this.paperWidth = opts.paperWidth || 0;   // px cap on the sheet, 0 = fill the pane
+    // Straight edge: on/off plus a fixed angle in degrees (null = follow the
+    // direction the stroke starts in).
+    this.ruler = { on: false, angle: null };
+    /* Pen buttons and taps. The surface only DETECTS them; what each one
+       does is the toolbar's business, so it reports through one callback. */
+    this.penMap = opts.penMap || {};
+    this.onGesture = opts.onGesture || null;
+    this.selection = [];          // indices into this.strokes
+    this.onSelect = opts.onSelect || null;
     // Human name for the drawing, kept IN the sidecar (not in the note) so it
     // travels with the sketch to every note that embeds it.
     this.title = opts.title || '';
@@ -472,6 +494,19 @@ class NexusSketchSurface {
     this.onZoom = opts.onZoom || null;                   // page-zoom level changed (see setPageZoom)
     this.resizable = !!opts.resizable;
     this.strokes = Array.isArray(opts.strokes) ? JSON.parse(JSON.stringify(opts.strokes)) : [];
+    /* Images, stickers and sticky notes. Records are treated as IMMUTABLE:
+       every change replaces one and pushes the previous array, so an undo
+       step costs a few pointers instead of a copy of every embedded photo. */
+    this.objects = Array.isArray(opts.objects) ? opts.objects.slice() : [];
+    this.selObjects = [];   // selected object indices, alongside `selection` for strokes
+    /* Named marks down the page. They are not objects and not strokes: a
+       section is a place, so it is only a y and a title. That is what lets
+       an outline exist for a drawing at all. Kept sorted by y. */
+    this.sections = Array.isArray(opts.sections) ? opts.sections.slice().sort((a, b) => a.y - b.y) : [];
+    /* Recognised handwriting: text only, no positions. It exists to make the
+       drawing findable, not to be shown — a guess rendered on the page would
+       look like something that was actually written there. */
+    this.ocr = Array.isArray(opts.ocr) ? opts.ocr.slice() : [];
     // Pen prediction (getPredictedEvents) — on by default; the drawn tail is
     // extended toward where the OS says the pen is going. See _drawLive.
     this.predict = opts.predict !== false;
@@ -481,6 +516,8 @@ class NexusSketchSurface {
     this._pid = 'nxsk-' + Math.random().toString(36).slice(2, 9);
     this._texFilt = this._pid + '-tf'; this._texPat = this._pid + '-tp';   // paper-texture def ids
     this._build();
+    this._renderObjects();
+    this._renderSections();
     this._renderStrokes();
   }
 
@@ -491,10 +528,16 @@ class NexusSketchSurface {
     const svg = svgEl('svg', { class: 'nx-sketch-surface', viewBox: `0 0 ${this.W} ${this.H}`, width: this.W, height: this.H, preserveAspectRatio: 'none' });
     this.svg = svg;
     if (this.bg) { this.bgRect = svgEl('rect', { x: 0, y: 0, width: this.W, height: this.H, fill: this.bg }); svg.appendChild(this.bgRect); }
+    this.gObjects = svgEl('g', { class: 'nx-sk-objects' });
+    this.gSections = svgEl('g', { class: 'nx-sk-sections' });
     this.gStrokes = svgEl('g', { class: 'nx-sk-committed' });
     this.livePath = svgEl('path', { class: 'nx-sk-live' });
+    svg.appendChild(this.gObjects);   // below the ink — writing goes ON a photo, not under it
+    svg.appendChild(this.gSections);
     svg.appendChild(this.gStrokes);
     svg.appendChild(this.livePath);
+    this.gSel = svgEl('g', { class: 'nx-sk-sel' });   // marquee + frame + handles
+    svg.appendChild(this.gSel);
     // Pencil grain filter — added once; only pencil strokes reference it. Guard
     // with _pfxOk so a failed parse never leaves strokes pointing at a missing
     // filter (which would make them render as nothing).
@@ -506,6 +549,8 @@ class NexusSketchSurface {
       if (dfs && !doc.querySelector('parsererror')) { this.svg.appendChild(document.importNode(dfs, true)); this._pfxOk = true; }
     } catch (e) {}
     this.host.appendChild(svg);
+    this.host._surface = this;   // commands act on the pad that is open, not on a toolbar
+    this._applyPaperWidth();
     // LOW-LATENCY live layer: the in-progress stroke is drawn on a canvas
     // overlay with a desynchronized 2d context — Chrome/WebView's front-buffer
     // path that skips the compositor queue (the same trick native-feeling web
@@ -655,7 +700,7 @@ class NexusSketchSurface {
         the clean shape. Further movement is frozen; lifting commits it. ── */
   _armHold() {
     if (this._holdTimer) { clearTimeout(this._holdTimer); this._holdTimer = null; }
-    if (!this.shapeSnap) return;
+    if (!this.shapeSnap || this.ruler.on) return;   // a ruled stroke is already the shape it wants to be
     this._holdTimer = setTimeout(() => { this._holdTimer = null; this._trySnapShape(); }, HOLD_MS);
   }
   _trySnapShape() {
@@ -665,6 +710,10 @@ class NexusSketchSurface {
     if (!shape) return;
     st.points = shapeToPoints(shape);
     st.thinning = 0; st.taper = 0;       // shapes render with a clean uniform width
+    /* Keep WHAT it is, not just the points it became. Without this the snap is
+       a one-way door: on pen-up a rectangle is 40 anonymous points that can
+       only be scaled as a block, never re-cornered. */
+    st.shape = shape;
     st._snapped = true;
     st._raw = null;
     // Full live repaint with the snapped geometry.
@@ -682,6 +731,7 @@ class NexusSketchSurface {
         Palm rejection: any touch arriving within PALM_MS of pen contact/hover
         is ignored outright, and a pen-down clears any finger gesture. ── */
   _touchDown(e) {
+    this._stopFling();   // a finger down means "stop", always
     if (this._active || this._erasing) return;                          // pen is drawing → ignore stray finger
     if (performance.now() - (this._lastPen || 0) < PALM_MS) return;     // palm rejection
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
@@ -706,8 +756,41 @@ class NexusSketchSurface {
   }
   _touchUp(e) {
     if (!this._touches.delete(e.pointerId)) return;
+    const wasScroll = this._gestMode === 'scroll';
     if (this._touches.size === 1) this._startOneFinger();
-    else if (!this._touches.size) this._gestMode = null;
+    else if (!this._touches.size) {
+      this._gestMode = null;
+      if (wasScroll) this._fling();
+    }
+  }
+  /* A drag-scroll that stops the moment the finger lifts is what made this feel
+     slower than the note around it — every native scroller coasts. Same input,
+     same throw: velocity from the tail of the drag, then decay to a stop. */
+  _fling() {
+    const samples = this._scrollSamples;
+    this._scrollSamples = null;
+    this._stopFling();
+    const sc = this._scroller;
+    if (!sc || !samples) return;
+    let vy = -canvas.flingVelocity(samples, 'y');
+    let vx = this.fixedViewport ? 0 : -canvas.flingVelocity(samples, 'x');
+    if (!vy && !vx) return;
+    let last = performance.now();
+    const step = () => {
+      const now = performance.now();
+      const dt = Math.min(48, now - last);   // a backgrounded tab must not teleport the page
+      last = now;
+      const sy = canvas.flingStep(vy, dt);
+      const sx = canvas.flingStep(vx, dt);
+      sc.scrollTop += sy.move;
+      if (!this.fixedViewport) sc.scrollLeft += sx.move;
+      vy = sy.v; vx = sx.v;
+      this._flingRaf = (vy || vx) ? requestAnimationFrame(step) : null;
+    };
+    this._flingRaf = requestAnimationFrame(step);
+  }
+  _stopFling() {
+    if (this._flingRaf) { cancelAnimationFrame(this._flingRaf); this._flingRaf = null; }
   }
   /* One finger: pans the canvas ONLY while zoomed in; otherwise it scrolls the
      page/stage. An un-zoomed pan is a no-op, so a one-finger drag should scroll
@@ -796,6 +879,9 @@ class NexusSketchSurface {
       this._scroller.scrollTop = this._scrollStart.top - (cy - this._pending.cy);
       // Fixed viewport (protokoll/slate paper) never scrolls sideways.
       if (!this.fixedViewport) this._scroller.scrollLeft = this._scrollStart.left - (cx - this._pending.cx);
+      // Keep the tail of the drag: on lift it becomes the throw (see _fling).
+      (this._scrollSamples = this._scrollSamples || []).push({ t: performance.now(), x: cx, y: cy });
+      if (this._scrollSamples.length > 12) this._scrollSamples.shift();
     }
   }
   /* Magnify the sheet itself. `s` is clamped to [1 … PAGE_ZOOM_MAX]: zooming
@@ -806,24 +892,27 @@ class NexusSketchSurface {
      (ax, ay) is the point on screen to hold still — the pinch centroid. */
   setPageZoom(s, ax, ay) {
     if (!this.pageZoom) return;
-    s = Math.max(1, Math.min(PAGE_ZOOM_MAX, s));
+    s = Math.max(PAGE_ZOOM_MIN, Math.min(PAGE_ZOOM_MAX, s));
     const sc = this._findScroller();
     const r = this.host.getBoundingClientRect();
     const anchorX = (ax != null) ? ax : r.left + r.width / 2;
     const anchorY = (ay != null) ? ay : r.top;
     const fx = r.width ? (anchorX - r.left) / r.width : 0.5;
     const fy = r.height ? (anchorY - r.top) / r.height : 0;
+    const prevScale = this.pageScale;
+    const changed = prevScale !== s;
+    this.pageScale = s;
     if (s === 1) {
       this._pzBase = 0;
       this.host.style.width = '';
-      this.host.style.maxWidth = '';
-    } else {
-      if (!this._pzBase) this._pzBase = r.width / (this.pageScale || 1);
+      this._applyPaperWidth();   // back to the resting sheet width, cap included
+    } else {   // magnified OR shrunk — both need an explicit pixel width
+      // Natural width = what it measures NOW divided by the scale it is at now,
+      // which is the scale BEFORE this call, not the one being applied.
+      if (!this._pzBase) this._pzBase = r.width / (prevScale || 1);
       this.host.style.maxWidth = 'none';   // the stage centres+caps the pad at 1×; zoomed it must be free to overflow
       this.host.style.width = Math.round(this._pzBase * s) + 'px';
     }
-    const changed = this.pageScale !== s;
-    this.pageScale = s;
     if (sc) {
       const r2 = this.host.getBoundingClientRect();
       sc.scrollLeft = Math.max(0, sc.scrollLeft + (r2.left + fx * r2.width) - anchorX);
@@ -850,6 +939,18 @@ class NexusSketchSurface {
   _addPoint(x, y, p, force, t) {
     const st = this._active, pts = st.points;
     if (st._snapped) return;   // shape locked in — ignore further movement until release
+    if (this.ruler.on && this._rulerAnchor) {
+      const a = this._rulerAnchor;
+      if (!this._rulerDir) this._rulerDir = canvas.rulerDirection(this.ruler.angle, a.x, a.y, x, y);
+      if (this._rulerDir) {
+        const q = canvas.projectToLine(a.x, a.y, this._rulerDir, x, y);
+        x = q.x; y = q.y;
+      } else {
+        // Free ruler that has not picked a direction yet: hold at the anchor
+        // rather than laying down a curve that will be contradicted.
+        x = a.x; y = a.y;
+      }
+    }
     // Fountain character: fast strokes thin out ("dry" nib). Velocity is
     // smoothed (EMA) against sample jitter and BAKED into the recorded
     // pressure, so file + external viewers reproduce it with no pen knowledge.
@@ -871,7 +972,28 @@ class NexusSketchSurface {
     pts.push([+px.toFixed(1), +py.toFixed(1), +p.toFixed(2)]);
   }
 
+  /* Report a pen gesture and let the caller decide what it means. `phase` is
+     'start' or 'end' so a hold action knows when to undo itself. */
+  _fireGesture(id, phase) {
+    const action = this.penMap[id];
+    if (!action || action === 'none' || !this.onGesture) return false;
+    try { return this.onGesture(action, phase, id) !== false; } catch (err) { return false; }
+  }
+  /* Buttons are read on every pen event, not just pointerdown: pressing the
+     barrel mid-stroke is exactly when someone wants to rub something out. */
+  _checkPenButtons(e) {
+    if (e.pointerType !== 'pen') return;
+    const now = gestures.decodeButtons(e.buttons);
+    const was = this._penButtons || { barrel: false, eraserTip: false };
+    for (const id of ['barrel', 'eraserTip']) {
+      if (now[id] === was[id]) continue;
+      this._fireGesture(id, now[id] ? 'start' : 'end');
+    }
+    this._penButtons = now;
+  }
   _onDown(e) {
+    this._stopFling();
+    this._checkPenButtons(e);
     if (e.pointerType === 'pen') this._lastPen = performance.now();   // palm rejection window
     if (e.pointerType === 'touch') { this._touchDown(e); return; }    // finger = pan / page-scroll / zoom, never draws
     if (this.locked) return;                                          // view mode: pen/mouse never draw or erase
@@ -883,6 +1005,11 @@ class NexusSketchSurface {
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
     this._ctmInv = this._invCTM();   // cache once per stroke (see _pt)
     if (this.mode === 'erase') { this._erasing = true; this._eraseSnapped = false; this._eraseBatch = []; this._eraseAt(this._pt(e)); return; }
+    if (this.mode === 'select') { this._selDown(this._pt(e), e); return; }
+    if (this.mode === 'space') { this._spaceDown(this._pt(e), e); return; }
+    // Insert is a placement tool driven from its options row — the pen has
+    // nothing to do until something has been placed.
+    if (this.mode === 'insert') return;
     const p = this._pt(e);
     // px → logical units via the current display scale, so "3px" reads as ~3px
     // on screen regardless of pad size (stroke stays resolution-independent).
@@ -913,15 +1040,21 @@ class NexusSketchSurface {
     const lkA = (pt.opacity != null ? pt.opacity : 1) * lk.alpha;
     this.liveLayer.style.mixBlendMode = pt.blend ? 'multiply' : '';
     this.liveLayer.style.opacity = lkA < 1 ? String(lkA) : '';
+    this._lastTapPoint = { x: p.x, y: p.y };
+    this._rulerAnchor = this.ruler.on ? { x: p.x, y: p.y } : null;
+    this._rulerDir = null;
     this._addPoint(p.x, p.y, this._pressure(e));
     this._drawLive();
     this._holdAnchor = { x: p.x, y: p.y };
     this._armHold();
   }
   _onMove(e) {
+    this._checkPenButtons(e);
     if (e.pointerType === 'pen') this._lastPen = performance.now();   // hover counts too — palm lands while the pen approaches
     if (e.pointerType === 'touch') { this._touchMove(e); return; }
     if (this._erasing) { this._eraseAt(this._pt(e)); return; }
+    if (this._selDrag) { e.preventDefault(); this._selMove(this._pt(e), e); return; }
+    if (this._spaceDrag) { e.preventDefault(); this._spaceMove(this._pt(e)); return; }
     if (!this._active) return;
     e.preventDefault();
     const evts = (e.getCoalescedEvents && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
@@ -962,6 +1095,7 @@ class NexusSketchSurface {
   }
   _onUp(e) {
     if (e.pointerType === 'touch') { this._touchUp(e); return; }
+    this._checkPenButtons(e);
     this._ctmInv = null;
     if (this._holdTimer) { clearTimeout(this._holdTimer); this._holdTimer = null; }
     if (this._erasing) {
@@ -972,8 +1106,11 @@ class NexusSketchSurface {
       if (this._changedDuringErase) { this._changedDuringErase = false; this._changed(); }
       return;
     }
+    if (this._selDrag) { this._selUp(); return; }
+    if (this._spaceDrag) { this._spaceUp(); return; }
     if (!this._active) return;
     const st = this._active; this._active = null;
+    this._rulerAnchor = null; this._rulerDir = null;
     if (st._raw && !st._snapped) this._addPointFinal(st, st._raw);
     this.livePath.removeAttribute('d');
     this._clearLiveCanvas();   // live layer → replaced by one committed SVG outline
@@ -987,6 +1124,47 @@ class NexusSketchSurface {
       // after it can wait for the debounce.
       this._changed(this.strokes.length <= 1);
     }
+    if (e.pointerType === 'pen') this._checkDoubleTap(e, st);
+  }
+  /* A tap is a stroke that went nowhere. Two of them, close in time and in
+     place, are a double-tap — and the stray dot the first one left behind is
+     taken back, because nobody double-taps in order to draw two dots. */
+  _checkDoubleTap(e, stroke) {
+    // Anything that actually travelled was drawing, and it also breaks any tap
+    // sequence that was building up.
+    if (!stroke || this._strokeTravel(stroke) > TAP_TRAVEL) { this._lastTap = null; return; }
+    const p = this._lastTapPoint;
+    if (!p) return;
+    const now = e.timeStamp != null ? e.timeStamp : performance.now();
+    if (gestures.isDoubleTap(this._lastTap, p.x, p.y, now)) {
+      this._lastTap = null;
+      if (this._fireGesture('doubleTap', 'start')) this._dropTapDots();
+      return;
+    }
+    this._lastTap = { x: p.x, y: p.y, t: now };
+  }
+  _strokeTravel(st) {
+    const pts = st.points || [];
+    if (pts.length < 2) return 0;
+    let max = 0;
+    for (const q of pts) max = Math.max(max, Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]));
+    return max;
+  }
+  /* Both taps of a recognised double-tap were dots, not drawing — and their
+     undo entries go with them, or two presses of undo would do nothing. */
+  _dropTapDots() {
+    let removed = 0;
+    while (removed < 2 && this.strokes.length) {
+      const st = this.strokes[this.strokes.length - 1];
+      if (this._strokeTravel(st) > TAP_TRAVEL) break;
+      this.strokes.pop();
+      const top = this.undoStack[this.undoStack.length - 1];
+      if (top && top.t === 'remove' && top.n === 1) this.undoStack.pop();
+      removed++;
+    }
+    if (!removed) return;
+    this._renderStrokes();
+    this._changed();
   }
   _addPointFinal(st, raw) {
     const last = st.points[st.points.length - 1];
@@ -1129,6 +1307,488 @@ class NexusSketchSurface {
     this._tipDirty = this._liveBBox(tail, st.size);
   }
 
+
+
+  /* ── Sections ──────────────────────────────────────────────────────────────
+     A rule across the page with a name on it. Deliberately drawn UNDER the ink:
+     it is a divider, not an annotation, and it must never look like something
+     that was written. */
+  _sectionsSVG() {
+    let body = '';
+    for (const sec of this.sections) {
+      const label = objects.xmlEscape(sec.title || 'Section');
+      body += `<line x1="0" y1="${sec.y}" x2="${this.W}" y2="${sec.y}" class="nx-sk-secline"/>`;
+      body += `<text x="14" y="${sec.y - 8}" class="nx-sk-sectext" font-size="20"`
+        + ` font-family="ui-sans-serif, system-ui, sans-serif">${label}</text>`;
+    }
+    return body;
+  }
+  _renderSections() {
+    const g = this.gSections;
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    if (!this.sections.length) return;
+    const parsed = this._parseDefs(this._sectionsSVG());
+    if (!parsed) return;
+    while (parsed.firstChild) g.appendChild(parsed.firstChild);
+  }
+  addSection(y, title) {
+    this._pushUndo({ t: 'sections', all: this.sections.slice() });
+    this.sections = this.sections.concat([{ y: Math.round(y), title: String(title || 'Section') }])
+      .sort((a, b) => a.y - b.y);
+    this._renderSections();
+    this._changed();
+    return this.sections;
+  }
+  renameSection(i, title) {
+    if (!this.sections[i]) return;
+    this._pushUndo({ t: 'sections', all: this.sections.slice() });
+    const next = this.sections.slice();
+    next[i] = { y: next[i].y, title: String(title || 'Section') };
+    this.sections = next;
+    this._renderSections();
+    this._changed();
+  }
+  removeSection(i) {
+    if (!this.sections[i]) return;
+    this._pushUndo({ t: 'sections', all: this.sections.slice() });
+    this.sections = this.sections.filter((_, k) => k !== i);
+    this._renderSections();
+    this._changed();
+  }
+  /* Bring a y on the page into view. Returns false when there is no scroller to
+     move, so the caller can say so instead of silently doing nothing. */
+  scrollToY(y) {
+    const sc = this._findScroller();
+    if (!sc) return false;
+    const rect = this.host.getBoundingClientRect();
+    const scRect = sc.getBoundingClientRect();
+    const px = (y / this.W) * (rect.width || this.W);
+    sc.scrollTop += (rect.top + px) - scRect.top - 40;
+    return true;
+  }
+
+  /* ── Objects on the page ───────────────────────────────────────────────────
+     Rendered from the same emitter that writes the exported file, parsed once
+     per change rather than built node by node: the whole layer is a handful of
+     elements, and a string is the cheapest way to keep it in step. */
+  _renderObjects() {
+    const g = this.gObjects;
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    if (!this.objects.length) return;
+    const parsed = this._parseDefs(objects.objectsSVG(this.objects));
+    if (!parsed) return;
+    while (parsed.firstChild) g.appendChild(parsed.firstChild);
+  }
+  addObject(obj) {
+    if (!obj || objects.OBJECT_KINDS.indexOf(obj.kind) < 0) return -1;
+    this._pushUndo({ t: 'objs', all: this.objects.slice() });
+    this.objects = this.objects.concat([obj]);
+    // A new object is what you want to move next, so it arrives selected.
+    this.selection = [];
+    this.selObjects = [this.objects.length - 1];
+    this._renderObjects();
+    if (this.gSel) this._paintSel(null);
+    this._changed();
+    this._emitSelect();
+    return this.objects.length - 1;
+  }
+  updateObject(i, patch) {
+    if (!this.objects[i]) return;
+    this._pushUndo({ t: 'objs', all: this.objects.slice() });
+    const next = this.objects.slice();
+    next[i] = Object.assign({}, next[i], patch);
+    this.objects = next;
+    this._renderObjects();
+    if (this.gSel) this._paintSel(null);
+    this._changed();
+  }
+  removeObjects(indices) {
+    if (!indices || !indices.length) return;
+    this._pushUndo({ t: 'objs', all: this.objects.slice() });
+    const drop = new Set(indices);
+    this.objects = this.objects.filter((_, i) => !drop.has(i));
+    this.selObjects = [];
+    this._renderObjects();
+    if (this.gSel) this._paintSel(null);
+    this._changed();
+    this._emitSelect();
+  }
+
+  /* ── Selection ─────────────────────────────────────────────────────────────
+     Three gestures share one handler, and which one it is gets decided at
+     pointer-down from where the pointer landed: on a handle → scale/rotate,
+     inside the frame → move, anywhere else → draw a new marquee.
+
+     Every transform is derived from a SNAPSHOT taken at pointer-down, never
+     from the previous frame. Chaining frame to frame lets rounding accumulate,
+     and a slow drag across the page would visibly drift. */
+  /* Middle of what is currently on screen, in viewBox units — where a newly
+     placed object belongs, rather than the middle of a page that may be metres
+     long. */
+  viewCenter() {
+    const vh = this.viewW * this.H / this.W;
+    return { x: this.viewX + this.viewW / 2, y: this.viewY + vh / 2 };
+  }
+  _uPerPx() {
+    const w = this.svg.getBoundingClientRect().width || this.W;
+    return this.viewW / w;   // viewBox units per screen pixel, current zoom included
+  }
+  _selBox() {
+    let box = sel.selectionBounds(this.strokes, this.selection);
+    for (const i of this.selObjects) {
+      const b = objects.objectBounds(this.objects[i]);
+      if (!b) continue;
+      box = box ? {
+        minX: Math.min(box.minX, b.minX), minY: Math.min(box.minY, b.minY),
+        maxX: Math.max(box.maxX, b.maxX), maxY: Math.max(box.maxY, b.maxY),
+      } : b;
+    }
+    return box;
+  }
+  _hasSel() { return this.selection.length > 0 || this.selObjects.length > 0; }
+  _emitSelect() { if (this.onSelect) { try { this.onSelect(this.selection.length + this.selObjects.length); } catch (e) {} } }
+  /* Anything that renumbers this.strokes makes the stored indices point at the
+     wrong ink, so the selection is dropped rather than silently retargeted. */
+  _invalidateSelection() {
+    if (!this._hasSel()) return;
+    this.selection = [];
+    this.selObjects = [];
+    this._selDrag = null;
+    if (this.gSel) this._paintSel(null);
+    this._emitSelect();
+  }
+  /* Objects are snapshotted as whole records — they are small, and treating
+     them as immutable means an undo step shares the image data instead of
+     copying a base64 photo per drag. */
+  _snapshotObjects() { return this.selObjects.map(i => ({ i, obj: this.objects[i] })); }
+  _snapshot() {
+    return this.selection.map(i => {
+      const st = this.strokes[i];
+      return {
+        i,
+        points: st.points.map(pt => pt.slice()),
+        size: st.size,
+        shape: st.shape ? JSON.parse(JSON.stringify(st.shape)) : null,
+      };
+    });
+  }
+  _soleShape() {
+    if (this.selection.length !== 1) return null;
+    const st = this.strokes[this.selection[0]];
+    return (st && st.shape) ? st.shape : null;
+  }
+  _shapeControlAt(p, r) {
+    const shape = this._soleShape();
+    if (!shape) return null;
+    for (const c of sel.shapeControlPoints(shape)) {
+      if (Math.hypot(c.x - p.x, c.y - p.y) <= r) return c.id;
+    }
+    return null;
+  }
+
+  _selDown(p, e) {
+    e.preventDefault();
+    try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
+    this._ctmInv = this._invCTM();
+    const box = this._selBox();
+    const r = HANDLE_PX * this._uPerPx();
+    if (box) {
+      /* A control point of a recognised shape wins over the box handles: it is
+         the more precise edit, and it sits inside the frame where a box handle
+         would otherwise swallow it. */
+      const ctrl = this._shapeControlAt(p, r);
+      if (ctrl) { this._selDrag = { kind: 'shape', id: ctrl, snapshot: this._snapshot() }; return; }
+      const h = sel.handleAt(box, p, r);
+      if (h) { this._selDrag = { kind: 'handle', id: h, box, snapshot: this._snapshot(), objs: this._snapshotObjects() }; return; }
+      if (sel.pointInBox(box, p, 0)) {
+        this._selDrag = { kind: 'move', start: p, snapshot: this._snapshot(), objs: this._snapshotObjects(), moved: false };
+        return;
+      }
+    }
+    /* Lassoing a photo is possible but silly — a tap on one picks it up, the
+       way it works in every app that has objects on a canvas. */
+    const hit = objects.objectAt(this.objects, p.x, p.y);
+    if (hit >= 0) {
+      this.selection = [];
+      this.selObjects = [hit];
+      this._paintSel(null);
+      this._emitSelect();
+      this._selDrag = { kind: 'move', start: p, snapshot: [], objs: this._snapshotObjects(), moved: false };
+      return;
+    }
+    this._selDrag = { kind: 'marquee', start: p, poly: [[p.x, p.y]] };
+  }
+  _selMove(p, e) {
+    const d = this._selDrag;
+    if (!d) return;
+    if (d.kind === 'marquee') {
+      if (this.selectShape === 'lasso') d.poly.push([p.x, p.y]); else d.end = p;
+      this._paintSel(d);
+      return;
+    }
+    if (d.kind === 'shape') { this._dragShapeControl(d, p); return; }
+    let m;
+    if (d.kind === 'move') {
+      // A tap inside the frame must not nudge the drawing by a pixel of jitter.
+      if (!d.moved && Math.hypot(p.x - d.start.x, p.y - d.start.y) < SEL_DRAG_PX * this._uPerPx()) return;
+      d.moved = true;
+      m = sel.translate(p.x - d.start.x, p.y - d.start.y);
+    } else {
+      m = sel.handleMatrix(d.id, d.box, p, { uniform: !!e.shiftKey, snap: !!e.shiftKey });
+    }
+    this._applyMatrix(d.snapshot, m, d.objs);
+    this._paintSel(d);
+  }
+  _selUp() {
+    const d = this._selDrag;
+    this._selDrag = null;
+    this._ctmInv = null;
+    if (!d) return;
+    if (d.kind === 'marquee') {
+      const poly = this._marqueePoly(d);
+      this.selection = poly.length >= 3 ? sel.hitStrokes(this.strokes, poly) : [];
+      // An object is caught by its CENTRE: any-corner would grab a big photo
+      // whenever the lasso clipped one edge of it.
+      this.selObjects = poly.length >= 3 ? this.objects.reduce((acc, obj, i) => {
+        const b = objects.objectBounds(obj);
+        if (sel.pointInPolygon((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2, poly)) acc.push(i);
+        return acc;
+      }, []) : [];
+      this._paintSel(null);
+      this._emitSelect();
+      return;
+    }
+    if (d.kind === 'move' && !d.moved) { this._paintSel(null); return; }   // a tap changed nothing
+    if (d.objs && d.objs.length) {
+      const before = this.objects.slice();
+      for (const it of d.objs) before[it.i] = it.obj;
+      this._pushUndo({ t: 'objs', all: before });
+    }
+    if (d.snapshot.length) this._pushUndo({ t: 'points', items: d.snapshot });
+    this._paintSel(null);
+    this._changed();
+  }
+  _marqueePoly(d) {
+    if (this.selectShape === 'lasso') return d.poly;
+    if (!d.end) return [];
+    return this.selectShape === 'ellipse' ? sel.ellipsePoly(d.start, d.end) : sel.rectPoly(d.start, d.end);
+  }
+  _applyMatrix(snapshot, m, objSnapshot) {
+    if (objSnapshot && objSnapshot.length) {
+      const next = this.objects.slice();
+      for (const it of objSnapshot) next[it.i] = objects.transformObject(it.obj, m);
+      this.objects = next;
+      this._renderObjects();
+    }
+    const grow = sel.matScale(m);
+    for (const it of snapshot) {
+      const st = this.strokes[it.i];
+      if (!st) continue;
+      st.points = sel.transformPoints(it.points, m);
+      st.size = Math.max(0.3, it.size * grow);   // ink keeps its ratio to the drawing
+      if (it.shape) {
+        const next = sel.transformShape(it.shape, m);
+        if (next) st.shape = next; else delete st.shape;
+      }
+      delete st._d;   // memoised outline is stale now
+    }
+    this._renderStrokes();
+  }
+  _dragShapeControl(d, p) {
+    const st = this.strokes[this.selection[0]];
+    const base = d.snapshot[0];
+    if (!st || !base || !base.shape) return;
+    const next = sel.moveShapeControl(base.shape, d.id, p);
+    st.shape = next;
+    st.points = shapeToPoints(next);
+    delete st._d;
+    this._renderStrokes();
+    this._paintSel(d);
+  }
+  /* The overlay is redrawn wholesale — it is a handful of nodes, and keeping a
+     diff of it in sync with an arbitrary transform costs more than it saves. */
+  _paintSel(drag) {
+    const g = this.gSel;
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    if (this.mode !== 'select') return;
+    const u = this._uPerPx();
+    const dash = (6 * u).toFixed(1) + ' ' + (5 * u).toFixed(1);
+    if (drag && drag.kind === 'marquee') {
+      const poly = this._marqueePoly(drag);
+      if (poly.length >= 2) {
+        const d = 'M' + poly.map(pt => pt[0].toFixed(1) + ' ' + pt[1].toFixed(1)).join('L')
+          + (this.selectShape === 'lasso' ? '' : 'Z');
+        g.appendChild(svgEl('path', { class: 'nx-sk-marquee', d, 'stroke-width': Math.max(0.6, 1.5 * u), 'stroke-dasharray': dash }));
+      }
+      return;
+    }
+    const box = this._selBox();
+    if (!box) return;
+    g.appendChild(svgEl('rect', {
+      class: 'nx-sk-selbox', x: box.minX, y: box.minY,
+      width: Math.max(0, box.maxX - box.minX), height: Math.max(0, box.maxY - box.minY),
+      'stroke-width': Math.max(0.6, 1.5 * u), 'stroke-dasharray': dash,
+    }));
+    const r = HANDLE_PX * u * 0.62;
+    const handles = sel.handlePositions(box);
+    const rot = handles.find(h => h.id === 'rotate');
+    // The rotation handle rides a stalk so it can never be mistaken for a corner.
+    if (rot) g.appendChild(svgEl('line', { class: 'nx-sk-selstalk', x1: rot.x, y1: box.minY, x2: rot.x, y2: rot.y, 'stroke-width': Math.max(0.5, 1.2 * u) }));
+    for (const h of handles) {
+      g.appendChild(svgEl('circle', { class: 'nx-sk-selhandle' + (h.id === 'rotate' ? ' is-rotate' : ''), cx: h.x, cy: h.y, r }));
+    }
+    const shape = this._soleShape();
+    if (shape) {
+      for (const c of sel.shapeControlPoints(shape)) {
+        g.appendChild(svgEl('rect', { class: 'nx-sk-selctrl', x: c.x - r, y: c.y - r, width: r * 2, height: r * 2 }));
+      }
+    }
+  }
+
+  /* ── What the toolbar can do to a selection ── */
+  deleteSelection() {
+    if (this.selObjects.length) this.removeObjects(this.selObjects.slice());
+    if (!this.selection.length) return;
+    // Descending, so each splice index is still valid when it runs — and that
+    // is exactly the order the 'insert' undo op replays backwards.
+    const items = this.selection.slice().sort((a, b) => b - a).map(i => ({ i, st: this.strokes[i] }));
+    for (const it of items) this.strokes.splice(it.i, 1);
+    this._pushUndo({ t: 'insert', items });
+    this.selection = [];
+    this._renderStrokes(); this._paintSel(null); this._changed(); this._emitSelect();
+  }
+  duplicateSelection(dx, dy) {
+    const off = sel.translate(dx == null ? 24 : dx, dy == null ? 24 : dy);
+    if (this.selObjects.length) {
+      this._pushUndo({ t: 'objs', all: this.objects.slice() });
+      const copies = this.selObjects.map(i => objects.transformObject(this.objects[i], off));
+      const first = this.objects.length;
+      this.objects = this.objects.concat(copies);
+      this.selObjects = copies.map((_, k) => first + k);
+      this._renderObjects();
+      this._paintSel(null); this._changed(); this._emitSelect();
+    }
+    if (!this.selection.length) return;
+    const copies = this.selection.map(i => {
+      const copy = JSON.parse(JSON.stringify(this.strokes[i]));
+      copy.points = sel.transformPoints(this.strokes[i].points, off);
+      if (copy.shape) {
+        const next = sel.transformShape(copy.shape, off);
+        if (next) copy.shape = next; else delete copy.shape;
+      }
+      return copy;
+    });
+    this._pushUndo({ t: 'remove', n: copies.length });
+    const first = this.strokes.length;
+    for (const copy of copies) this.strokes.push(copy);
+    this.selection = copies.map((_, k) => first + k);   // the copy is what stays selected
+    this._renderStrokes(); this._paintSel(null); this._changed(); this._emitSelect();
+  }
+  setSelectionColor(color) {
+    if (!this.selection.length) return;
+    const items = this.selection.map(i => ({ i, color: this.strokes[i].color }));
+    for (const i of this.selection) this.strokes[i].color = color;
+    this._pushUndo({ t: 'color', items });
+    this._renderStrokes(); this._changed();
+  }
+
+
+  /* ── Spacing tool ──────────────────────────────────────────────────────────
+     Grab a line and pull it down to open blank paper, up to close it again —
+     the OneNote gesture. Everything whose TOP edge is below the line moves as a
+     whole; a stroke straddling the line stays, because tearing one in half at
+     an arbitrary y rips descenders off letters. */
+  _spaceDown(p, e) {
+    e.preventDefault();
+    try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
+    this._ctmInv = this._invCTM();
+    const below = canvas.strokesBelow(this.strokes, p.y);
+    this._spaceDrag = {
+      y: p.y,
+      dy: 0,
+      h0: this.H,
+      // How far up this can go before content would cross the line. Asking for
+      // an absurd negative delta is how the clamp reports its own limit.
+      minDy: canvas.clampSpaceDelta(this.strokes, p.y, -1e9),
+      snapshot: below.map(i => ({
+        i,
+        points: this.strokes[i].points.map(q => q.slice()),
+        size: this.strokes[i].size,
+        shape: this.strokes[i].shape ? JSON.parse(JSON.stringify(this.strokes[i].shape)) : null,
+      })),
+    };
+    this._paintSpace();
+  }
+  _spaceMove(p) {
+    const d = this._spaceDrag;
+    if (!d) return;
+    d.dy = Math.max(d.minDy, p.y - d.y);
+    const m = sel.translate(0, d.dy);
+    for (const it of d.snapshot) {
+      const st = this.strokes[it.i];
+      if (!st) continue;
+      st.points = sel.transformPoints(it.points, m);
+      if (it.shape) {
+        const next = sel.transformShape(it.shape, m);
+        if (next) st.shape = next; else delete st.shape;
+      }
+      delete st._d;
+    }
+    // Opening a gap needs paper under what was pushed down; closing one lets
+    // the sheet shrink back to whatever the content needs.
+    this.setHeight(d.dy > 0 ? d.h0 + d.dy : 0);
+    this._renderStrokes();
+    this._paintSpace();
+  }
+  _spaceUp() {
+    const d = this._spaceDrag;
+    this._spaceDrag = null;
+    this._ctmInv = null;
+    if (!d) return;
+    if (Math.abs(d.dy) >= 0.5) {
+      this._pushUndo({ t: 'points', items: d.snapshot, h: d.h0 });
+      this._changed();
+    }
+    this._paintSpace();
+  }
+  _paintSpace() {
+    const g = this.gSel;
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    if (this.mode !== 'space') return;
+    const d = this._spaceDrag;
+    if (!d) return;
+    const u = this._uPerPx();
+    const y2 = d.y + d.dy;
+    if (Math.abs(d.dy) > 0.5) {
+      g.appendChild(svgEl('rect', {
+        class: 'nx-sk-spacefill', x: 0, y: Math.min(d.y, y2), width: this.W, height: Math.abs(d.dy),
+      }));
+    }
+    // Two bars: where you grabbed, and where the content now starts.
+    g.appendChild(svgEl('line', { class: 'nx-sk-spaceline', x1: 0, y1: d.y, x2: this.W, y2: d.y, 'stroke-width': Math.max(0.8, 2 * u) }));
+    g.appendChild(svgEl('line', { class: 'nx-sk-spaceline is-moving', x1: 0, y1: y2, x2: this.W, y2: y2, 'stroke-width': Math.max(0.8, 2 * u) }));
+  }
+
+  /* Endless paper has a fixed width by definition: without a cap the same note
+     renders at a different ink size in portrait and in landscape, which is the
+     "everything got huge when I rotated the tablet" complaint. 0 = fill. */
+  setPaperWidth(px) {
+    this.paperWidth = px > 0 ? px : 0;
+    this._applyPaperWidth();
+  }
+  _applyPaperWidth() {
+    if (!this.host || !this.host.style) return;
+    // A zoomed sheet owns its own width — the cap applies to the resting state.
+    if (this.pageScale !== 1) return;
+    if (!this.paperWidth) { this.host.style.maxWidth = ''; this.host.style.marginInline = ''; return; }
+    this.host.style.maxWidth = this.paperWidth + 'px';
+    this.host.style.marginInline = 'auto';
+  }
+
   _eraseAt(p) {
     for (let i = this.strokes.length - 1; i >= 0; i--) {
       const st = this.strokes[i];
@@ -1139,6 +1799,7 @@ class NexusSketchSurface {
         // moment; undo replays it backwards, which restores exactly.
         (this._eraseBatch = this._eraseBatch || []).push({ i, st });
         this.strokes.splice(i, 1);
+        this._invalidateSelection();
         this._renderStrokes();
         this._changedDuringErase = true;
       }
@@ -1221,6 +1882,45 @@ class NexusSketchSurface {
       for (const it of op.items) if (it.i < this.strokes.length) this.strokes.splice(it.i, 1);
       return { t: 'insert', items: op.items };
     }
+    if (op.t === 'points') {
+      // Swap geometry back and hand out the geometry that was there — the same
+      // entry then undoes and redoes a transform.
+      const prev = op.items.map(it => {
+        const st = this.strokes[it.i];
+        return { i: it.i, points: st ? st.points : it.points, size: st ? st.size : it.size, shape: st && st.shape ? st.shape : null };
+      });
+      for (const it of op.items) {
+        const st = this.strokes[it.i];
+        if (!st) continue;
+        st.points = it.points;
+        st.size = it.size;
+        if (it.shape) st.shape = it.shape; else delete st.shape;
+        delete st._d;
+      }
+      // The spacing tool also grew the paper; undoing the shift without the
+      // height would leave a page of blank space behind.
+      const prevH = this.H;
+      if (op.h != null) this.setHeight(op.h);
+      return { t: 'points', items: prev, h: op.h != null ? prevH : undefined };
+    }
+    if (op.t === 'color') {
+      const prev = op.items.map(it => ({ i: it.i, color: this.strokes[it.i] ? this.strokes[it.i].color : it.color }));
+      for (const it of op.items) if (this.strokes[it.i]) this.strokes[it.i].color = it.color;
+      return { t: 'color', items: prev };
+    }
+    if (op.t === 'sections') {
+      const prev = this.sections;
+      this.sections = op.all;
+      this._renderSections();
+      return { t: 'sections', all: prev };
+    }
+    if (op.t === 'objs') {
+      const prev = this.objects;
+      this.objects = op.all;
+      this.selObjects = [];
+      this._renderObjects();
+      return { t: 'objs', all: prev };
+    }
     if (op.t === 'replace') { const prev = this.strokes; this.strokes = op.all; return { t: 'replace', all: prev }; }
     return null;
   }
@@ -1270,7 +1970,7 @@ class NexusSketchSurface {
   /* Write a pending change out now. Safe to call when nothing is pending. */
   flush() { if (this._commitT || this._commitMaxT) this._fire(); }
   /* Call when the pad goes away for good (view closed, overlay torn down). */
-  destroy() { this.flush(); this._disarmFlushGuard(); }
+  destroy() { this.flush(); this._disarmFlushGuard(); this._stopFling(); }
 
   /* Dark-paper ink inversion. `_inkColor` is applied everywhere a stroke colour
      is painted (live canvas, committed DOM, export) so the flip is consistent and
@@ -1290,7 +1990,30 @@ class NexusSketchSurface {
   setSize(px) { this.penSizes[this.pen] = px; }
   getSize() { return this.penSizes[this.pen]; }
   setPen(p) { if (PEN_TYPES[p]) this.pen = p; }
-  setMode(m) { this.mode = m; }
+  setMode(m) {
+    this.mode = m;
+    if (m !== 'select') { this.selection = []; this.selObjects = []; this._selDrag = null; }
+    if (m !== 'space') this._spaceDrag = null;
+    // The cursor has to say which tool is armed before the first stroke.
+    if (this.host && this.host.classList) {
+      this.host.classList.toggle('is-select', m === 'select');
+      this.host.classList.toggle('is-space', m === 'space');
+    }
+    if (this.gSel) { if (m === 'space') this._paintSpace(); else this._paintSel(null); }
+  }
+  setSelectShape(k) { if (['lasso', 'rect', 'ellipse'].includes(k)) this.selectShape = k; }
+  setPenMap(map) { this.penMap = map || {}; }
+  setOcr(lines) {
+    this.ocr = Array.isArray(lines) ? lines.filter(Boolean) : [];
+    this.persist();   // the index reads the file, so it has to be on disk
+  }
+  setRuler(on, angle) {
+    this.ruler = { on: !!on, angle: (angle == null || angle === '') ? null : Number(angle) };
+    if (this.host && this.host.classList) this.host.classList.toggle('is-ruler', this.ruler.on);
+    return this.ruler;
+  }
+  hasSelection() { return this._hasSel(); }
+  clearSelection() { this.selection = []; this.selObjects = []; this._paintSel(null); this._emitSelect(); }
   setLocked(v) { this.locked = !!v; }
   getPageZoom() { return this.pageScale; }
   // Rebuild-only (no persist) so slider drags stay cheap; caller calls persist()
@@ -1323,11 +2046,17 @@ class NexusSketchSurface {
     if (this._inkInv !== wasInv) this._renderStrokes();   // dark↔light: repaint ink in the (un)inverted colour
   }
   persist() { this._fire(); }
+  /* Only ops that add or remove strokes renumber the array, and only those can
+     leave the selection pointing at the wrong ink. Undoing a colour or a move
+     keeps it — losing your selection because you pressed undo once is a wart,
+     not safety. */
+  _renumbers(op) { return op && op.t !== 'points' && op.t !== 'color'; }
   undo() {
     const op = this.undoStack.pop();
     if (!op) return;
     const inv = this._applyUndoOp(op);
     if (inv) this.redoStack.push(inv);
+    if (this._renumbers(op)) this._invalidateSelection(); else if (this.gSel) this._paintSel(null);
     this._renderStrokes(); this._changed();
   }
   redo() {
@@ -1335,12 +2064,14 @@ class NexusSketchSurface {
     if (!op) return;
     const inv = this._applyUndoOp(op);
     if (inv) this.undoStack.push(inv);
+    if (this._renumbers(op)) this._invalidateSelection(); else if (this.gSel) this._paintSel(null);
     this._renderStrokes(); this._changed();
   }
   clear() {
     if (!this.strokes.length) return;
     this._pushUndo({ t: 'replace', all: this.strokes });
     this.strokes = [];
+    this._invalidateSelection();
     this._renderStrokes(); this._changed();
   }
 
@@ -1350,6 +2081,9 @@ class NexusSketchSurface {
       bgType: this.bgType, bgSize: this.bgSize, bgOpacity: this.bgOpacity, bgColor: this.bgColor,
       autoGrow: this.autoGrow,
       title: this.title || undefined,
+      objects: this.objects.length ? this.objects : undefined,
+      sections: this.sections.length ? this.sections : undefined,
+      ocr: this.ocr.length ? this.ocr : undefined,
       strokes: this.strokes,
     });
     let defs = '', body = '';
@@ -1366,6 +2100,10 @@ class NexusSketchSurface {
         body += `<rect x="0" y="0" width="${this.W}" height="${this.H}" fill="url(#${this._pid})"/>`;
       }
     }
+    // Same emitter as the live pad — two would drift, and the drift would only
+    // ever show up in the exported copy.
+    body += objects.objectsSVG(this.objects);
+    body += this._sectionsSVG();
     for (let i = 0; i < this.strokes.length; i++) {
       const st = this.strokes[i];
       if (st.noStack) {
@@ -1391,8 +2129,13 @@ class NexusSketchSurface {
       if (st.grain) a += ` filter="url(#${this._pfx})"`;
       body += `<path ${a}/>`;
     }
+    /* A CDATA section ends at the first `]]>`, so a section title or a note that
+       happens to contain one would truncate the metadata and leave a malformed
+       file behind. Splitting it across two CDATA blocks is the standard escape
+       and reads back identically. */
+    const cdata = meta.split(']]>').join(']]]]><![CDATA[>');
     return `<svg xmlns="${SVGNS}" viewBox="0 0 ${this.W} ${this.H}" width="${this.W}" height="${this.H}">`
-      + `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${meta}]]></nx-sketch></metadata>`
+      + `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${cdata}]]></nx-sketch></metadata>`
       + defs + body + '</svg>';
   }
 }

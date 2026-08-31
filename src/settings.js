@@ -18,8 +18,14 @@ const { FN_TYPES } = require('./lib/foldernotes.js');
 const { nxAutocomplete, nxFoldDescriptions, nxMultiRow } = require('./lib/inputs.js');
 const { nxAllFolders } = require('./lib/helpers.js');
 const calstore = require('./lib/calstore.js');
+const penGestures = require('./lib/sketchgestures.js');
+const sketchSearch = require('./lib/sketchsearch.js');
+const vaultsync = require('./lib/vaultsync.js');
+const quicknoteLib = require('./lib/quicknote.js');
+const extcommand = require('./lib/extcommand.js');
+const { WebDavClient } = require('./lib/webdav.js');
 const tasks = require('./lib/tasks.js');
-const { HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
+const { BAR_DEFAULTS, BAR_ITEMS, BAR_MODES, HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
@@ -154,6 +160,8 @@ class NexusSettingsTab extends PluginSettingTab {
       ] },
       { title: 'Drawing', tabs: [
         { id: 'quicksketch',   icon: 'pencil-line',      fn: (e) => this.tSketch(e) },
+        { id: 'vaultSync',     icon: 'refresh-cw',       fn: (e) => this.tVaultSync(e) },
+        { id: 'quicknote',     icon: 'mic',              fn: (e) => this.tQuickNote(e) },
         { id: 'inkCapture',    icon: 'camera',           fn: (e) => this.tInkCapture(e) },
       ] },
       { title: 'Planning', tabs: [
@@ -809,6 +817,152 @@ class NexusSettingsTab extends PluginSettingTab {
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Command "Capture scan" or the camera ribbon icon opens the gallery / takes a paper photo. Your own sources have no in-app capture (they are separate apps) — export a PDF/image from them into their source folder instead.' });
   }
+  tQuickNote(e) {
+    const s = this.plugin.settings.quicknote;
+    this.head(e, s);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Command "Quick note (speak it)" opens a recorder. Say the thing, stop, and it becomes a note — the first few words become the file name, because that is what you will scan for later.' });
+
+    new Setting(e).setName('Folder').setDesc('Where spoken notes are filed.')
+      .addText(t => t.setPlaceholder('Inbox/Quicknote').setValue(s.folder || '')
+        .onChange(async v => { s.folder = v.trim() || 'Inbox/Quicknote'; await this.save(); }));
+
+    new Setting(e).setName('Recogniser')
+      .setDesc(quicknoteLib.ENGINES.map(x => x.label + ' — ' + x.note).join(' · '))
+      .addDropdown(dd => {
+        quicknoteLib.ENGINES.forEach(x => dd.addOption(x.id, x.label));
+        dd.setValue(s.engine || 'local').onChange(async v => { s.engine = v; await this.save(); this.display(); });
+      });
+
+    if ((s.engine || 'local') === 'local') {
+      new Setting(e).setName('Command').setClass('nx-set-sub')
+        .setDesc('Run on the recording. ' + extcommand.PLACEHOLDER_IN + ' is the audio file, ' + extcommand.PLACEHOLDER_OUT + ' is where the text should land — printing it instead also works. Example: whisper-cli -f {in} -otxt -of {out} -l de')
+        .addText(t => t.setPlaceholder('whisper-cli -f {in} -otxt -of {out} -l auto').setValue(s.command || '')
+          .onChange(async v => { s.command = v; await this.save(); }));
+      new Setting(e).setName('Check the command').setClass('nx-set-sub')
+        .addButton(b => b.setButtonText('Test').onClick(() => {
+          const built = extcommand.buildCommand(s.command || '', '/tmp/clip.webm', '/tmp/clip');
+          if (built.error) { new Notice('Nexus: ' + built.error + '.'); return; }
+          if (!this.plugin.ocrAvailable()) { new Notice('Nexus: no desktop shell here — use the browser recogniser on this device.'); return; }
+          new Notice('Nexus: would run "' + built.command + '" with ' + built.args.length + ' argument(s).');
+        }));
+    } else {
+      const { speechApi } = require('./modals/quicknote.js');
+      new Setting(e).setName('Language').setClass('nx-set-sub')
+        .setDesc('A BCP-47 tag, e.g. de-DE or en-GB.')
+        .addText(t => t.setPlaceholder('en-US').setValue(s.language || 'en-US')
+          .onChange(async v => { s.language = v.trim() || 'en-US'; await this.save(); }));
+      e.createEl('p', { cls: 'setting-item-description',
+        text: speechApi()
+          ? 'This device has a browser recogniser. Be aware that most builds send the audio to the browser vendor to transcribe it.'
+          : 'This device has NO browser recogniser, so recording will refuse to start. Use the local engine here.' });
+    }
+
+    new Setting(e).setName('Track new notes as tasks').setDesc('Pre-ticks the box in the recorder, so a spoken reminder turns up in the tasks view.')
+      .addToggle(t => t.setValue(!!s.asTask).onChange(async v => { s.asTask = v; await this.save(); }));
+    new Setting(e).setName('Open the note afterwards')
+      .addToggle(t => t.setValue(s.openAfter !== false).onChange(async v => { s.openAfter = v; await this.save(); }));
+  }
+
+  tVaultSync(e) {
+    const s = this.plugin.settings.vaultSync;
+    this.head(e, s);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The whole vault to a WebDAV server: Nextcloud, a Synology, or anything else that speaks it. Three-way, so a file you delete stays deleted instead of coming back, and a file you have not downloaded yet is not mistaken for one you removed. Credentials stay on this device and never go into the vault — which matters here more than usual, because the vault is what gets uploaded.' });
+
+    new Setting(e).setName('Server URL').setDesc('The folder the vault lives in, e.g. https://cloud.example.com/remote.php/dav/files/me/Vault')
+      .addText(t => t.setPlaceholder('https://…').setValue(s.url || '')
+        .onChange(async v => { s.url = v.trim(); await this.save(); }));
+
+    const cred = this.plugin.getCredential('vaultsync') || {};
+    new Setting(e).setName('User name').setClass('nx-set-sub')
+      .addText(t => t.setValue(cred.username || '').onChange(v => {
+        const now = this.plugin.getCredential('vaultsync') || {};
+        this.plugin.setCredential('vaultsync', Object.assign(now, { username: v.trim() }));
+      }));
+    new Setting(e).setName('App password').setDesc('Device-local, never synced. Use an app password, not your account password.').setClass('nx-set-sub')
+      .addText(t => {
+        t.inputEl.type = 'password';
+        t.setValue(cred.secret || '').onChange(v => {
+          const now = this.plugin.getCredential('vaultsync') || {};
+          this.plugin.setCredential('vaultsync', Object.assign(now, { secret: v }));
+        });
+      });
+    new Setting(e).setName('Connection').setDesc('Ask the server whether it is there and whether it knows you.')
+      .addButton(b => b.setButtonText('Test').setCta().onClick(async () => {
+        b.setDisabled(true).setButtonText('Testing…');
+        const now = this.plugin.getCredential('vaultsync') || {};
+        try {
+          if (!s.url) throw new Error('fill in the URL first');
+          const client = new WebDavClient({ baseUrl: s.url, username: now.username || '', password: now.secret || '' });
+          const res = await client.check();
+          new Notice('Nexus: ' + res.message + '.');
+        } catch (err) {
+          new Notice('Nexus: ' + (err && err.message ? err.message : 'the test failed.'));
+        }
+        b.setDisabled(false).setButtonText('Test');
+      }));
+
+    new Setting(e).setName('This device is called').setDesc('Shows up in the name of a conflict copy, so you can tell which machine wrote it.')
+      .addText(t => t.setPlaceholder(this.plugin.deviceId()).setValue(s.deviceName || '')
+        .onChange(async v => { s.deviceName = v.trim(); await this.save(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'When' });
+    new Setting(e).setName('Sync on start').setDesc('So a device you pick up is already what you left.')
+      .addToggle(t => t.setValue(s.onStart !== false).onChange(async v => { s.onStart = v; await this.save(); }));
+    new Setting(e).setName('Every').setDesc('Minutes between syncs. 0 = only when you ask.')
+      .addText(t => t.setPlaceholder('15').setValue(String(s.intervalMin == null ? 15 : s.intervalMin))
+        .onChange(async v => {
+          const n = parseInt(v, 10);
+          s.intervalMin = isFinite(n) && n > 0 ? n : 0;
+          await this.save();
+          if (this.plugin.vaultSync) this.plugin.vaultSync.schedule();
+        }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'What' });
+    new Setting(e).setName('Carry the settings too')
+      .setDesc('Syncs .obsidian as well, so plugins and themes follow you — except the files that describe THIS machine: the window layout, the mobile layout, the graph view and the sync\'s own state. Those would rearrange panes you deliberately arranged.')
+      .addToggle(t => t.setValue(s.config !== false).onChange(async v => { s.config = v; await this.save(); }));
+    new Setting(e).setName('Never sync').setDesc('One per line. A trailing slash means a folder; * matches anything.')
+      .addTextArea(t => {
+        t.inputEl.rows = 3;
+        t.setPlaceholder('Archive/\n*.tmp').setValue((s.exclude || []).join('\n'))
+          .onChange(async v => { s.exclude = v.split('\n').map(x => x.trim()).filter(Boolean); await this.save(); });
+      });
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'When two devices disagree' });
+    new Setting(e).setName('Conflicts')
+      .setDesc(vaultsync.CONFLICT_POLICIES.map(p => p.label + ': ' + p.note).join(' · '))
+      .addDropdown(dd => {
+        vaultsync.CONFLICT_POLICIES.forEach(p => dd.addOption(p.id, p.label));
+        dd.setValue(s.conflict || 'keepBoth').onChange(async v => { s.conflict = v; await this.save(); });
+      });
+    new Setting(e).setName('Shared vault')
+      .setDesc('Each device leaves a note on the server saying it is here, so you can be told when someone else is in the vault. This is NOT live co-editing — see the README for why that needs a server this does not have.')
+      .addToggle(t => t.setValue(!!s.shared).onChange(async v => { s.shared = v; await this.save(); }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Backups' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'One zip a day into _backups on the server, taken after the first sync of the day. The oldest are removed once there are more than you want to keep.' });
+    new Setting(e).setName('Daily backup')
+      .addToggle(t => t.setValue(s.backup !== false).onChange(async v => { s.backup = v; await this.save(); }));
+    new Setting(e).setName('Keep').setDesc('How many archives stay on the server.')
+      .addText(t => t.setPlaceholder('30').setValue(String(s.keepBackups == null ? 30 : s.keepBackups))
+        .onChange(async v => { const n = parseInt(v, 10); s.keepBackups = isFinite(n) && n > 0 ? n : 30; await this.save(); }));
+    new Setting(e).setName('Back up now').setDesc('Does not wait for the daily one.')
+      .addButton(b => b.setButtonText('Back up').onClick(() => {
+        if (this.plugin.vaultSync) this.plugin.vaultSync.backupNow(true);
+      }));
+
+    new Setting(e).setName('Sync now')
+      .addButton(b => b.setButtonText('Sync').setCta().onClick(async () => {
+        if (!this.plugin.vaultSync) return;
+        b.setDisabled(true).setButtonText('Syncing…');
+        await this.plugin.vaultSync.syncNow(true);
+        b.setDisabled(false).setButtonText('Sync');
+      }));
+  }
+
   tSketch(e) {
     const s = this.plugin.settings.quicksketch;
     this.head(e, s);
@@ -827,12 +981,146 @@ class NexusSettingsTab extends PluginSettingTab {
         .addOption('black', 'Black')
         .setValue(s.paper || 'paper')
         .onChange(async v => { s.paper = v; await this.save(); }));
+    new Setting(e).setName('Sheet width').setDesc('How wide the paper may render, in pixels. Endless paper has a fixed width, so this is what stops a tablet turned to landscape from stretching the same note to a bigger ink size. 0 = fill whatever space there is.')
+      .addText(t => t.setPlaceholder('1100').setValue(String(s.paperWidth != null ? s.paperWidth : 1100))
+        .onChange(async v => {
+          const px = parseInt(v, 10);
+          s.paperWidth = isFinite(px) && px > 0 ? px : 0;
+          await this.save();
+        }));
+    /* ── Pen ─────────────────────────────────────────────────────────────────
+       The honest framing matters here: people expect the S Pen's air gestures
+       and they simply are not available to a web app, so the note says so
+       rather than letting someone hunt for a setting that cannot exist. */
+    /* ── Handwriting ─────────────────────────────────────────────────────────
+       Recognition runs a binary that is already on the machine. That keeps the
+       plugin one file and the text on the device, and it is why this is a
+       command line rather than a switch. */
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Handwriting' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A sketch is searchable by its title, its sections and its sticky notes without any of this. Recognition adds the handwriting on top — it runs a program you install yourself, so nothing is uploaded and nothing is bundled. Desktop only: a phone has no shell to run it in. Command "Search sketches" does the finding, "Read the handwriting in this sketch" does the reading.' });
+    if (!s.ocr) s.ocr = { enabled: false, command: 'tesseract {in} {out} -l eng', onSave: false };
+    new Setting(e).setName('Recognition command')
+      .setDesc('Run for one page at a time. ' + sketchSearch.OCR_PLACEHOLDER_IN + ' is the image, ' + sketchSearch.OCR_PLACEHOLDER_OUT + ' is where the text should land (Tesseract appends .txt itself). Example: tesseract {in} {out} -l deu')
+      .addText(t => t.setPlaceholder('tesseract {in} {out} -l eng').setValue(s.ocr.command || '')
+        .onChange(async v => { s.ocr.command = v; await this.save(); }));
+    new Setting(e).setName('Check the command').setDesc('Runs it on a small test image and reports what came back.')
+      .addButton(b => b.setButtonText('Test').onClick(async () => {
+        b.setDisabled(true).setButtonText('Testing…');
+        try {
+          const built = sketchSearch.buildOcrCommand(s.ocr.command || '', '/tmp/nexus-probe.png', '/tmp/nexus-probe');
+          if (built.error) throw new Error(built.error);
+          if (!this.plugin.ocrAvailable()) throw new Error('no desktop shell here — recognition cannot run on this device');
+          new Notice('Nexus: would run "' + built.command + '" with ' + built.args.length + ' argument(s). Open a sketch and use the command to read it for real.');
+        } catch (err) {
+          new Notice('Nexus: ' + (err && err.message ? err.message : 'the command could not be parsed.'));
+        }
+        b.setDisabled(false).setButtonText('Test');
+      }));
+
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Pen buttons' });
+    const penNote = e.createEl('p', { cls: 'setting-item-description' });
+    const renderPenNote = () => {
+      const profile = penGestures.PEN_PROFILES[s.penProfile] || penGestures.PEN_PROFILES.generic;
+      penNote.setText(profile.note + ' A browser only sees what the pen does on or near the glass: the side button, the eraser end, and taps.');
+    };
+    new Setting(e).setName('Pen').setDesc('Picks the presets below. It does not change what the hardware reports, only what is assumed about it.')
+      .addDropdown(dd => {
+        penGestures.PROFILE_IDS.forEach(id => dd.addOption(id, penGestures.PEN_PROFILES[id].label));
+        dd.setValue(penGestures.PEN_PROFILES[s.penProfile] ? s.penProfile : 'generic')
+          .onChange(async v => {
+            s.penProfile = v;
+            // Switching pens means switching presets, so per-gesture overrides
+            // from the old one are cleared rather than silently carried over.
+            s.penMap = {};
+            await this.save();
+            this.display();
+          });
+      });
+    renderPenNote();
+    penGestures.PEN_GESTURES.forEach(g => {
+      const active = penGestures.resolveMap(s.penProfile, s.penMap);
+      new Setting(e).setName(g.label).setDesc(g.hint).setClass('nx-set-sub')
+        .addDropdown(dd => {
+          penGestures.PEN_ACTIONS.forEach(a => dd.addOption(a.id, a.label));
+          dd.setValue(active[g.id] || 'none').onChange(async v => {
+            s.penMap = Object.assign({}, s.penMap, { [g.id]: v });
+            await this.save();
+          });
+        });
+    });
+
+    new Setting(e).setName('Slate notes: hide properties').setDesc('A `nexus: slate` note is a whole page of paper. This takes the frontmatter block above it out of the way, so the note opens on the paper and nothing else.')
+      .addToggle(t => t.setValue(!!s.hideFrontmatter).onChange(async v => { s.hideFrontmatter = v; await this.save(); }));
+    new Setting(e).setName('Slate notes: hide the app chrome').setDesc('While a slate note is open, hide the tab bar, the status bar and the left ribbon. Everything comes back the moment you leave the note. (The full-size editor already covers the window on its own.)')
+      .addToggle(t => t.setValue(!!s.immersive).onChange(async v => {
+        s.immersive = v;
+        if (!v) document.body.removeClass('nx-sk-immersive');
+        await this.save();
+      }));
     new Setting(e).setName('Paper texture').setDesc('Lay a subtle paper grain over the pad. Works on any paper colour; toggle live per sketch via the background button.')
       .addToggle(t => t.setValue(s.paperStyle !== false).onChange(async v => { s.paperStyle = v; await this.save(); }));
     new Setting(e).setName('Invert ink on dark paper').setDesc('On a dark paper (Black), lift ONLY near-black ink so dark drawings stay readable — vivid colours keep their punch. Non-destructive: colours are only changed for display and export.')
       .addToggle(t => t.setValue(s.invertOnDark !== false).onChange(async v => { s.invertOnDark = v; await this.save(); }));
-    new Setting(e).setName('Default ink color')
+    new Setting(e).setName('Default ink color').setDesc('What the pen starts with in a vault that has never drawn. After that every tool remembers the colour it was last used with.')
       .addColorPicker(cp => cp.setValue(s.ink || '#2f2f2f').onChange(async v => { s.ink = v; await this.save(); }));
+
+    /* ── Toolbar ─────────────────────────────────────────────────────────────
+       Which buttons a toolbar shows is a property of the DEVICE, not of the
+       vault — a phone wants a menu where a monitor wants buttons. So these
+       write to the shared setting unless "Just this device" is on, and then
+       they go to localStorage and never leave the machine. */
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Toolbar' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The bar holds the tools; the row under it holds the options of whichever tool is active — pen types, sizes and colours. Buttons you leave out of the bar move into its ⋯ menu. Save, full size and “open beside the note” always stay in the bar.' });
+
+    const deviceBar = this.plugin.barOverride() || {};
+    const perDevice = !!deviceBar.enabled;
+    const sharedBar = s.bar || (s.bar = { mode: 'pinned', compact: null, full: null });
+    const barTarget = perDevice ? deviceBar : sharedBar;
+    const writeBar = async () => {
+      if (perDevice) this.plugin.setBarOverride(Object.assign({ enabled: true }, barTarget));
+      else await this.save();
+    };
+
+    new Setting(e).setName('Just this device')
+      .setDesc('Give this device its own toolbar. Stored locally and never synced, so a phone can keep three buttons while the desktop keeps all of them.')
+      .addToggle(t => t.setValue(perDevice).onChange(v => {
+        // Starting an override copies what is on screen right now, so switching
+        // it on changes nothing until something below is actually changed.
+        this.plugin.setBarOverride(v ? Object.assign({ enabled: true }, this.plugin.barConfig(s)) : null);
+        this.display();
+      }));
+
+    new Setting(e).setName('Options row')
+      .setDesc('“Always open” keeps pen types, sizes and colours under the bar. “Opens when you pick a tool” gives that space back to the canvas and closes the row again on your first stroke.')
+      .addDropdown(dd => {
+        Object.keys(BAR_MODES).forEach(id => dd.addOption(id, BAR_MODES[id]));
+        dd.setValue(barTarget.mode === 'reveal' ? 'reveal' : 'pinned')
+          .onChange(async v => { barTarget.mode = v; await writeBar(); });
+      });
+
+    [['compact', 'Buttons in a note', BAR_DEFAULTS.compact], ['full', 'Buttons in the full-size editor', BAR_DEFAULTS.full]].forEach(([ctx, label, def]) => {
+      e.createEl('div', { cls: 'nx-cardcfg-sec', text: label });
+      e.createEl('p', { cls: 'setting-item-description', text: 'On = in the bar, off = in the ⋯ menu.' });
+      BAR_ITEMS.forEach(item => {
+        const list = () => (Array.isArray(barTarget[ctx]) ? barTarget[ctx] : def).slice();
+        new Setting(e).setName(item.label).setClass('nx-set-sub')
+          .addToggle(t => t.setValue(list().includes(item.id)).onChange(async v => {
+            // Rebuilt from BAR_ITEMS so the bar keeps its canonical order —
+            // toggling a button off and on again must not move it to the end.
+            const next = BAR_ITEMS.map(i => i.id).filter(id => (id === item.id) ? v : list().includes(id));
+            if (!next.some(id => (BAR_ITEMS.find(other => other.id === id) || {}).kind === 'tool')) {
+              new Notice('Nexus: the bar needs at least one tool to draw with.');
+              t.setValue(true);
+              return;
+            }
+            barTarget[ctx] = next;
+            await writeBar();
+          }));
+      });
+    });
+
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Brush sizes' });
     e.createEl('p', { cls: 'setting-item-description',
       text: 'On-screen px, remembered per pen. Adjust live per sketch in the toolbar (slider); switching pens restores that pen’s width.' });
@@ -861,13 +1149,13 @@ class NexusSettingsTab extends PluginSettingTab {
     new Setting(e).setName('Shape recognition').setDesc('Hold the pen still right after drawing → the stroke snaps to a clean line / rectangle / ellipse / triangle.')
       .addToggle(t => t.setValue(s.shapeSnap !== false).onChange(async v => { s.shapeSnap = v; await this.save(); }));
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Pen behaviour (smoothing, pressure, sharpness, speed fade — and the marker\'s tip/overlap): tap the ACTIVE pen in a sketch toolbar again. Colour palettes (create/rename/switch, max 8 colours): the swatch-book button next to the colours.' });
+      text: 'Pen behaviour (smoothing, pressure, sharpness, speed fade — and the marker\'s tip/overlap): tap the ACTIVE pen in the options row again. Colour palettes (create/rename/switch, max 8 colours): the swatch-book button at the end of the colours — it sets the palette for the tool you are holding.' });
 
     // ── Palettes: ALL of them, not just the active one. Each holds up to 8
     //    colours; the sketch toolbar hides its "+" once a palette is full. ──
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Colour palettes' });
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Max 8 colours each. The active one is what a sketch toolbar shows; switch it here or via the swatch-book button in any toolbar.' });
+      text: 'Max 8 colours each. The one marked active is the default; a tool that was given its own palette (swatch-book button in the options row) keeps using that one instead.' });
     if (!Array.isArray(s.palettes) || !s.palettes.length) s.palettes = [{ name: 'Default', colors: (s.palette || ['#2f2f2f']).slice(0, 8) }];
     if (s.activePalette == null || s.activePalette >= s.palettes.length) s.activePalette = 0;
     s.palette = s.palettes[s.activePalette].colors;

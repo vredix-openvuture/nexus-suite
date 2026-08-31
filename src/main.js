@@ -22,10 +22,12 @@ const { CalDavClient } = require('./lib/caldav.js');
 const { VikunjaClient } = require('./lib/vikunja.js');
 const { NexusConflictModal } = require('./modals/conflict.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
-const { CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
+const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
 const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusAgenda } = require('./lib/agenda.js');
 const { NexusBoard } = require('./lib/board.js');
+const { NexusPlanner } = require('./views/plannerblock.js');
+const { NexusVaultSync } = require('./lib/vaultsyncrun.js');
 const { NexusKanban } = require('./lib/kanban.js');
 const { NexusEditorial } = require('./lib/editorial.js');
 const { NexusFocus } = require('./lib/focus.js');
@@ -36,6 +38,12 @@ const { NexusSprint } = require('./lib/sprint.js');
 const { NexusTagTools } = require('./lib/tagtools.js');
 const { NexusInkGalleryView, NexusInkTagModal } = require('./views/ink.js');
 const { NexusSketchSurface, parseSketchSVG, ratioWH, PEN_TYPES } = require('./views/sketch.js');
+const sketchObjects = require('./lib/sketchobjects.js');
+const penGestures = require('./lib/sketchgestures.js');
+const sketchExport = require('./lib/sketchexport.js');
+const sketchSearch = require('./lib/sketchsearch.js');
+const quicknote = require('./lib/quicknote.js');
+const extcommand = require('./lib/extcommand.js');
 const { NexusNameModal } = require('./modals/misc.js');
 const { NexusSearchModal } = require('./modals/search.js');
 const { NexusSettingsTab } = require('./settings.js');
@@ -85,6 +93,8 @@ module.exports = class NexusSuite extends Plugin {
     this._guard('editorial', () => { this.editorial = new NexusEditorial(this); this.editorial.init(); });
     this._guard('board', () => { this.board = new NexusBoard(this); this.board.init(); });
     this._guard('kanban', () => { this.kanban = new NexusKanban(this); this.kanban.init(); });
+    this._guard('planner', () => { this.planner = new NexusPlanner(this); this.planner.init(); });
+    this._guard('vaultSync', () => { this.vaultSync = new NexusVaultSync(this); this.vaultSync.init(); });
     // ── Agenda code block (one day: events + tasks + backlinks, for daily notes) ──
     this._guard('agenda', () => { this.agenda = new NexusAgenda(this); this.agenda.init(); });
 
@@ -236,6 +246,32 @@ module.exports = class NexusSuite extends Plugin {
     // note content via the refreshBanner() wiring (see updateProtokoll). No
     // custom view, no code block.
     this.addCommand({ id: 'nexus-new-protokoll', name: 'New slate (drawing note)', callback: () => this.createProtokollNote() });
+    this.addCommand({ id: 'nexus-track-note-as-task', name: 'Track this note as a task',
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== 'md') return false;
+        if (checking) return true;
+        this.toggleNoteTask(file);
+        return true;
+      } });
+    this.addCommand({ id: 'nexus-insert-planner', name: 'Insert a planner',
+      editorCallback: (editor) => {
+        const { plannerTemplate } = require('./lib/planner.js');
+        const body = plannerTemplate(moment().format('YYYY-MM-DD'));
+        editor.replaceSelection('```nexus-planner\n' + body + '\n```\n');
+      } });
+    this.addCommand({ id: 'nexus-quicknote', name: 'Quick note (speak it)',
+      callback: () => {
+        if (!this.settings.quicknote || this.settings.quicknote.enabled === false) {
+          new Notice('Nexus: QuickNote is off — Settings → QuickNote.');
+          return;
+        }
+        const { NexusQuickNoteModal } = require('./modals/quicknote.js');
+        new NexusQuickNoteModal(this).open();
+      } });
+    this.addCommand({ id: 'nexus-search-sketches', name: 'Search sketches', callback: () => this.openSketchSearch() });
+    this.addCommand({ id: 'nexus-ocr-sketch', name: 'Read the handwriting in this sketch',
+      callback: () => this.ocrActiveSketch() });
     this.addCommand({ id: 'nexus-toggle-slate', name: 'Toggle slate mode',
       checkCallback: (checking) => {
         const v = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -557,6 +593,47 @@ module.exports = class NexusSuite extends Plugin {
     }
     this._deviceId = id;
     return id;
+  }
+
+  /* ---- Sketch toolbar layout ------------------------------------------------
+     Which buttons a toolbar shows is a property of the DEVICE, not of the
+     vault: a phone wants three buttons and a menu where a desktop wants all of
+     them. So the shared setting is only the default, and a device may keep its
+     own copy in localStorage — never in the vault, so Syncthing can't carry
+     one machine's cramped phone bar onto another's monitor.
+
+     Shape either way: { mode: 'pinned'|'reveal', compact: [ids], full: [ids] }.
+     A null list means "the built-in default", so a vault that never touches
+     this keeps working when BAR_DEFAULTS changes. */
+  barKey() { return 'nexus-suite-sketchbar'; }
+  barOverride() {
+    try { return JSON.parse(window.localStorage.getItem(this.barKey()) || 'null'); } catch (e) { return null; }
+  }
+  setBarOverride(obj) {
+    try {
+      if (obj) window.localStorage.setItem(this.barKey(), JSON.stringify(obj));
+      else window.localStorage.removeItem(this.barKey());
+    } catch (e) {}
+  }
+  barConfig(s) {
+    const shared = s.bar || (s.bar = { mode: 'pinned', compact: null, full: null });
+    const dev = this.barOverride();
+    const cfg = (dev && dev.enabled) ? Object.assign({}, shared, dev) : shared;
+    const list = (v, def) => {
+      // Unknown ids are dropped, so a list written by a newer version can't
+      // render a button this one has no builder for.
+      if (!Array.isArray(v)) return def.slice();
+      const keep = v.filter(id => BAR_ITEM_IDS.includes(id));
+      // A bar with no tool at all cannot draw — that is a broken editor, not a
+      // preference, so the pen comes back.
+      if (!keep.some(id => (BAR_ITEMS.find(i => i.id === id) || {}).kind === 'tool')) keep.unshift('pen');
+      return keep;
+    };
+    return {
+      mode: cfg.mode === 'reveal' ? 'reveal' : 'pinned',
+      compact: list(cfg.compact, BAR_DEFAULTS.compact),
+      full: list(cfg.full, BAR_DEFAULTS.full),
+    };
   }
   /* Suggestion sources for the card config modals (nxAutocomplete calls these
      on the plugin object — they must exist here, not just on the view). */
@@ -2149,6 +2226,184 @@ module.exports = class NexusSuite extends Plugin {
      with an empty pad never modifies it. */
   _sketchFolder() { return (this.settings.quicksketch.folder || 'Inbox/Quicksketch').replace(/\/$/, ''); }
   _sketchPath(id) { return this._sketchFolder() + '/' + id + '.svg'; }
+  /* ── Finding a sketch again ────────────────────────────────────────────────
+     Every sidecar is read once and cached against its mtime: a search that
+     re-parsed a hundred SVGs on every keystroke would be unusable, and a cache
+     without the mtime would go stale the first time anything was edited. */
+  async sketchDocuments() {
+    const folder = (this.settings.quicksketch.folder || 'Inbox/Quicksketch').replace(/\/+$/, '');
+    const cache = (this._sketchDocs = this._sketchDocs || new Map());
+    const files = this.app.vault.getFiles()
+      .filter(f => f.extension === 'svg' && f.path.startsWith(folder + '/'));
+    const docs = [];
+    const seen = new Set();
+    for (const file of files) {
+      seen.add(file.path);
+      const stamp = file.stat ? file.stat.mtime : 0;
+      const hit = cache.get(file.path);
+      if (hit && hit.stamp === stamp) { docs.push(hit.doc); continue; }
+      try {
+        const data = parseSketchSVG(await this.app.vault.read(file));
+        if (!data) continue;
+        const doc = sketchSearch.sketchDocument(file.path, data);
+        cache.set(file.path, { stamp, doc });
+        docs.push(doc);
+      } catch (e) { /* an unreadable sidecar is skipped, not fatal to the search */ }
+    }
+    for (const key of Array.from(cache.keys())) if (!seen.has(key)) cache.delete(key);
+    return docs;
+  }
+  /* `nexus-task: true` in any note puts it in the tasks view without moving it.
+     The command says which way it went, because a frontmatter field appearing
+     silently is not feedback. */
+  async toggleNoteTask(file) {
+    const tasks = require('./lib/tasks.js');
+    try {
+      const on = await tasks.toggleNoteTask(this, file);
+      new Notice(on
+        ? 'Nexus: "' + file.basename + '" is now tracked in your tasks.'
+        : 'Nexus: "' + file.basename + '" is no longer tracked.');
+    } catch (err) {
+      new Notice('Nexus: could not change tracking — ' + (err && err.message ? err.message : 'unknown error'));
+    }
+  }
+  /* ── QuickNote ─────────────────────────────────────────────────────────────
+     The recording goes to a program the user installed; the text comes back and
+     becomes a note. Same bargain as the handwriting reader: nothing is uploaded
+     and nothing is bundled, at the cost of being desktop only. */
+  async transcribeAudio(blob) {
+    const cfg = this.settings.quicknote || {};
+    if (!this.ocrAvailable()) throw new Error('the local recogniser needs a desktop shell — switch to the browser engine in the settings');
+    const built = extcommand.buildCommand(cfg.command || '', '', '');
+    if (built.error) throw new Error(built.error);
+    const cp = require('child_process');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-speech-'));
+    const inPath = path.join(dir, 'clip.webm');
+    const outStem = path.join(dir, 'clip');
+    const argv = extcommand.buildCommand(cfg.command || '', inPath, outStem);
+    try {
+      fs.writeFileSync(inPath, Buffer.from(await blob.arrayBuffer()));
+      const stdout = await new Promise((resolve, reject) => {
+        cp.execFile(argv.command, argv.args, { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, out, stderr) => {
+          if (err) reject(new Error((argv.command + ' failed: ' + (stderr || err.message)).trim()));
+          else resolve(out);
+        });
+      });
+      // Some recognisers write a file, others just print. Both are accepted so
+      // the command line is not forced into one shape.
+      let raw = '';
+      for (const candidate of [outStem + '.txt', outStem]) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) { raw = fs.readFileSync(candidate, 'utf8'); break; }
+      }
+      if (!raw) raw = String(stdout || '');
+      return quicknote.cleanTranscript(raw);
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+    }
+  }
+  async writeQuickNote(lines, meta) {
+    const cfg = this.settings.quicknote || {};
+    const folder = (cfg.folder || 'Inbox/Quicknote').replace(/\/+$/, '');
+    await this.ensureFolderPath(folder);
+    const stamp = moment().format('YYYY-MM-DD HHmm');
+    const title = quicknote.titleFrom(lines, 'Quick note');
+    let path = quicknote.notePath(folder, title, '');
+    if (this.app.vault.getAbstractFileByPath(path)) path = quicknote.notePath(folder, title, stamp);
+    const body = quicknote.noteBody(lines, {
+      recorded: moment().format('YYYY-MM-DDTHH:mm'),
+      seconds: meta && meta.seconds, engine: meta && meta.engine, task: meta && meta.task,
+    });
+    const file = await this.app.vault.create(path, body);
+    if (cfg.openAfter !== false) this.app.workspace.getLeaf(false).openFile(file);
+    return path;
+  }
+  /* Create a folder and its parents. The sketch module has its own version for
+     its own folder; this is the general one. */
+  async ensureFolderPath(folder) {
+    const adapter = this.app.vault.adapter;
+    let at = '';
+    for (const part of String(folder).split('/')) {
+      if (!part) continue;
+      at = at ? at + '/' + part : part;
+      try { if (!(await adapter.exists(at))) await adapter.mkdir(at); } catch (e) {}
+    }
+  }
+
+  async openSketchSearch() {
+    const { NexusSketchSearchModal } = require('./modals/sketchsearch.js');
+    new NexusSketchSearchModal(this, await this.sketchDocuments()).open();
+  }
+
+  /* ── Handwriting ───────────────────────────────────────────────────────────
+     The image goes to a binary the user already has and the text comes back.
+     Desktop only: there is no shell on a phone, and pretending otherwise would
+     mean a button that silently does nothing there. */
+  ocrAvailable() {
+    try { return !!(require('child_process') && require('fs') && require('os') && require('path')); }
+    catch (e) { return false; }
+  }
+  async runSketchOcr(surface) {
+    const cfg = this.settings.quicksketch.ocr || {};
+    if (!this.ocrAvailable()) throw new Error('handwriting recognition needs a desktop shell — it cannot run here');
+    const png = await this._sketchToPng(surface, 2);
+    const cp = require('child_process');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-ocr-'));
+    const inPath = path.join(dir, 'page.png');
+    // Tesseract appends its own .txt; the template is handed the stem, and the
+    // reader below accepts either spelling so other engines fit too.
+    const outStem = path.join(dir, 'page');
+    const built = sketchSearch.buildOcrCommand(cfg.command || '', inPath, outStem);
+    if (built.error) { fs.rmSync(dir, { recursive: true, force: true }); throw new Error(built.error); }
+    try {
+      fs.writeFileSync(inPath, Buffer.from(png));
+      await new Promise((resolve, reject) => {
+        cp.execFile(built.command, built.args, { timeout: 120000 }, (err, stdout, stderr) => {
+          if (err) reject(new Error((built.command + ' failed: ' + (stderr || err.message)).trim()));
+          else resolve(stdout);
+        });
+      });
+      let raw = '';
+      for (const candidate of [outStem + '.txt', outStem]) {
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) { raw = fs.readFileSync(candidate, 'utf8'); break; }
+      }
+      if (!raw) throw new Error(built.command + ' produced no text file');
+      return sketchSearch.cleanOcrText(raw);
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+    }
+  }
+  async ocrActiveSketch() {
+    const surface = this._activeSketchSurface();
+    if (!surface) { new Notice('Nexus: open a sketch first.'); return; }
+    new Notice('Nexus: reading the handwriting…');
+    try {
+      const lines = await this.runSketchOcr(surface);
+      surface.setOcr(lines);
+      this._sketchDocs = null;   // the index is stale now
+      new Notice(lines.length ? 'Nexus: read ' + lines.length + ' line(s) — the sketch is searchable now.'
+                              : 'Nexus: nothing legible was found.');
+    } catch (err) {
+      new Notice('Nexus: ' + (err && err.message ? err.message : 'handwriting recognition failed.'));
+    }
+  }
+  /* The surface the user is looking at: the full-size editor wins, then any
+     live pad in the note. */
+  _activeSketchSurface() {
+    const fs = document.body.querySelector('.nx-sketch-fs .nx-sketch-pad');
+    if (fs && fs._surface) return fs._surface;
+    const live = this._sketchLive ? Object.values(this._sketchLive) : [];
+    for (const surface of live) if (surface && document.contains(surface.host)) return surface;
+    const pk = document.querySelector('.nx-pk-inline');
+    if (pk && pk._surface) return pk._surface;
+    return null;
+  }
+
   async ensureSketchFolder() {
     if (!this.settings.quicksketch.enabled) return;
     const dir = this._sketchFolder();
@@ -2251,10 +2506,14 @@ module.exports = class NexusSuite extends Plugin {
 
     const surface = new NexusSketchSurface(pad, {
       W, H, bg, paper, paperStyle, invertOnDark: s.invertOnDark !== false, ink: s.ink, penSizes: s.penSizes, pen: 'fountain',
+      paperWidth: s.paperWidth,   // the cap also travels into the full-size editor, which reparents this very pad
       penConfig: (s.penConfig = s.penConfig || {}),   // live reference — pen menu edits apply on the next stroke
       shapeSnap: s.shapeSnap !== false,
       bgType, bgSize, bgOpacity, bgColor: s.bgColor, autoGrow,
       strokes: carried,
+      objects: (outgoing && outgoing.objects && outgoing.objects.length) ? outgoing.objects : (data ? data.objects : null),
+      sections: data ? data.sections : null,
+      ocr: data ? data.ocr : null,
       resizable: true,
       onCommit: () => this._persistSketch(state, surface, ctx, el),
     });
@@ -2432,18 +2691,143 @@ module.exports = class NexusSuite extends Plugin {
     paint(false);
   }
 
-  /* Build the sketch toolbar. Two variants:
-       'compact' — the code-block bar. One non-wrapping row: pens · eraser ·
-                   size · colours (flex, scrolls if many) · undo/redo · a ⋯
-                   overflow menu (background / auto-grow / palettes / clear /
-                   done) · a full-size-editor button.
-       'full'    — the full-window editor. Same controls, but with room, so
-                   background/palettes/auto-grow/clear sit inline and the last
-                   button collapses the editor instead of hiding the bar. */
+  /* An image placed in a sketch is embedded as a data URI, so the .svg sidecar
+     stays a standalone file — a sidecar pointing at a vault path stops being
+     standalone the moment it is copied. That makes size a real cost, so the
+     picture is downscaled before it goes in. */
+  _pickImageFile() {
+    return new Promise(resolve => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = () => resolve(input.files && input.files[0] ? input.files[0] : null);
+      input.click();
+    });
+  }
+  async _sketchImageData(file, maxDim) {
+    const max = maxDim || 1400;
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) bitmap.close();
+    // Line art and anything with transparency stays PNG; a photo is far smaller
+    // as JPEG, and in a note that difference is worth choosing per file.
+    const mime = /png|gif|webp|svg/i.test(file.type || '') ? 'image/png' : 'image/jpeg';
+    const blob = await new Promise(res => cv.toBlob(res, mime, 0.82));
+    if (!blob) throw new Error('could not encode ' + (file.name || 'the image'));
+    const href = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => res(String(reader.result));
+      reader.onerror = () => rej(new Error('could not read ' + (file.name || 'the image')));
+      reader.readAsDataURL(blob);
+    });
+    return { href, w, h };
+  }
+
+  /* ── Export ────────────────────────────────────────────────────────────────
+     Rasterising goes through the SAME string the sidecar is written as, so what
+     is exported is what is stored — not a second rendering that can disagree
+     with it. */
+  async _rasterSketch(surface, scale) {
+    const svg = surface.toSVGString();
+    const width = Math.max(1, Math.round(surface.W * (scale || 2)));
+    const height = Math.max(1, Math.round(surface.H * (scale || 2)));
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    try {
+      const img = await new Promise((res, rej) => {
+        const el = new Image();
+        el.onload = () => res(el);
+        el.onerror = () => rej(new Error('the drawing could not be rendered'));
+        el.src = url;
+      });
+      const cv = document.createElement('canvas');
+      cv.width = width; cv.height = height;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      return { canvas: cv, ctx, width, height };
+    } finally { URL.revokeObjectURL(url); }
+  }
+  async _sketchToPng(surface, scale) {
+    const { canvas } = await this._rasterSketch(surface, scale);
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    if (!blob) throw new Error('the image could not be encoded');
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  async _sketchToPdf(surface, scale) {
+    const { canvas, ctx, width, height } = await this._rasterSketch(surface, scale);
+    const rgba = ctx.getImageData(0, 0, width, height).data;
+    const packed = await sketchExport.deflate(sketchExport.rgbaToRgbOnWhite(rgba));
+    if (packed) {
+      return sketchExport.pdfDocument(packed, {
+        width, height, filter: 'FlateDecode',
+        pageWidth: surface.W, pageHeight: surface.H,
+      });
+    }
+    /* No CompressionStream on this runtime: fall back to JPEG, which every PDF
+       reader takes as-is. Lossy, and the caller says so. */
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95));
+    if (!blob) throw new Error('the page could not be encoded');
+    return sketchExport.pdfDocument(new Uint8Array(await blob.arrayBuffer()), {
+      width, height, filter: 'DCTDecode',
+      pageWidth: surface.W, pageHeight: surface.H,
+    });
+  }
+  /* Write the export next to the other sketches and say where it went — a file
+     that appears somewhere unnamed may as well not have been written. */
+  async _exportSketch(surface, format, scale) {
+    const folder = (this.settings.quicksketch.folder || 'Inbox/Quicksketch').replace(/\/+$/, '');
+    await this.ensureSketchFolder();
+    const stamp = moment().format('YYYY-MM-DD HHmm');
+    const spec = sketchExport.EXPORT_FORMATS.find(f => f.id === format) || sketchExport.EXPORT_FORMATS[0];
+    const name = sketchExport.exportFileName(surface.title, spec.ext, stamp);
+    let path = folder + '/' + name;
+    for (let n = 2; this.app.vault.getAbstractFileByPath(path) && n < 100; n++) {
+      path = folder + '/' + sketchExport.exportFileName(surface.title, spec.ext, stamp + ' ' + n);
+    }
+    if (format === 'svg') await this.app.vault.create(path, surface.toSVGString());
+    else {
+      const bytes = format === 'pdf'
+        ? await this._sketchToPdf(surface, scale)
+        : await this._sketchToPng(surface, scale);
+      await this.app.vault.createBinary(path, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    }
+    return path;
+  }
+
+  /* Build the sketch toolbar: a TOOL row, and under it the OPTIONS row of
+     whatever tool is active — pen types + sizes + colours for the pen, sizes +
+     colours for the highlighter, nothing at all for the eraser (that row hides
+     rather than sit there empty).
+
+     `bar.mode` only decides whether the options row is pinned open or opens on
+     a tool tap and closes again on the first stroke. Both render the SAME row,
+     so this is one code path and not two toolbars.
+
+     Which buttons sit in the bar and which fall into the ⋯ menu comes from
+     BAR_ITEMS filtered by the user's list (barConfig) — separately for the code
+     block ('compact') and the full-size editor ('full'). The buttons that leave
+     the sketch (save, full size, split) are not in that list: they are always
+     in the bar, because a user cannot be allowed to hide their way out. */
   _buildSketchBar(bar, surface, s, opts) {
     opts = opts || {};
     const full = opts.mode === 'full';
     const plugin = this;
+    const layout = this.barConfig(s);
+    const inBar = full ? layout.full : layout.compact;
+
+    /* The options row is a SIBLING of the bar, so every caller's own layout —
+       including the code block's collapse wrapper — keeps working untouched.
+       Rebuilds call bar.empty(), which cannot reach a sibling, so a stale row
+       from the previous build has to go first or they stack up. */
+    const stale = bar.nextElementSibling;
+    if (stale && stale.hasClass && stale.hasClass('nx-sketch-subbar')) stale.remove();
+    const sub = createDiv('nx-sketch-subbar');
+    bar.insertAdjacentElement('afterend', sub);
+
     const iconBtn = (parent, icon, title, cb, cls) => {
       const b = parent.createDiv({ cls: 'nx-sk-btn' + (cls ? ' ' + cls : ''), attr: { 'aria-label': title } });
       setIcon(b, icon);
@@ -2453,23 +2837,68 @@ module.exports = class NexusSuite extends Plugin {
     const BG_ICON = { none: 'square', grid: 'layout-grid', graph: 'grid-3x3', lines: 'align-justify', dots: 'grip', cross: 'plus', isometric: 'triangle', isodots: 'grip' };
 
     // ── shared state referenced across groups ──
-    let eraBtn, favWrap, colWrap, drawBtn, markerBtn;
+    let favWrap, colWrap;
+    let subOpen = false;                 // reveal mode only — pinned ignores it
+    let lastTool = null;                 // what a gesture switches back TO
+    let gestureHeldTool = null;          // the tool a hold-gesture interrupted
+    const toolBtns = {};
     const PEN_META = { fountain: ['Fountain', 'pen-tool'], ballpoint: ['Ballpoint', 'pen'], pencil: ['Pencil', 'pencil'], brush: ['Brush', 'brush'], calligraphy: ['Calligraphy', 'feather'], marker: ['Marker', 'highlighter'] };
     const DRAW_PENS = ['fountain', 'ballpoint', 'pencil', 'brush', 'calligraphy'];
-    let drawPen = DRAW_PENS.includes(surface.pen) ? surface.pen : 'fountain';   // the chosen drawing pen behind the first button
-    const syncActive = () => {
-      const drawing = surface.mode === 'draw';
-      if (drawBtn) drawBtn.toggleClass('is-active', drawing && surface.pen !== 'marker');
-      if (markerBtn) markerBtn.toggleClass('is-active', drawing && surface.pen === 'marker');
-      if (eraBtn) eraBtn.toggleClass('is-active', surface.mode === 'erase');
-    };
-    const persistSize = () => { s.penSizes[surface.pen] = surface.getSize(); plugin.saveSettings(); };
-    const drawWithCurrent = () => { surface.setMode('draw'); syncActive(); };
+    let drawPen = DRAW_PENS.includes(surface.pen) ? surface.pen : 'fountain';   // the drawing pen behind the "pen" tool
 
-    /* ═══ pens: [drawing pen ▸ chooser] · eraser · highlighter ═══ */
-    // Shared per-pen settings sheet (rebuilt in place). The value now lives IN
-    // the label's flex row — never floated — so it can't overlap the rows below
-    // (that was the marker-menu overlap).
+    /* Which BAR_ITEM the surface is currently in. Everything per-tool (colour,
+       palette, the options row) keys off this one function, so there is a
+       single answer to "which tool is this" instead of three. */
+    const TOOL_OF = () => (surface.mode === 'erase' ? 'eraser'
+      : surface.mode === 'select' ? 'select'
+      : surface.mode === 'space' ? 'space'
+      : surface.mode === 'insert' ? 'insert'
+      : surface.pen === 'marker' ? 'marker' : 'pen');
+    const TOOL_LABEL = { pen: 'Pen', marker: 'Highlighter', eraser: 'Eraser', select: 'Select', space: 'Spacing', insert: 'Insert' };
+    // Neither of these puts ink on the page, so neither owns a colour.
+    const DRAWS = (tool) => ['eraser', 'select', 'space', 'insert'].indexOf(tool) < 0;
+
+    const persistSize = () => { s.penSizes[surface.pen] = surface.getSize(); plugin.saveSettings(); };
+    /* Picking a colour or a width does not change the TOOL, so only the tool
+       buttons need re-syncing — rebuilding the options row on every swatch tap
+       would tear it out from under the finger that is tapping it. Leaving the
+       eraser this way does change the tool, so that case still rebuilds. */
+    const drawWithCurrent = () => {
+      const before = TOOL_OF();
+      surface.setMode('draw');
+      if (TOOL_OF() === before) syncTools(); else syncAll();
+    };
+
+    /* ═══ palettes + colours, per tool ═══ */
+    const ensurePalettes = () => {
+      if (!Array.isArray(s.palettes) || !s.palettes.length) s.palettes = [{ name: 'Default', colors: (s.palette || ['#2f2f2f']).slice(0, 8) }];
+      if (s.activePalette == null || s.activePalette >= s.palettes.length) s.activePalette = 0;
+      s.palette = s.palettes[s.activePalette].colors;   // legacy alias — the GLOBAL active one, not the tool's
+      return s.palettes;
+    };
+    /* A palette belongs to a tool: the highlighter wants washes where the pen
+       wants ink. A tool that was never given one uses the globally active
+       palette, so nothing changes for anyone who never picks. */
+    const palIdx = (tool) => {
+      ensurePalettes();
+      const chosen = (s.toolPalettes || (s.toolPalettes = {}))[tool];
+      return (chosen != null && chosen >= 0 && chosen < s.palettes.length) ? chosen : s.activePalette;
+    };
+    const activePal = () => s.palettes[palIdx(TOOL_OF())];
+    const rememberColor = (col) => { (s.toolColors || (s.toolColors = {}))[TOOL_OF()] = col; plugin.saveSettings(); };
+    /* Each tool keeps the ink it was last used with. A tool that has never been
+       used starts at the head of its own palette — except the pen on a fresh
+       vault, which starts at the "default ink" setting. */
+    const applyToolColor = () => {
+      const tool = TOOL_OF();
+      const colors = (s.toolColors || (s.toolColors = {}));
+      if (colors[tool] == null) colors[tool] = (tool === 'pen' && s.ink) ? s.ink : activePal().colors[0];
+      surface.setColor(colors[tool]);
+    };
+
+    /* ═══ per-pen behaviour sheet (smoothing, pressure, …) ═══ */
+    // The value lives IN the label's flex row — never floated — so it can't
+    // overlap the rows below (that was the marker-menu overlap).
     const buildPenSettings = (box, id) => {
       box.empty();
       const cfg = s.penConfig[id] || (s.penConfig[id] = {});
@@ -2504,45 +2933,12 @@ module.exports = class NexusSuite extends Plugin {
       const reset = box.createEl('button', { cls: 'nx-sk-savecol', text: 'Reset to defaults' });
       reset.onclick = () => { delete s.penConfig[id]; plugin.saveSettings(); buildPenSettings(box, id); };
     };
-    // Drawing-pen button, already active → chooser: pick a drawing pen + tune it.
-    const openDrawChooser = (anchor) => {
+    const openPenSettings = (anchor, id) => {
       plugin._showPopover(anchor, (pop) => {
         pop.addClass('nx-sk-penpop');
-        pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Pen' });
-        const row = pop.createDiv('nx-sk-penrow');
-        const box = pop.createDiv('nx-sk-pensettings');
-        DRAW_PENS.forEach(id => {
-          const b = row.createDiv({ cls: 'nx-sk-penchip', attr: { 'aria-label': PEN_META[id][0] } });
-          setIcon(b, PEN_META[id][1]);
-          b.toggleClass('is-active', drawPen === id);
-          b.onclick = () => {
-            drawPen = id; surface.setPen(id); surface.setMode('draw'); setIcon(drawBtn, PEN_META[id][1]);
-            row.querySelectorAll('.nx-sk-penchip').forEach(x => x.removeClass('is-active')); b.addClass('is-active');
-            syncActive(); renderFavs(); buildPenSettings(box, id);
-          };
-        });
-        buildPenSettings(box, drawPen);
+        pop.createDiv({ cls: 'nx-sk-pop-title', text: PEN_META[id][0] });
+        buildPenSettings(pop.createDiv('nx-sk-pensettings'), id);
       });
-    };
-    const openMarkerConfig = (anchor) => {
-      plugin._showPopover(anchor, (pop) => {
-        pop.addClass('nx-sk-penpop');
-        pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Highlighter' });
-        buildPenSettings(pop.createDiv('nx-sk-pensettings'), 'marker');
-      });
-    };
-    const buildPens = (parent) => {
-      drawBtn = iconBtn(parent, PEN_META[drawPen][1], 'Pen (tap again: choose + settings)', null);
-      drawBtn.onclick = () => {
-        if (surface.mode === 'draw' && surface.pen !== 'marker') { openDrawChooser(drawBtn); return; }
-        surface.setPen(drawPen); surface.setMode('draw'); setIcon(drawBtn, PEN_META[drawPen][1]); syncActive(); renderFavs();
-      };
-      eraBtn = iconBtn(parent, 'eraser', 'Erase', () => { surface.setMode('erase'); syncActive(); });
-      markerBtn = iconBtn(parent, 'highlighter', 'Highlighter (tap again: settings)', null);
-      markerBtn.onclick = () => {
-        if (surface.mode === 'draw' && surface.pen === 'marker') { openMarkerConfig(markerBtn); return; }
-        surface.setPen('marker'); surface.setMode('draw'); syncActive(); renderFavs();
-      };
     };
 
     /* ═══ size favourites (dots sized to their width) ═══ */
@@ -2551,8 +2947,7 @@ module.exports = class NexusSuite extends Plugin {
     const sliderToPx = (t) => Math.round((SIZE_MIN + SIZE_SPAN * t * t) * 10) / 10;
     const pxToSlider = (v) => Math.round(Math.sqrt(Math.max(0, (v - SIZE_MIN) / SIZE_SPAN)) * 1000);
     /* Favourites belong to the ACTIVE PEN — a marker and a pencil have nothing
-       useful to say about each other's widths. renderFavs() already runs on
-       every pen switch, so the strip just follows along. */
+       useful to say about each other's widths. */
     const favsOf = () => {
       const all = s.sizeFavorites && !Array.isArray(s.sizeFavorites) ? s.sizeFavorites : (s.sizeFavorites = {});
       const pen = surface.pen || 'fountain';
@@ -2600,24 +2995,17 @@ module.exports = class NexusSuite extends Plugin {
     };
     const buildSizes = (parent) => { favWrap = parent.createDiv('nx-sk-favs'); renderFavs(); };
 
-    /* ═══ colours + palettes ═══ */
-    const activePal = () => {
-      if (!Array.isArray(s.palettes) || !s.palettes.length) s.palettes = [{ name: 'Default', colors: (s.palette || ['#2f2f2f']).slice(0, 8) }];
-      if (s.activePalette == null || s.activePalette >= s.palettes.length) s.activePalette = 0;
-      const pal = s.palettes[s.activePalette];
-      s.palette = pal.colors;
-      return pal;
-    };
-    // Palette switcher popover — named palettes, max 8 colours each. Reused by
-    // the inline switcher (full) and the ⋯ menu (compact).
+    /* ═══ palette switcher — picks the palette for the CURRENT tool ═══ */
     const paletteBuild = (pop, closePop) => {
       pop.addClass('nx-sk-palpop');
-      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Palettes' });
-      activePal();
+      const tool = TOOL_OF();
+      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Palette · ' + (TOOL_LABEL[tool] || 'Pen') });
+      ensurePalettes();
+      const chosen = palIdx(tool);
       s.palettes.forEach((pal, idx) => {
         const row = pop.createDiv('nx-sk-palrow');
-        row.toggleClass('is-active', idx === s.activePalette);
-        if (idx === s.activePalette) {
+        row.toggleClass('is-active', idx === chosen);
+        if (idx === chosen) {
           const nameInp = row.createEl('input', { type: 'text', cls: 'nx-sk-palname' });
           nameInp.value = pal.name || 'Palette';
           nameInp.onchange = () => { pal.name = nameInp.value.trim() || 'Palette'; plugin.saveSettings(); };
@@ -2634,13 +3022,28 @@ module.exports = class NexusSuite extends Plugin {
             e.stopPropagation();
             s.palettes.splice(idx, 1);
             if (s.activePalette >= s.palettes.length) s.activePalette = s.palettes.length - 1;
-            s.palette = s.palettes[s.activePalette].colors;
+            /* Tools pointing past the deleted entry would silently jump to a
+               different palette — shift them down, and let the ones that used
+               it fall back to the global default. */
+            const map = s.toolPalettes || (s.toolPalettes = {});
+            Object.keys(map).forEach(t => {
+              if (map[t] === idx) delete map[t];
+              else if (map[t] > idx) map[t] -= 1;
+            });
             plugin.saveSettings(); renderSwatches(); if (closePop) closePop();
           };
         }
         row.onclick = () => {
-          if (idx === s.activePalette) return;
-          s.activePalette = idx; s.palette = pal.colors;
+          if (idx === chosen) return;
+          (s.toolPalettes || (s.toolPalettes = {}))[tool] = idx;
+          /* The ink this tool was using may not exist in the new palette —
+             land on its first swatch instead of on a colour nothing shows. */
+          const colors = s.palettes[idx].colors;
+          const cur = (s.toolColors || {})[tool];
+          if (!cur || !colors.some(c => String(c).toLowerCase() === String(cur).toLowerCase())) {
+            (s.toolColors || (s.toolColors = {}))[tool] = colors[0];
+            surface.setColor(colors[0]);
+          }
           plugin.saveSettings(); renderSwatches(); if (closePop) closePop();
         };
       });
@@ -2648,11 +3051,12 @@ module.exports = class NexusSuite extends Plugin {
       newBtn.onclick = () => {
         const pal = activePal();
         s.palettes.push({ name: 'Palette ' + (s.palettes.length + 1), colors: pal.colors.slice(0, 8) });
-        s.activePalette = s.palettes.length - 1;
-        s.palette = s.palettes[s.activePalette].colors;
+        (s.toolPalettes || (s.toolPalettes = {}))[tool] = s.palettes.length - 1;
         plugin.saveSettings(); renderSwatches(); if (closePop) closePop();
       };
     };
+
+    /* ═══ colour strip ═══ */
     const renderSwatches = () => {
       if (!colWrap) return;
       colWrap.empty();
@@ -2663,25 +3067,31 @@ module.exports = class NexusSuite extends Plugin {
         sw.setAttribute('aria-label', col + ' (tap to use · tap again to edit · right-click to remove)');
         if (String(col).toLowerCase() === String(surface.color).toLowerCase()) sw.addClass('is-active');
         sw.onclick = () => {
-          // Tap the ALREADY-selected swatch again → open the colour picker to
-          // adjust that palette colour (hue/saturation/opacity), live.
+          // Tap the ALREADY-selected swatch again → adjust that palette colour
+          // (hue/saturation/opacity), live.
           if (sw.hasClass('is-active')) {
             plugin._showPopover(sw, (pop) => {
               pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Adjust colour' });
               plugin._buildColorPicker(pop, pal.colors[idx],
-                (out) => { pal.colors[idx] = out; s.palette = pal.colors; sw.style.setProperty('--c', out); surface.setColor(out); drawWithCurrent(); },
+                (out) => { pal.colors[idx] = out; sw.style.setProperty('--c', out); surface.setColor(out); rememberColor(out); drawWithCurrent(); },
                 () => plugin.saveSettings());
             });
             return;
           }
-          surface.setColor(col); drawWithCurrent();
+          // In select mode the swatch also repaints what is selected — that is
+          // what a colour means when ink is already on the page.
+          if (TOOL_OF() === 'select') {
+            surface.setColor(col);
+            surface.setSelectionColor(col);
+          } else {
+            surface.setColor(col); rememberColor(col); drawWithCurrent();
+          }
           colWrap.querySelectorAll('.nx-sk-color').forEach(x => x.removeClass('is-active')); sw.addClass('is-active');
         };
-        sw.oncontextmenu = (e) => { e.preventDefault(); if (pal.colors.length > 1) { pal.colors = pal.colors.filter(c => c !== col); s.palette = pal.colors; plugin.saveSettings(); renderSwatches(); } };
+        sw.oncontextmenu = (e) => { e.preventDefault(); if (pal.colors.length > 1) { pal.colors = pal.colors.filter(c => c !== col); plugin.saveSettings(); renderSwatches(); } };
       });
       // The "+" is an ADD affordance — with a full palette there is nothing to
       // add, so it goes away instead of promising a slot and then refusing.
-      // Adjusting an existing colour stays available: tap its swatch twice.
       if (pal.colors.length < 8) {
         const cust = colWrap.createDiv('nx-sk-color nx-sk-color-custom');
         setIcon(cust, 'plus');
@@ -2689,24 +3099,22 @@ module.exports = class NexusSuite extends Plugin {
         plugin._sketchPopover(cust, (pop, closePop) => {
           pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Custom colour' });
           let v = /^(#|rgb)/i.test(surface.color || '') ? surface.color : '#2f2f2f';
-          plugin._buildColorPicker(pop, v, (out) => { v = out; surface.setColor(out); drawWithCurrent(); });
+          plugin._buildColorPicker(pop, v, (out) => { v = out; surface.setColor(out); rememberColor(out); drawWithCurrent(); });
           const save = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol', text: 'Save to palette' });
           save.onclick = () => {
             const p = activePal();
             if (p.colors.length >= 8) { new Notice('Nexus: palette is full (max 8 colours).'); return; }
-            if (!p.colors.map(c => c.toLowerCase()).includes(v.toLowerCase())) { p.colors.push(v); s.palette = p.colors; plugin.saveSettings(); }
+            if (!p.colors.map(c => c.toLowerCase()).includes(v.toLowerCase())) { p.colors.push(v); plugin.saveSettings(); }
             renderSwatches(); closePop();
           };
         });
       }
-      // Full editor keeps the palette switcher inline; the compact bar tucks it
-      // into the ⋯ menu (room is tight there).
-      if (full) {
-        const switcher = colWrap.createDiv('nx-sk-color nx-sk-color-custom');
-        setIcon(switcher, 'palette');
-        switcher.setAttribute('aria-label', 'Palettes');
-        plugin._sketchPopover(switcher, paletteBuild);
-      }
+      // The swatch book sits at the end of the strip, where the colours are —
+      // picking a palette IS a colour decision, not a menu item.
+      const switcher = colWrap.createDiv('nx-sk-color nx-sk-color-custom');
+      setIcon(switcher, 'palette');
+      switcher.setAttribute('aria-label', 'Palette for this tool');
+      plugin._sketchPopover(switcher, paletteBuild);
     };
     const buildColors = (parent) => { colWrap = parent.createDiv('nx-sk-grp nx-sk-colors'); renderSwatches(); };
 
@@ -2755,6 +3163,102 @@ module.exports = class NexusSuite extends Plugin {
       slider('Opacity', 2, 60, 1, Math.round(surface.bgOpacity * 100), '%', v => surface.setBackground(null, null, v / 100));
     };
 
+    /* ═══ export ═══ */
+    const exportBuild = (pop, closePop) => {
+      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Export' });
+      let scale = 2;
+      const scaleRow = pop.createDiv('nx-sk-bgtypes');
+      [['1', 1], ['2×', 2], ['3×', 3], ['4×', 4]].forEach(([label, value]) => {
+        const b = scaleRow.createDiv({ cls: 'nx-sk-bgtype', text: label });
+        b.toggleClass('is-active', value === scale);
+        b.onclick = () => {
+          scale = value;
+          scaleRow.querySelectorAll('.nx-sk-bgtype').forEach(x => x.removeClass('is-active'));
+          b.addClass('is-active');
+        };
+      });
+      pop.createDiv({ cls: 'nx-sk-confirm-msg', text: 'Scale applies to PNG and PDF. SVG is vector and ignores it.' });
+      sketchExport.EXPORT_FORMATS.forEach(spec => {
+        const row = pop.createDiv('nx-sk-menuitem');
+        const ic = row.createDiv('nx-sk-menuitem-ic');
+        setIcon(ic, spec.id === 'svg' ? 'file-code' : spec.id === 'png' ? 'image' : 'file-text');
+        row.createDiv({ cls: 'nx-sk-menuitem-lbl', text: spec.label + ' — ' + spec.note });
+        row.onclick = async () => {
+          closePop();
+          try {
+            surface.flush();   // export what is on the page, not what last reached disk
+            const path = await plugin._exportSketch(surface, spec.id, scale);
+            new Notice('Nexus: exported to ' + path);
+          } catch (err) {
+            new Notice('Nexus: export failed — ' + (err && err.message ? err.message : 'unknown error'));
+          }
+        };
+      });
+    };
+
+    /* ═══ outline ═══ */
+    /* A drawing has no headings to read, so the outline is made by hand: a mark
+       at a y with a name on it. That is enough to jump around a page metres
+       long, which is the whole problem an endless sheet creates. */
+    const outlineBuild = (pop, closePop) => {
+      pop.addClass('nx-sk-menu');
+      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Outline' });
+      if (!surface.sections.length) {
+        pop.createDiv({ cls: 'nx-sk-confirm-msg', text: 'No sections yet. Add one where you are and it becomes a place you can jump back to.' });
+      }
+      surface.sections.forEach((sec, i) => {
+        const row = pop.createDiv('nx-sk-menuitem');
+        const ic = row.createDiv('nx-sk-menuitem-ic');
+        setIcon(ic, 'corner-down-right');
+        row.createDiv({ cls: 'nx-sk-menuitem-lbl', text: sec.title || 'Section' });
+        const del = row.createDiv({ cls: 'nx-sk-menuitem-x', attr: { 'aria-label': 'Remove section' } });
+        setIcon(del, 'x');
+        del.onclick = (ev) => { ev.stopPropagation(); surface.removeSection(i); closePop(); };
+        row.onclick = () => {
+          if (!surface.scrollToY(sec.y)) new Notice('Nexus: nothing to scroll here — open the sketch full size.');
+          closePop();
+        };
+      });
+      pop.createDiv('nx-sk-menu-sep');
+      const add = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol', text: '＋ Section here' });
+      add.onclick = async () => {
+        const { NexusNameModal } = require('./modals/misc.js');
+        const at = surface.viewCenter();
+        closePop();
+        const title = await new NexusNameModal(plugin.app, 'Name this section', '').openAndGet();
+        if (title == null) return;
+        surface.addSection(at.y, title.trim() || 'Section');
+      };
+    };
+
+    /* ═══ ruler ═══ */
+    const rulerBuild = (pop, anchor) => {
+      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Ruler' });
+      const onRow = pop.createDiv('nx-sk-bgtypes');
+      const toggle = onRow.createDiv({ cls: 'nx-sk-bgtype nx-sk-bgtoggle', text: 'Straight edge' });
+      const paint = () => {
+        toggle.toggleClass('is-active', surface.ruler.on);
+        if (anchor) anchor.toggleClass('is-active', surface.ruler.on);
+      };
+      toggle.onclick = () => { surface.setRuler(!surface.ruler.on, surface.ruler.angle); paint(); };
+      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Angle' });
+      const angles = pop.createDiv('nx-sk-bgtypes');
+      RULER_ANGLES.forEach(a => {
+        const b = angles.createDiv({ cls: 'nx-sk-bgtype', text: a.label });
+        const current = surface.ruler.angle == null ? '' : String(surface.ruler.angle);
+        b.toggleClass('is-active', current === a.id);
+        b.onclick = () => {
+          // Picking an angle arms the ruler: nobody chooses 45° to leave it off.
+          surface.setRuler(true, a.id === '' ? null : a.id);
+          angles.querySelectorAll('.nx-sk-bgtype').forEach(x => x.removeClass('is-active'));
+          b.addClass('is-active');
+          paint();
+        };
+      });
+      pop.createDiv({ cls: 'nx-sk-confirm-msg', text: 'Free follows the direction each stroke starts in.' });
+      paint();
+    };
+
     /* ═══ auto-grow · clear ═══ */
     const toggleGrow = () => { surface.autoGrow = !surface.autoGrow; surface.persist(); return surface.autoGrow; };
     const clearBuild = (pop, close) => {
@@ -2766,79 +3270,320 @@ module.exports = class NexusSuite extends Plugin {
       row.createEl('button', { cls: 'mod-warning', text: 'Clear' }).onclick = () => { surface.clear(); close(); };
     };
 
-    /* ═══ compose: left tools · CENTRED colours · right actions ═══ */
-    const left = bar.createDiv('nx-sk-grp nx-sk-grp-tools');
-    buildPens(left);
-    left.createDiv('nx-sk-sep');
-    buildSizes(left);
+    /* Every movable action, by id. The bar and the ⋯ menu both read this, so a
+       button does the same thing wherever the user put it. */
+    const ACTIONS = {
+      undo:  { icon: 'undo-2', label: 'Undo', run: () => surface.undo() },
+      redo:  { icon: 'redo-2', label: 'Redo', run: () => surface.redo() },
+      background: {
+        icon: () => BG_ICON[surface.bgType] || 'layout-grid', label: 'Background',
+        active: () => surface.bgType !== 'none',
+        popup: (anchor) => (pop) => bgBuild(pop, anchor),
+      },
+      // Slate notes grow endlessly on their own — the toggle would be a lie.
+      grow:  { icon: 'chevrons-down', label: 'Auto-extend downward', skip: () => !!opts.slate,
+               active: () => surface.autoGrow, run: () => toggleGrow() },
+      clear: { icon: 'trash-2', label: 'Clear', popup: () => clearBuild },
+      /* A straight edge is a constraint on the pen, not a mode of its own: it
+         stays on while you keep drawing with whatever pen you had. */
+      outline: { icon: 'list-tree', label: 'Outline', popup: () => outlineBuild },
+      export: { icon: 'download', label: 'Export', popup: () => exportBuild },
+      ruler: {
+        icon: 'ruler', label: 'Ruler',
+        active: () => surface.ruler.on,
+        popup: (anchor) => (pop) => rulerBuild(pop, anchor),
+      },
+    };
 
-    // Equal flexible spacers on both sides keep the colour block centred (it
-    // still shrinks + scrolls internally when a palette is large).
-    bar.createDiv('nx-sk-spacer');
-    buildColors(bar);
-    bar.createDiv('nx-sk-spacer');
+    /* ═══ the options row ═══ */
+    /* Pinned: the row is simply there. Reveal: a tool tap opens it and the
+       first stroke closes it, so the canvas is whole while actually drawing. */
+    const applyOpen = () => {
+      sub.toggleClass('is-open', !sub.hasClass('is-empty') && (layout.mode === 'pinned' || subOpen));
+    };
+    const renderSub = () => {
+      sub.empty();
+      surface.onSelect = null;   // a rebuilt row must not be driven by the old one
+      const tool = TOOL_OF();
+      // The eraser has nothing to configure, so its row would be an empty strip
+      // stealing canvas. It collapses instead.
+      if (tool === 'eraser') { sub.addClass('is-empty'); applyOpen(); return; }
+      sub.removeClass('is-empty');
+      if (tool === 'select') { buildSelectRow(sub); applyOpen(); return; }
+      if (tool === 'space') { buildSpaceRow(sub); applyOpen(); return; }
+      if (tool === 'insert') { buildInsertRow(sub); applyOpen(); return; }
+      if (tool === 'pen') {
+        const row = sub.createDiv('nx-sk-grp nx-sk-subpens');
+        DRAW_PENS.forEach(id => {
+          const chip = row.createDiv({ cls: 'nx-sk-subpen', attr: { 'aria-label': PEN_META[id][0] + ' (tap again: settings)' } });
+          setIcon(chip, PEN_META[id][1]);
+          chip.toggleClass('is-active', surface.pen === id);
+          chip.onclick = () => {
+            if (surface.pen === id) { openPenSettings(chip, id); return; }
+            drawPen = id;
+            surface.setPen(id); surface.setMode('draw');
+            applyToolColor();
+            syncAll();
+          };
+        });
+        sub.createDiv('nx-sk-sep');
+      } else {
+        const cfgBtn = iconBtn(sub, 'sliders-horizontal', 'Highlighter settings', null);
+        cfgBtn.onclick = () => openPenSettings(cfgBtn, 'marker');
+        sub.createDiv('nx-sk-sep');
+      }
+      buildSizes(sub);
+      sub.createDiv('nx-sk-sep');
+      buildColors(sub);
+      applyOpen();
+    };
 
+    /* Select: the marquee shape, what can be done to what is caught in it, and
+       the colours (which recolour the selection instead of only arming the pen). */
+    const buildSelectRow = (parent) => {
+      const shapes = parent.createDiv('nx-sk-grp nx-sk-subpens');
+      SELECT_SHAPES.forEach(sh => {
+        const chip = shapes.createDiv({ cls: 'nx-sk-subpen', attr: { 'aria-label': sh.label } });
+        setIcon(chip, sh.icon);
+        chip.toggleClass('is-active', surface.selectShape === sh.id);
+        chip.onclick = () => {
+          surface.setSelectShape(sh.id);
+          shapes.querySelectorAll('.nx-sk-subpen').forEach(x => x.removeClass('is-active'));
+          chip.addClass('is-active');
+        };
+      });
+      parent.createDiv('nx-sk-sep');
+      const dup = iconBtn(parent, 'copy', 'Duplicate', () => surface.duplicateSelection());
+      const del = iconBtn(parent, 'trash-2', 'Delete selection', () => surface.deleteSelection());
+      parent.createDiv('nx-sk-sep');
+      buildColors(parent);
+      const note = parent.createSpan({ cls: 'nx-sk-subnote' });
+      /* The two buttons only mean something with something selected, and the
+         count is the only feedback that the lasso caught what was intended. */
+      const syncCount = () => {
+        const n = surface.selection.length;
+        dup.toggleClass('is-disabled', !n);
+        del.toggleClass('is-disabled', !n);
+        note.setText(n ? n + ' selected' : 'Draw around something');
+      };
+      surface.onSelect = syncCount;
+      syncCount();
+    };
+
+    /* Insert: everything that is put ON the page rather than drawn on it.
+       One tool instead of three, because an image, a sticker and a note are the
+       same decision — "put a thing here" — and three bar buttons for it would
+       crowd out the ones you reach for constantly. */
+    const buildInsertRow = (parent) => {
+      const imgBtn = iconBtn(parent, 'image-plus', 'Insert an image', null);
+      imgBtn.onclick = async () => {
+        const file = await plugin._pickImageFile();
+        if (!file) return;
+        try {
+          const img = await plugin._sketchImageData(file);
+          const at = surface.viewCenter();
+          const box = sketchObjects.placeObject(at.x, at.y, img.w, img.h, surface.W * 0.7);
+          surface.addObject(Object.assign({ kind: 'image', href: img.href }, box));
+          setTool('select');
+        } catch (err) {
+          new Notice('Nexus: ' + (err && err.message ? err.message : 'could not insert that image.'));
+        }
+      };
+      const noteBtn = iconBtn(parent, 'sticky-note', 'Sticky note', null);
+      plugin._sketchPopover(noteBtn, (pop, closePop) => {
+        pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Sticky note' });
+        const area = pop.createEl('textarea', { cls: 'nx-sk-notetext' });
+        area.rows = 4;
+        area.placeholder = 'What goes on the note';
+        let colorId = sketchObjects.NOTE_COLORS[0].id;
+        const row = pop.createDiv('nx-sk-notecolors');
+        sketchObjects.NOTE_COLORS.forEach(c => {
+          const chip = row.createDiv({ cls: 'nx-sk-notecolor', attr: { 'aria-label': c.label } });
+          chip.style.setProperty('--c', c.fill);
+          chip.toggleClass('is-active', c.id === colorId);
+          chip.onclick = () => {
+            colorId = c.id;
+            row.querySelectorAll('.nx-sk-notecolor').forEach(x => x.removeClass('is-active'));
+            chip.addClass('is-active');
+          };
+        });
+        const add = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol', text: 'Place note' });
+        add.onclick = () => {
+          const at = surface.viewCenter();
+          surface.addObject({ kind: 'note', x: Math.round(at.x - 130), y: Math.round(at.y - 90), w: 260, h: 180, color: colorId, text: area.value });
+          closePop();
+          setTool('select');
+        };
+        window.setTimeout(() => area.focus(), 0);
+      });
+      parent.createDiv('nx-sk-sep');
+      const stickers = parent.createDiv('nx-sk-grp nx-sk-subpens');
+      sketchObjects.STICKERS.forEach(item => {
+        const chip = stickers.createDiv({ cls: 'nx-sk-subpen', attr: { 'aria-label': item.label } });
+        // The catalogue is drawn, not shipped as files — so the chip renders the
+        // very same path the page will get.
+        chip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"'
+          + ' stroke-linecap="round" stroke-linejoin="round" class="svg-icon"><path d="' + item.d + '"/></svg>';
+        chip.onclick = () => {
+          const at = surface.viewCenter();
+          surface.addObject({ kind: 'sticker', id: item.id, x: Math.round(at.x - 45), y: Math.round(at.y - 45), w: 90, h: 90, color: surface.color });
+          setTool('select');
+        };
+      });
+    };
+
+    /* Spacing has no options to set — only an instruction, because the gesture
+       is not guessable from a bar icon. */
+    const buildSpaceRow = (parent) => {
+      parent.createSpan({ cls: 'nx-sk-subnote', text: 'Drag a line down to open blank paper, up to close it again. Everything below the line moves with it.' });
+    };
+
+    const setTool = (id) => {
+      const from = TOOL_OF();
+      if (from !== id) lastTool = from;
+      if (id === 'eraser') surface.setMode('erase');
+      else if (id === 'select') surface.setMode('select');
+      else if (id === 'space') surface.setMode('space');
+      else if (id === 'insert') surface.setMode('insert');
+      else {
+        surface.setPen(id === 'marker' ? 'marker' : drawPen);
+        surface.setMode('draw');
+        applyToolColor();   // after setPen — the colour belongs to the NEW tool
+      }
+      syncAll();
+    };
+    const syncTools = () => {
+      const tool = TOOL_OF();
+      Object.keys(toolBtns).forEach(id => toolBtns[id].toggleClass('is-active', id === tool));
+    };
+    const syncAll = () => { syncTools(); renderSub(); };
+
+    /* ═══ compose: tools · spacer · actions · ⋯ · the ways out ═══ */
+    const tools = bar.createDiv('nx-sk-grp nx-sk-grp-tools');
+    inBar.filter(id => (BAR_ITEMS.find(i => i.id === id) || {}).kind === 'tool').forEach(id => {
+      const item = BAR_ITEMS.find(i => i.id === id);
+      const icon = id === 'pen' ? PEN_META[drawPen][1] : item.icon;
+      const b = iconBtn(tools, icon, item.label, null);
+      toolBtns[id] = b;
+      b.onclick = () => {
+        // Reveal mode: tapping the tool you are already using toggles its row.
+        if (layout.mode === 'reveal') subOpen = (TOOL_OF() === id) ? !subOpen : true;
+        setTool(id);
+      };
+    });
+
+    bar.createDiv('nx-sk-spacer');
     const right = bar.createDiv('nx-sk-grp nx-sk-grp-actions');
-    if (full) {
-      // Roomy: everything inline; last button collapses the editor.
-      // Slate notes grow endlessly on their own → no auto-extend toggle there.
-      if (!opts.slate) {
-        const growBtn = iconBtn(right, 'chevrons-down', 'Auto-extend canvas downward', null);
-        growBtn.toggleClass('is-active', surface.autoGrow);
-        growBtn.onclick = () => growBtn.toggleClass('is-active', toggleGrow());
-      }
-      const bgBtn = iconBtn(right, BG_ICON[surface.bgType] || 'layout-grid', 'Background', null);
-      bgBtn.toggleClass('is-active', surface.bgType !== 'none');
-      plugin._sketchPopover(bgBtn, (pop) => bgBuild(pop, bgBtn));
-      right.createDiv('nx-sk-sep');
-      iconBtn(right, 'undo-2', 'Undo', () => surface.undo());
-      iconBtn(right, 'redo-2', 'Redo', () => surface.redo());
-      const clearBtn = iconBtn(right, 'trash-2', 'Clear', null);
-      plugin._sketchPopover(clearBtn, clearBuild);
-      // Slate notes: put the drawing in a split next to the note's text.
-      if (opts.onSplit) {
-        right.createDiv('nx-sk-sep');
-        const splitBtn = iconBtn(right, 'columns-2', 'Open beside the note', null, 'nx-sk-split');
-        plugin._attachSplitMenu(splitBtn, opts, true);
-      }
-      if (opts.onCollapse) {   // fullscreen editor: exit button. Protokoll view: none.
-        right.createDiv('nx-sk-sep');
-        iconBtn(right, 'minimize-2', 'Close full-size editor', () => opts.onCollapse(), 'nx-sk-done');
-      }
-    } else {
-      // Compact: undo/redo · ⋯ overflow · full-size editor · SAVE (always shown).
-      iconBtn(right, 'undo-2', 'Undo', () => surface.undo());
-      iconBtn(right, 'redo-2', 'Redo', () => surface.redo());
-      right.createDiv('nx-sk-sep');
+    const barActions = inBar.filter(id => ACTIONS[id] && !(ACTIONS[id].skip && ACTIONS[id].skip()));
+    barActions.forEach(id => {
+      const act = ACTIONS[id];
+      const b = iconBtn(right, typeof act.icon === 'function' ? act.icon() : act.icon, act.label, null);
+      if (act.active) b.toggleClass('is-active', act.active());
+      if (act.popup) plugin._sketchPopover(b, act.popup(b));
+      else b.onclick = () => { act.run(); if (act.active) b.toggleClass('is-active', act.active()); };
+    });
+
+    /* Whatever the user left out of the bar. No leftovers → no ⋯ button, rather
+       than a menu that opens on nothing. */
+    const overflow = BAR_ITEMS
+      .map(i => i.id)
+      .filter(id => !inBar.includes(id))
+      .filter(id => !(ACTIONS[id] && ACTIONS[id].skip && ACTIONS[id].skip()));
+    if (overflow.length) {
+      if (barActions.length) right.createDiv('nx-sk-sep');
       const moreBtn = iconBtn(right, 'more-horizontal', 'More tools', null);
       plugin._sketchPopover(moreBtn, (pop, closePop) => {
         pop.addClass('nx-sk-menu');
-        const item = (icon, label, cb, active) => {
-          const it = pop.createDiv('nx-sk-menuitem');
-          const ic = it.createDiv('nx-sk-menuitem-ic'); setIcon(ic, icon);
-          it.createDiv({ cls: 'nx-sk-menuitem-lbl', text: label });
-          if (active) it.addClass('is-active');
-          if (cb) it.onclick = cb;
-          return it;
-        };
-        item(BG_ICON[surface.bgType] || 'layout-grid', 'Background', () => { closePop(); plugin._showPopover(moreBtn, (p) => bgBuild(p)); });
-        const growItem = item('chevrons-down', 'Auto-extend downward', null, surface.autoGrow);
-        growItem.onclick = () => growItem.toggleClass('is-active', toggleGrow());
-        item('palette', 'Palettes', () => { closePop(); plugin._showPopover(moreBtn, paletteBuild); });
-        pop.createDiv('nx-sk-menu-sep');
-        item('trash-2', 'Clear…', () => { closePop(); plugin._showPopover(moreBtn, clearBuild); });
+        overflow.forEach(id => {
+          const item = BAR_ITEMS.find(i => i.id === id);
+          const act = ACTIONS[id];
+          const row = pop.createDiv('nx-sk-menuitem');
+          const ic = row.createDiv('nx-sk-menuitem-ic');
+          setIcon(ic, act ? (typeof act.icon === 'function' ? act.icon() : act.icon) : (id === 'pen' ? PEN_META[drawPen][1] : item.icon));
+          row.createDiv({ cls: 'nx-sk-menuitem-lbl', text: item.label });
+          if (!act) {
+            row.toggleClass('is-active', TOOL_OF() === id);
+            row.onclick = () => { closePop(); if (layout.mode === 'reveal') subOpen = true; setTool(id); };
+            return;
+          }
+          if (act.active) row.toggleClass('is-active', act.active());
+          if (act.popup) row.onclick = () => { closePop(); plugin._showPopover(moreBtn, act.popup(null)); };
+          else row.onclick = () => { act.run(); if (act.active) row.toggleClass('is-active', act.active()); };
+        });
       });
-      const fsBtn = iconBtn(right, 'maximize-2', 'Full-size editor', () => opts.onFullscreen && opts.onFullscreen(), 'nx-sk-fs');
-      // Press and hold (or right-click) the same button to put the sketch in a
-      // split instead: note on one side, drawing on the other. Only offered
-      // where there is a sketch to open — a pad that was never drawn on has no
-      // sidecar yet, and the pane can only show a saved one.
-      if (opts.onSplit) plugin._attachSplitMenu(fsBtn, opts);
-      right.createDiv('nx-sk-sep');
-      // Save & leave the editor — always visible (was buried in ⋯).
-      iconBtn(right, 'check', 'Save & close', () => opts.onDone && opts.onDone(), 'nx-sk-done');
     }
-    syncActive();
+
+    // The ways OUT of the sketch — never movable, never hidden.
+    if (opts.onSplit || opts.onFullscreen || opts.onCollapse || opts.onDone) right.createDiv('nx-sk-sep');
+    if (!full && opts.onFullscreen) {
+      const fsBtn = iconBtn(right, 'maximize-2', 'Full-size editor', () => opts.onFullscreen(), 'nx-sk-fs');
+      /* Press and hold (or right-click) the same button to put the sketch in a
+         split instead. Only offered where there is a sketch to open — a pad
+         that was never drawn on has no sidecar yet. */
+      if (opts.onSplit) plugin._attachSplitMenu(fsBtn, opts);
+    } else if (opts.onSplit) {
+      const splitBtn = iconBtn(right, 'columns-2', 'Open beside the note', null, 'nx-sk-split');
+      plugin._attachSplitMenu(splitBtn, opts, true);
+    }
+    if (opts.onCollapse) iconBtn(right, 'minimize-2', 'Close full-size editor', () => opts.onCollapse(), 'nx-sk-done');
+    if (opts.onDone) iconBtn(right, 'check', 'Save & close', () => opts.onDone(), 'nx-sk-done');
+
+    /* ═══ pen gestures ═══ */
+    /* The surface reports which gesture happened; what it MEANS lives here,
+       because everything a gesture can do is a toolbar action. A hold action
+       remembers the tool it interrupted and puts it back on release. */
+    surface.setPenMap(penGestures.resolveMap(s.penProfile, s.penMap));
+    surface.onGesture = (action, phase) => {
+      const current = TOOL_OF();
+      if (action === 'eraseHold') {
+        if (phase === 'start') {
+          if (current === 'eraser') return false;
+          gestureHeldTool = current;
+          setTool('eraser');
+        } else if (gestureHeldTool) {
+          setTool(gestureHeldTool);
+          gestureHeldTool = null;
+        }
+        return true;
+      }
+      if (phase === 'end') return false;   // everything else fires once, on press
+      if (action === 'eraseToggle') { setTool(current === 'eraser' ? lastTool || 'pen' : 'eraser'); return true; }
+      if (action === 'select') { setTool(current === 'select' ? lastTool || 'pen' : 'select'); return true; }
+      if (action === 'lastTool') { setTool(lastTool || 'pen'); return true; }
+      if (action === 'undo') { surface.undo(); return true; }
+      if (action === 'redo') { surface.redo(); return true; }
+      if (action === 'ruler') {
+        surface.setRuler(!surface.ruler.on, surface.ruler.angle);
+        syncAll();
+        return true;
+      }
+      if (action === 'nextColor') {
+        const colors = activePal().colors;
+        if (!colors.length) return false;
+        const at = colors.findIndex(c => String(c).toLowerCase() === String(surface.color).toLowerCase());
+        const next = colors[(at + 1) % colors.length];
+        surface.setColor(next);
+        rememberColor(next);
+        renderSwatches();
+        return true;
+      }
+      return false;
+    };
+
+    /* Reveal mode closes the row on the first stroke. The listener hangs off the
+       pad itself (not the document) so it dies with the pad; a rebuild would
+       otherwise stack a second one on the same element. */
+    const pad = surface.host;
+    if (pad) {
+      if (pad._nxSubClose) { pad.removeEventListener('pointerdown', pad._nxSubClose, true); pad._nxSubClose = null; }
+      if (layout.mode === 'reveal') {
+        pad._nxSubClose = () => { if (subOpen) { subOpen = false; applyOpen(); } };
+        pad.addEventListener('pointerdown', pad._nxSubClose, true);
+      }
+    }
+
+    if (DRAWS(TOOL_OF())) applyToolColor();
+    syncAll();
   }
 
   /* Long-press / right-click on the full-size button → open the sketch beside
@@ -3051,6 +3796,11 @@ module.exports = class NexusSuite extends Plugin {
     const nx = fm ? String(fm.nexus).toLowerCase() : '';
     const isPk = nx === 'slate' || nx === 'protokoll';   // 'protokoll' = legacy
     view.contentEl.toggleClass('nx-pk-note', isPk);
+    const sk = this.settings.quicksketch;
+    view.contentEl.toggleClass('nx-pk-hide-fm', isPk && !!sk.hideFrontmatter);
+    /* Immersive is a body class because the chrome it hides lives outside this
+       view. It is cleared whenever a slate note is not the one on screen. */
+    document.body.toggleClass('nx-sk-immersive', isPk && !!sk.immersive);
     if (!isPk) {
       const h = view.contentEl.querySelector('.nx-pk-inline'); if (h) h.remove();
       if (view._nxPkObs) { view._nxPkObs.disconnect(); view._nxPkObs = null; }
@@ -3125,7 +3875,7 @@ module.exports = class NexusSuite extends Plugin {
     const surface = new NexusSketchSurface(pad, {
       W: 1600, H: data ? data.h : 1200,
       bg: (data && data.bg) || '', paper, paperStyle, invertOnDark: s.invertOnDark !== false,
-      ink: s.ink, penSizes: s.penSizes, pen: 'fountain',
+      ink: s.ink, penSizes: s.penSizes, pen: 'fountain', paperWidth: s.paperWidth,
       penConfig: (s.penConfig = s.penConfig || {}),
       shapeSnap: s.shapeSnap !== false,
       bgType: (data && data.bgType) || 'grid',
@@ -3134,6 +3884,9 @@ module.exports = class NexusSuite extends Plugin {
       bgColor: s.bgColor,
       autoGrow: true, fixedViewport: true,   // no pan/zoom — the note scroller scrolls
       strokes: data ? data.strokes : [],
+      objects: data ? data.objects : [],
+      sections: data ? data.sections : [],
+      ocr: data ? data.ocr : [],
       onCommit: () => { this.saveSketch(id, surface.toSVGString()); },
     });
     host._surface = surface;

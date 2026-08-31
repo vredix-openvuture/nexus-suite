@@ -226,3 +226,7 @@
   .nx-tp-task { padding: 10px 8px; }
   .nx-tp-new-input { padding: 9px 12px; }
 }
+
+/* A task that IS a note, rather than a task note standing in for one. */
+.nx-tp-note { display: inline-flex; align-items: center; color: var(--text-faint); }
+.nx-tp-note .svg-icon { width: 13px; height: 13px; }

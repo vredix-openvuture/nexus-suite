@@ -62,7 +62,7 @@ class NexusSketchPaneView extends ItemView {
       paper: data.paper || null,
       paperStyle: this.plugin._resolvePaperStyle(data, s),
       invertOnDark: s.invertOnDark !== false,
-      ink: s.ink, penSizes: s.penSizes, pen: 'fountain',
+      ink: s.ink, paperWidth: s.paperWidth, penSizes: s.penSizes, pen: 'fountain',
       penConfig: (s.penConfig = s.penConfig || {}),
       shapeSnap: s.shapeSnap !== false,
       bgType: data.bgType || 'none', bgSize: data.bgSize || s.bgSize,
@@ -71,6 +71,9 @@ class NexusSketchPaneView extends ItemView {
       autoGrow: true,                       // a pane is a workbench, not a preview
       pageZoom: true,                       // pinch magnifies the sheet; out stops at 1× = normal
       strokes: data.strokes || [],
+      objects: data.objects || [],
+      sections: data.sections || [],
+      ocr: data.ocr || [],
       resizable: true,
       onCommit: () => this.save(surface),
     });

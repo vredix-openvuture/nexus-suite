@@ -189,7 +189,11 @@ function taskStateOf(plugin, file) {
   };
 }
 function taskState(plugin, k) {
-  return taskStateOf(plugin, plugin.app.vault.getAbstractFileByPath(taskPath(plugin, k)));
+  const asTaskNote = taskStateOf(plugin, plugin.app.vault.getAbstractFileByPath(taskPath(plugin, k)));
+  if (asTaskNote) return asTaskNote;
+  // A note that tracks itself is keyed by its path, not by a basename in the
+  // task folder — see listNoteTasks.
+  return noteTaskStateOf(plugin, plugin.app.vault.getAbstractFileByPath(k));
 }
 
 /* ── set a task done/undone. A repeating task advances its due instead. ──
@@ -432,6 +436,81 @@ async function setTaskBucket(plugin, task, title) {
   });
   return true;
 }
+/* ── A note that tracks itself ───────────────────────────────────────────────
+   `nexus-task: true` in the frontmatter of ANY note makes that note a task: it
+   turns up in the tasks view and can be ticked there, without being moved into
+   the task folder and without a second note standing in for it.
+
+   The case this exists for is a thought written down in the middle of something
+   else that should be picked up later. Turning it into a task must not mean
+   taking it out of the note it belongs to, or the context goes with it — which
+   is exactly why a checklist line somewhere else is not good enough.
+
+   The key is the note's PATH, because that is what identifies it; task notes
+   keep using their basename, and taskState below accepts either. */
+const NOTE_TASK_FIELD = 'nexus-task';
+
+function isNoteTask(fm) {
+  if (!fm) return false;
+  if (fm['nexus-type'] === 'task') return false;   // a real task note, not a note tracking itself
+  const raw = fm[NOTE_TASK_FIELD];
+  if (raw === true) return true;
+  const v = String(raw == null ? '' : raw).trim().toLowerCase();
+  return v === 'true' || v === 'yes' || v === 'y' || v === '1';
+}
+function noteTaskRecord(file, fm) {
+  const due = String(fm.due || '').trim();
+  return {
+    file, key: file.path, title: fm.title || file.basename,
+    project: linkName(fm['nexus-project']),
+    // A note that tracks itself is never pushed anywhere: it is a note, and the
+    // server has no concept of it.
+    provider: 'local', account: '', remoteId: '',
+    done: String(fm.status || '') === 'completed',
+    due, dueDay: due ? due.slice(0, 10) : '', timed: due.length > 10 ? due.slice(11, 16) : '',
+    priority: parseInt(fm.priority, 10) || 0, repeat: String(fm.repeat || ''),
+    bucket: String(fm.bucket || '').trim(),
+    fromNote: true,
+  };
+}
+function noteTaskStateOf(plugin, file) {
+  if (!(file instanceof TFile)) return null;
+  const fm = (plugin.app.metadataCache.getFileCache(file) || {}).frontmatter || {};
+  if (!isNoteTask(fm)) return null;
+  return {
+    file, title: fm.title || file.basename,
+    provider: 'local', account: '',
+    status: fm.status || 'needs-action', due: fm.due || '', repeat: fm.repeat || '',
+    priority: fm.priority || 0, done: (fm.status === 'completed'),
+    fromNote: true,
+  };
+}
+function listNoteTasks(plugin) {
+  const app = plugin.app, out = [];
+  for (const f of app.vault.getMarkdownFiles()) {
+    const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+    if (!isNoteTask(fm)) continue;
+    out.push(noteTaskRecord(f, fm));
+  }
+  return out;
+}
+/* Turn tracking on or off for one note. Returns the new state so the caller can
+   say which way it went. */
+async function toggleNoteTask(plugin, file, on) {
+  if (!(file instanceof TFile)) return null;
+  const fm = (plugin.app.metadataCache.getFileCache(file) || {}).frontmatter;
+  const want = (on == null) ? !isNoteTask(fm) : !!on;
+  await plugin.app.fileManager.processFrontMatter(file, front => {
+    if (want) front[NOTE_TASK_FIELD] = true;
+    else {
+      // Tracking stops; the status the note collected on the way stays, so
+      // turning it back on does not silently resurrect it as open.
+      delete front[NOTE_TASK_FIELD];
+    }
+  });
+  return want;
+}
+
 function listTasks(plugin) {
   const app = plugin.app, items = itemsFolder(plugin) + '/', out = [];
   for (const f of app.vault.getMarkdownFiles()) {
@@ -440,7 +519,9 @@ function listTasks(plugin) {
     if (!fm || fm['nexus-type'] !== 'task') continue;
     out.push(taskRecord(f, fm));
   }
-  return out;
+  // Notes that track themselves live anywhere in the vault, so they are
+  // collected separately and joined here — the tasks view sees one list.
+  return out.concat(listNoteTasks(plugin));
 }
 function listProjectNotes(plugin) {
   const app = plugin.app, folder = projectsFolder(plugin) + '/', out = [];
@@ -470,6 +551,7 @@ module.exports = {
   createProject, createTask, addTaskToProject, setTaskDone, setChecklistBox,
   taskState, taskStateOf, onProjectNoteModify, listProjects, advanceDue, setTaskBucket,
   listTasks, listProjectNotes, taskRecord, linkName,
+  NOTE_TASK_FIELD, isNoteTask, noteTaskRecord, noteTaskStateOf, listNoteTasks, toggleNoteTask,
   projectPath, taskPath, freeTaskPath, projectsFolder, itemsFolder, sanitize,
   checklistLine, parseTaskLine, linkRe,
   ensureItemsFolder, upsertProject, rebuildChecklist, migrateTaskNoteNames,

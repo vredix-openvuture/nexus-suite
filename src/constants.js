@@ -88,6 +88,27 @@ const DEFAULT_SETTINGS = {
      module and lives and dies with it. */
   kanban:     { enabled: true, buckets: ['Backlog', 'In Arbeit', 'Erledigt'],
                 notesFolder: '', boardsFolder: '', compact: false },
+  /* The paper planner: a month on one screen with ONE line per day. Not the
+     tasks module — that answers what is due, this answers what a month is for. */
+  planner:    { enabled: true },
+  /* Vault sync over WebDAV. Credentials are NOT here — they live in
+     localStorage per device (plugin.getCredential), because data.json is a file
+     in the vault and the vault is the thing being synced. */
+  /* QuickNote: a note you speak. Sister of Quick Sketch — catch the thought,
+     decide about it later. `local` runs a program you installed and nothing
+     leaves the machine; `browser` needs no install and works on a phone, but
+     most builds send the audio to the browser vendor. */
+  quicknote:  { enabled: true, folder: 'Inbox/Quicknote', engine: 'local',
+    command: 'whisper-cli -f {in} -otxt -of {out} -l auto',
+    language: 'en-US', asTask: false, openAfter: true },
+  vaultSync:  { enabled: false, url: '', deviceName: '',
+    intervalMin: 15,        // 0 = only on demand
+    onStart: true,
+    config: true,           // carry .obsidian too, minus the device-specific files
+    backup: true, keepBackups: 30,
+    conflict: 'keepBoth',   // keepBoth | newer | local | remote
+    shared: false,          // announce this device, and say who else is in the vault
+    exclude: [] },
   tagTools:   { enabled: true },
   /* Writing aids. Each sub-feature has its own switch — the `enabled` flag
      only gates them all at once. */
@@ -118,7 +139,29 @@ const DEFAULT_SETTINGS = {
     autoGrow: false,                                       // extend canvas downward while drawing near the bottom
     // bgSize 27 ≈ 5 mm squares like real DIN-A4 grid paper: canvas width 1600
     // units ≙ 297 mm (A4 landscape) → 5 mm ≙ ~26.9 units.
-    bgType: 'none', bgSize: 27, bgOpacity: 0.12, bgColor: '#334155' },
+    bgType: 'none', bgSize: 27, bgOpacity: 0.12, bgColor: '#334155',
+    /* Toolbar layout. `mode` decides whether the options row under the tools
+       stays open or opens on demand; `compact`/`full` list which buttons live
+       in the bar — everything else in BAR_ITEMS goes to the ⋯ menu. A single
+       device can keep its own copy of all three (plugin.barConfig). */
+    bar: { mode: 'pinned', compact: null, full: null },
+    /* Cap on how wide the sheet renders, in CSS px (0 = fill the pane).
+       Endless paper has a fixed width, so a tablet turned to landscape
+       must not stretch it — same note, same ink size, either way round. */
+    paperWidth: 1100,
+    /* Pen buttons and taps: a profile picks the presets, `penMap` overrides a
+       single gesture. See lib/sketchgestures.js for what a browser can and
+       cannot see a stylus do. */
+    /* Handwriting recognition runs a binary the user already has, so the
+       plugin stays one file and the text never leaves the machine.
+       Desktop only — a phone has no shell to run it in. */
+    ocr: { enabled: false, command: 'tesseract {in} {out} -l eng', onSave: false },
+    penProfile: 'generic',
+    penMap: {},
+    hideFrontmatter: false,   // slate notes: hide the properties block above the paper
+    immersive: false,         // slate notes: hide tab bar, status bar and ribbon while one is open
+    toolColors: {},     // toolId → the ink last used with that tool
+    toolPalettes: {} },  // toolId → index into `palettes` (unset = the active one)
   ribbon:     { mode: 'hover' },   // 'hover' | 'always' | 'hidden'
   /* Nexus pages that live permanently at the tab bar as an icon (see
      applyPinnedTabs): pinned in Obsidian's own sense, close button hidden,
@@ -323,6 +366,9 @@ const NX_MODULES = {
   editorial:     { name: 'Editorial',    sub: 'Margin notes, pull quotes, drop caps, ornaments' },
   board:         { name: 'Board',        sub: 'Every note of a folder as cards inside a normal note' },
   kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note — plus the board view of your tasks' },
+  planner:       { name: 'Planner',      sub: 'A month on one screen, one line per day — the paper-calendar view' },
+  vaultSync:     { name: 'Vault sync',   sub: 'The whole vault to a WebDAV server, with daily backups and conflict copies' },
+  quicknote:     { name: 'QuickNote',    sub: 'A note you speak instead of type' },
 };
 
 /* Checklist states (see styles/19-task-states.css). The character is what goes
@@ -341,6 +387,59 @@ const TASK_STATES = [
 const PEN_IDS = ['fountain', 'ballpoint', 'pencil', 'brush', 'calligraphy', 'marker'];
 const PEN_LABELS = { fountain: 'Fountain', ballpoint: 'Ballpoint', pencil: 'Pencil', brush: 'Brush', calligraphy: 'Calligraphy', marker: 'Marker' };
 
+/* ── The sketch toolbar, as a table ──────────────────────────────────────────
+   ONE list describes the bar; the toolbar is a renderer over it. A `tool` owns
+   the options row underneath (pen types, sizes, colours); an `action` just
+   does something. Adding a tool later means adding a row here, not wiring
+   another group by hand.
+
+   Only these are movable between the bar and the ⋯ menu. The buttons that LEAVE
+   the sketch — save & close, full-size, open beside the note — are never
+   movable: burying "Save & close" in a menu is the exact bug that put it back
+   into the bar, and a user cannot be allowed to re-create it. */
+const BAR_ITEMS = [
+  { id: 'pen',        kind: 'tool',   label: 'Pen',          icon: 'pen-tool' },
+  { id: 'marker',     kind: 'tool',   label: 'Highlighter',  icon: 'highlighter' },
+  { id: 'eraser',     kind: 'tool',   label: 'Eraser',       icon: 'eraser' },
+  { id: 'select',     kind: 'tool',   label: 'Select',       icon: 'lasso' },
+  { id: 'space',      kind: 'tool',   label: 'Spacing',      icon: 'between-horizontal-start' },
+  { id: 'insert',     kind: 'tool',   label: 'Insert',       icon: 'image-plus' },
+  { id: 'ruler',      kind: 'action', label: 'Ruler',        icon: 'ruler' },
+  { id: 'outline',    kind: 'action', label: 'Outline',      icon: 'list-tree' },
+  { id: 'export',     kind: 'action', label: 'Export',       icon: 'download' },
+  { id: 'undo',       kind: 'action', label: 'Undo',         icon: 'undo-2' },
+  { id: 'redo',       kind: 'action', label: 'Redo',         icon: 'redo-2' },
+  { id: 'background', kind: 'action', label: 'Background',   icon: 'layout-grid' },
+  { id: 'grow',       kind: 'action', label: 'Auto-extend',  icon: 'chevrons-down' },
+  { id: 'clear',      kind: 'action', label: 'Clear',        icon: 'trash-2' },
+];
+const BAR_ITEM_IDS = BAR_ITEMS.map(i => i.id);
+/* What sits in the bar out of the box. The code block has room for the tools
+   and the two everyone reaches for; the full-size editor has room for all of
+   it. Anything missing here starts in the ⋯ menu. */
+const BAR_DEFAULTS = {
+  compact: ['pen', 'marker', 'eraser', 'select', 'undo', 'redo'],
+  full:    ['pen', 'marker', 'eraser', 'select', 'space', 'insert', 'ruler', 'outline', 'export', 'undo', 'redo', 'background', 'grow', 'clear'],
+};
+const BAR_MODES = { pinned: 'Always open', reveal: 'Opens when you pick a tool' };
+
+/* Marquee shapes for the select tool. Same ids the surface accepts. */
+/* Ruler angles offered in its popover. null = follow the direction the stroke
+   starts in, which is what a real straight edge laid at any angle does. */
+const RULER_ANGLES = [
+  { id: '', label: 'Free' },
+  { id: '0', label: '0°' },
+  { id: '45', label: '45°' },
+  { id: '90', label: '90°' },
+  { id: '135', label: '135°' },
+];
+
+const SELECT_SHAPES = [
+  { id: 'lasso',   label: 'Lasso',     icon: 'lasso' },
+  { id: 'rect',    label: 'Rectangle', icon: 'square-dashed' },
+  { id: 'ellipse', label: 'Ellipse',   icon: 'circle-dashed' },
+];
+
 const ST_SYMBOL_RULES = [
   { m: '--',   r: '–', grp: 'dashes' },
   { m: '–-',   r: '—', grp: 'dashes' },   // en-dash + hyphen → em-dash
@@ -353,4 +452,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, THEME_STYLES, PEN_LABELS, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, THEME_STYLES, PEN_LABELS, BAR_ITEMS, BAR_ITEM_IDS, BAR_DEFAULTS, BAR_MODES, SELECT_SHAPES, RULER_ANGLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };

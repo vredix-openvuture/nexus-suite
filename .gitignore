@@ -20,3 +20,8 @@ _pre-split-backup/
 # Syncthing conflict copies (main.sync-conflict-…): artefacts of the vault sync,
 # never something to commit.
 *.sync-conflict-*
+
+# Toolbar test harness build outputs.
+test/bundle.js
+test/plugin
+test/visual.png

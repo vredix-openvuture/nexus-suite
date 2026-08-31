@@ -161,4 +161,4 @@ class NexusSearchModal extends SuggestModal {
   }
 }
 
-module.exports = { NexusSearchModal, SEARCH_FIELDS: FIELDS };
+module.exports = { NexusSearchModal, SEARCH_FIELDS: FIELDS, fieldScore, bestIn };

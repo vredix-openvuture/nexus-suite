@@ -34,7 +34,7 @@
 /* Hide ALL non-metadata children, not just .cm-line: in Live Preview a fenced
    block (```columns```, ```quicksketch```, …) renders as a .cm-embed-block that
    is NOT a .cm-line — the old .cm-line-only rule left it visible, and its
-   reserved height pushed the sketch to the very bottom (the "Abstand" bug). */
+   reserved height pushed the sketch to the very bottom (the "gap" bug). */
 .nx-pk-note .cm-content > *:not(:has(.metadata-container)):not(:has(.metadata-properties)):not(.nx-pk-inline) { display: none !important; }
 .nx-pk-note .markdown-reading-view .markdown-preview-sizer > *:not(.mod-header):not(.inline-title):not(.metadata-container):not(.markdown-preview-pusher):not(.nx-pk-inline) { display: none !important; }
 
@@ -162,46 +162,62 @@
 }
 .nx-sketch.is-view .nx-sketch-bar { opacity: 0; border-bottom-color: transparent; }
 
-.nx-sketch-bar > .nx-sk-grp-tools,
 .nx-sketch-bar > .nx-sk-grp-actions { flex: 0 0 auto; }
-.nx-sketch-bar > .nx-sk-colors {
-  flex: 0 1 auto;                         /* centred by the flex spacers; shrinks + scrolls when a palette is large */
+/* Tools hold their width until there is none left, then scroll sideways —
+   the actions on the right must stay reachable, they are the way out. */
+.nx-sketch-bar > .nx-sk-grp-tools {
+  flex: 0 1 auto;
   min-width: 0;
-  flex-wrap: nowrap;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none;                 /* Firefox — the strip scrolls, no bar */
+  scrollbar-width: none;                 /* Firefox — the group scrolls, no bar */
 }
-.nx-sketch-bar > .nx-sk-colors::-webkit-scrollbar { display: none; }
-.nx-sketch-bar > .nx-sk-colors > * { flex: 0 0 auto; }
-/* ── Narrow screens: the bar is ONE clipped row (overflow:hidden), and on a
-      phone the tool group alone is wider than the screen — so everything on the
-      right was cut off and unreachable, including the button that CLOSES the
-      full-size editor. Two rows instead: tools scroll sideways, the actions stay
-      pinned to the right edge, and the colour strip drops to its own line. ── */
+.nx-sketch-bar > .nx-sk-grp-tools::-webkit-scrollbar { display: none; }
+.nx-sketch-bar > .nx-sk-grp-tools > * { flex: 0 0 auto; }
+
+/* ── Options row — the active tool's own controls, under the tool row.
+      Hidden until a tool that HAS options is picked, so the eraser (which has
+      none) doesn't leave an empty strip, and "reveal" mode can take the space
+      back while drawing. One shared row: the mode only decides is-open. ── */
+.nx-sketch-subbar {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.nx-sketch-subbar::-webkit-scrollbar { display: none; }
+.nx-sketch-subbar.is-open { display: flex; }
+.nx-sketch-subbar > * { flex: 0 0 auto; }
+/* View mode collapses the whole toolbar — the options row goes with it. */
+.nx-sketch.is-view .nx-sketch-subbar { display: none; }
+
+/* Pen types, as a row instead of the old pop-up grid. Tap the active one again
+   for that pen's behaviour sheet. */
+.nx-sk-subpen {
+  width: 28px; height: 28px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; cursor: pointer; color: var(--text-muted);
+}
+.nx-sk-subpen:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-sk-subpen.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); color: var(--interactive-accent); }
+.nx-sk-subpen .svg-icon { width: 17px; height: 17px; }
+.nx-sk-subpens { gap: 2px; }
+/* ── Narrow screens: on a phone the tool group alone can be wider than the
+      screen, which used to cut off everything on the right — including the
+      button that CLOSES the full-size editor. So the tools scroll sideways and
+      the actions stay pinned to the right edge. Which buttons are there at all
+      is the user's call now (settings → Toolbar); the rest is in the ⋯ menu. ── */
 @media (max-width: 620px) {
-  .nx-sketch-bar {
-    flex-wrap: wrap;
-    row-gap: 6px;
-    overflow: visible;
-  }
-  .nx-sketch-bar > .nx-sk-spacer { display: none; }
-  .nx-sketch-bar > .nx-sk-grp-tools {
-    flex: 1 1 auto;
-    min-width: 0;                        /* may shrink below its content → never wraps before the actions */
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-  .nx-sketch-bar > .nx-sk-grp-tools::-webkit-scrollbar { display: none; }
+  .nx-sketch-bar > .nx-sk-grp-tools { flex: 1 1 auto; }
   .nx-sketch-bar > .nx-sk-grp-actions {
     flex: 0 0 auto;
     margin-left: auto;                   /* always reachable at the right edge */
-  }
-  .nx-sketch-bar > .nx-sk-colors {
-    flex: 1 0 100%;                      /* forces the wrap → colours get their own row */
-    order: 3;
-    justify-content: flex-start;
   }
   /* Swatches are a touch target here, not a legend — bigger, further apart.
      (Button sizes are left to 19-touch.css, which loads after this.) */
@@ -316,6 +332,138 @@
 .nx-sk-penchip.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
 .nx-sk-penchip .svg-icon { width: 18px; height: 18px; }
 .nx-sk-pensettings { margin-top: 2px; }
+
+/* ── Selection overlay ──────────────────────────────────────────────────────
+      Drawn INTO the SVG in viewBox units, so it scales with the paper and its
+      geometry comes from the engine. Only colour and dash live here; every
+      width is set per element because it has to hold at any zoom. ── */
+.nx-sk-marquee {
+  fill: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  stroke: var(--interactive-accent);
+  pointer-events: none;
+}
+.nx-sk-selbox {
+  fill: none;
+  stroke: var(--interactive-accent);
+  pointer-events: none;
+}
+.nx-sk-selstalk { stroke: var(--interactive-accent); pointer-events: none; }
+.nx-sk-selhandle {
+  fill: var(--background-primary);
+  stroke: var(--interactive-accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;   /* the ring stays hairline at any zoom */
+  pointer-events: none;
+}
+.nx-sk-selhandle.is-rotate { fill: var(--interactive-accent); }
+/* A recognised shape's own control points — square, so they read as "this edits
+   the shape" and not "this scales the box". */
+.nx-sk-selctrl {
+  fill: var(--background-primary);
+  stroke: var(--text-accent, var(--interactive-accent));
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+/* ── Spacing tool ──────────────────────────────────────────────────────────
+      Two bars and the gap between them. The fill has to read as "this much
+      paper is being added" without hiding the ink it is pushing. ── */
+.nx-sk-spacefill {
+  fill: color-mix(in srgb, var(--interactive-accent) 14%, transparent);
+  pointer-events: none;
+}
+.nx-sk-spaceline {
+  stroke: var(--interactive-accent);
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.nx-sk-spaceline.is-moving { stroke-dasharray: 10 7; }
+.nx-sketch-pad.is-space .nx-sketch-surface { cursor: row-resize; }
+
+/* The select tool needs a crosshair, not a pen cursor. */
+.nx-sketch-pad.is-select .nx-sketch-surface { cursor: crosshair; }
+
+/* ── Sections ──────────────────────────────────────────────────────────────
+      A rule with a name on it, drawn under the ink: it divides the page, it is
+      not something that was written on it. ── */
+.nx-sk-secline {
+  stroke: var(--text-faint, #888);
+  stroke-width: 1.5;
+  stroke-dasharray: 14 9;
+  opacity: 0.55;
+}
+.nx-sk-sectext { fill: var(--text-faint, #888); opacity: 0.85; }
+.nx-sk-menuitem-x {
+  margin-left: auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 4px;
+  color: var(--text-faint);
+}
+.nx-sk-menuitem-x:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-sk-menuitem-x .svg-icon { width: 13px; height: 13px; }
+
+/* Slate notes: the two chrome switches from the settings. Hiding the properties
+   block is per note; immersive reaches the app frame, so it is a body class. */
+.nx-pk-note.nx-pk-hide-fm .metadata-container,
+.nx-pk-note.nx-pk-hide-fm .metadata-properties-heading { display: none !important; }
+body.nx-sk-immersive .workspace-tab-header-container,
+body.nx-sk-immersive .status-bar,
+body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
+
+/* Sketch search results. */
+.nx-sksearch-row { display: flex; align-items: center; gap: 10px; }
+.nx-sksearch-ic { color: var(--text-muted); display: flex; }
+.nx-sksearch-ic .svg-icon { width: 16px; height: 16px; }
+.nx-sksearch-body { min-width: 0; }
+.nx-sksearch-title { font-weight: 550; }
+.nx-sksearch-meta {
+  display: flex; gap: 8px; align-items: center;
+  font-size: 11.5px; color: var(--text-muted);
+}
+.nx-sksearch-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-sksearch-field { color: var(--text-accent); }
+/* A hit in recognised handwriting is a guess, and it says so. */
+.nx-sksearch-badge {
+  flex: 0 0 auto;
+  padding: 0 5px; border-radius: 4px;
+  background: var(--background-modifier-hover);
+  font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+}
+
+/* Sticky-note editor in the insert popover. */
+.nx-sk-notetext {
+  width: 100%;
+  resize: vertical;
+  min-height: 70px;
+  font: inherit;
+  padding: 6px 8px;
+  border-radius: var(--radius-s, 5px);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+.nx-sk-notecolors { display: flex; gap: 7px; margin: 8px 0; }
+.nx-sk-notecolor {
+  width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
+  background: var(--c);
+  box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
+}
+.nx-sk-notecolor.is-active { box-shadow: 0 0 0 2px var(--interactive-accent); }
+
+/* The ruler stays on across strokes, so the pad has to say so at a glance. */
+.nx-sketch-pad.is-ruler .nx-sketch-surface { cursor: crosshair; }
+
+/* A note in the options row: the selection count, the ruler angle, that kind of
+   thing. Never a control, always the answer to "did that do what I meant". */
+.nx-sk-subnote {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  padding-inline: 4px;
+}
+/* An action that has nothing to act on: visibly off, and it stops responding —
+   a button that looks alive and does nothing is worse than one that is grey. */
+.nx-sk-btn.is-disabled { opacity: 0.38; pointer-events: none; }
 
 /* Graceful fallback when the interactive editor fails to mount (e.g. an
    unexpected mobile error) — the saved drawing still shows as a static image. */
