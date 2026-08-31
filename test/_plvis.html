@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="plugin/styles.css">
+<style>
+:root { --background-primary:#1e1e1e; --background-secondary:#252525;
+  --background-modifier-border:#3a3a3a; --background-modifier-hover:rgba(255,255,255,.075);
+  --text-normal:#dcddde; --text-muted:#999; --text-faint:#777;
+  --interactive-accent:#fb6734; --text-on-accent:#fff; --radius-m:8px; --radius-s:5px; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:24px; }
+#stage { width: 880px; }
+.svg-icon { display:block; width:15px; height:15px; border:1.2px solid currentColor; border-radius:3px; opacity:.55; }
+.nx-pl-open { opacity: 1 !important; }
+</style></head><body><div id="stage"></div>
+<script src="bundle.js"></script><script>
+const app = { vault: { getAbstractFileByPath: () => null, async read(){return '';}, async modify(){} },
+  workspace: { getLeaf: () => ({ openFile(){} }) }, internalPlugins: { getPluginById: () => null } };
+const el = document.getElementById('stage').createDiv();
+const pl = new window.NexusPlanner({ app, settings: { planner: { enabled: true } } });
+pl.today = () => '2026-09-15';
+pl.render([
+  'view: month','month: 2026-09','title: September',
+  '2026-09-02: Release 0.25 to BRAT',
+  '2026-09-07: Tablet test day',
+  '2026-09-15: Dentist, 14:00',
+  '2026-09-21: Start the sync work',
+  '2026-09-28: Wiki repo, first pages',
+].join('\n'), el, { sourcePath: 'Plan.md', getSectionInfo: () => null });
+</script></body></html>

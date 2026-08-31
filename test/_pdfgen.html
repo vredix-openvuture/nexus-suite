@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<pre id="out"></pre><script src="bundle.js"></script><script>
+(async () => {
+  const E = window.sketchExport;
+  const host = document.createElement('div');
+  host.style.width = '400px';
+  document.body.appendChild(host);
+  const s = new window.NexusSketchSurface(host, {
+    W: 600, H: 300, paper: 'white',
+    strokes: [
+      { color:'#111111', size:5, thinning:0, taper:0, opacity:1, pen:'fountain', cap:'round',
+        points:[[40,40,.5],[200,120,.5],[360,60,.5],[560,240,.5]] },
+      { color:'#d92f2f', size:8, thinning:0, taper:0, opacity:1, pen:'fountain', cap:'round',
+        points:[[60,250,.5],[540,250,.5]] },
+    ],
+  });
+  const svg = s.toSVGString();
+  const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+  const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = url; });
+  const cv = document.createElement('canvas');
+  cv.width = 1200; cv.height = 600;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0, 1200, 600);
+  URL.revokeObjectURL(url);
+  const rgb = E.rgbaToRgbOnWhite(ctx.getImageData(0,0,1200,600).data);
+  const packed = await E.deflate(rgb);
+  const pdf = E.pdfDocument(packed || rgb, {
+    width: 1200, height: 600, pageWidth: 600, pageHeight: 300,
+    filter: packed ? 'FlateDecode' : 'DCTDecode',
+  });
+  document.getElementById('out').textContent = btoa(Array.from(pdf).map(b => String.fromCharCode(b)).join(''));
+})();
+</script></body></html>

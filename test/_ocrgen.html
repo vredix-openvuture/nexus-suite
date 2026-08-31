@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"></head><body>
+<pre id="out"></pre><script src="bundle.js"></script><script>
+(async () => {
+  // A sketch whose "handwriting" is a text object — legible enough that OCR
+  // returning the right words proves the whole pipeline, not the recogniser.
+  const host = document.createElement('div');
+  host.style.width = '900px';
+  document.body.appendChild(host);
+  const s = new window.NexusSketchSurface(host, { W: 900, H: 300, paper: 'white' });
+  s.addObject({ kind: 'note', x: 30, y: 40, w: 820, h: 200, color: 'grey', text: 'Nexus handwriting probe' });
+  const svg = s.toSVGString();
+  const url = URL.createObjectURL(new Blob([svg], {type:'image/svg+xml'}));
+  const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = url; });
+  const cv = document.createElement('canvas');
+  cv.width = 1800; cv.height = 600;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0,0,1800,600);
+  ctx.drawImage(img, 0, 0, 1800, 600);
+  URL.revokeObjectURL(url);
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  document.getElementById('out').textContent = btoa(Array.from(bytes).map(b => String.fromCharCode(b)).join(''));
+})();
+</script></body></html>

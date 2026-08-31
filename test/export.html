@@ -1,0 +1,145 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>export harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+const text = (bytes) => Array.from(bytes).map(b => String.fromCharCode(b)).join('');
+
+(async () => {
+try {
+const E = window.sketchExport;
+
+// ── file names ─────────────────────────────────────────────────────────────
+{
+  eq('name · a plain title', E.exportFileName('Meeting notes', 'png', ''), 'Meeting notes.png');
+  eq('name · with a stamp', E.exportFileName('Notes', 'pdf', '2026-08-31 1400'), 'Notes 2026-08-31 1400.pdf');
+  eq('name · path separators are stripped', E.exportFileName('a/b\\\\c', 'svg', ''), 'a b c.svg');
+  eq('name · and the rest of what a file system refuses',
+     E.exportFileName('a:b*c?d"e<f>g|h#i^j[k]l', 'svg', ''), 'a b c d e f g h i j k l.svg');
+  eq('name · a leading dot would make it hidden', E.exportFileName('...secret', 'png', ''), 'secret.png');
+  eq('name · an empty title still gets a name', E.exportFileName('', 'png', ''), 'Sketch.png');
+  eq('name · so does one made only of junk', E.exportFileName('///', 'png', ''), 'Sketch.png');
+  ok('name · a very long title is cut', E.exportFileName('x'.repeat(300), 'png', '').length < 90);
+}
+
+// ── pixels for the page ────────────────────────────────────────────────────
+{
+  // Opaque red stays red; half-transparent black lands halfway to white.
+  const rgba = new Uint8Array([255, 0, 0, 255, 0, 0, 0, 128]);
+  const rgb = E.rgbaToRgbOnWhite(rgba);
+  eq('pixels · three bytes per pixel', rgb.length, 6);
+  eq('pixels · an opaque colour is untouched', [rgb[0], rgb[1], rgb[2]], [255, 0, 0]);
+  ok('pixels · a translucent one is composited onto white',
+     rgb[3] > 120 && rgb[3] < 140, 'got ' + rgb[3]);
+  const clear = E.rgbaToRgbOnWhite(new Uint8Array([9, 9, 9, 0]));
+  eq('pixels · fully transparent becomes white', [clear[0], clear[1], clear[2]], [255, 255, 255]);
+}
+
+// ── the PDF ────────────────────────────────────────────────────────────────
+{
+  const image = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  const pdf = E.pdfDocument(image, { width: 3, height: 1, pageWidth: 300, pageHeight: 100 });
+  const str = text(pdf);
+  ok('pdf · starts with a version header', str.indexOf('%PDF-1.4') === 0);
+  ok('pdf · and ends properly', str.trim().slice(-5) === '%%EOF');
+  ok('pdf · declares one page at the given size', str.indexOf('/MediaBox[0 0 300 100]') > 0);
+  ok('pdf · carries the image dimensions', str.indexOf('/Width 3') > 0 && str.indexOf('/Height 1') > 0);
+  ok('pdf · with the right stream length', str.indexOf('/Length ' + image.length) > 0);
+  ok('pdf · defaults to lossless', str.indexOf('/Filter/FlateDecode') > 0);
+  ok('pdf · a JPEG is declared as one',
+     text(E.pdfDocument(image, { width: 3, height: 1, filter: 'DCTDecode' })).indexOf('/Filter/DCTDecode') > 0);
+
+  // The cross-reference table is the part that silently breaks: every offset
+  // must land exactly on its object header, or readers refuse the file.
+  const xrefAt = parseInt(str.slice(str.lastIndexOf('startxref') + 9).trim(), 10);
+  ok('pdf · startxref points at the table', str.slice(xrefAt, xrefAt + 4) === 'xref', str.slice(xrefAt, xrefAt + 20));
+  // Lines: "xref", "0 6", then the free entry for object 0, then objects 1..5.
+  const rows = str.slice(xrefAt).split('\n').slice(3, 8);
+  eq('pdf · the table has one row per object', rows.length, 5);
+  eq('pdf · object zero is the free entry it has to be',
+     str.slice(xrefAt).split('\n')[2], '0000000000 65535 f ');
+  rows.forEach((row, i) => {
+    const at = parseInt(row.slice(0, 10), 10);
+    ok('pdf · offset ' + (i + 1) + ' lands on its object',
+       str.slice(at, at + 7) === (i + 1) + ' 0 obj', 'found "' + str.slice(at, at + 12) + '"');
+  });
+  ok('pdf · the image bytes are in the file verbatim',
+     str.indexOf(text(image)) > 0);
+}
+
+// ── deflate, where the platform has it ─────────────────────────────────────
+{
+  const packed = await E.deflate(new Uint8Array(2000));
+  if (packed === null) {
+    ok('deflate · absent on this runtime, and reported as null rather than thrown', true);
+  } else {
+    ok('deflate · compresses a repetitive buffer hard', packed.length < 200, 'got ' + packed.length);
+    // Round trip it, so "lossless" is a checked claim and not a hope.
+    const back = new Uint8Array(await new Response(
+      new Blob([packed]).stream().pipeThrough(new DecompressionStream('deflate'))).arrayBuffer());
+    eq('deflate · and round trips exactly', back.length, 2000);
+    ok('deflate · byte for byte', back.every(b => b === 0));
+  }
+}
+
+// ── a real drawing through the whole pipeline ──────────────────────────────
+{
+  const host = document.createElement('div');
+  host.style.width = '400px';
+  document.body.appendChild(host);
+  const s = new window.NexusSketchSurface(host, {
+    W: 400, H: 200, paper: 'white',
+    strokes: [{ color: '#111111', size: 4, thinning: 0, taper: 0, opacity: 1, pen: 'fountain', cap: 'round',
+                points: [[20, 20, .5], [380, 180, .5]] }],
+  });
+  const svg = s.toSVGString();
+  ok('pipeline · the SVG export is a complete document',
+     svg.indexOf('<svg') === 0 && svg.indexOf('</svg>') > 0);
+  ok('pipeline · and can be read back', !!window.parseSketchSVG(svg));
+
+  // Rasterising the very string that gets stored is the point: a second
+  // renderer could disagree with the file and nobody would notice.
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+  const img = await new Promise((res, rej) => {
+    const el = new Image();
+    el.onload = () => res(el); el.onerror = () => rej(new Error('render failed'));
+    el.src = url;
+  });
+  const cv = document.createElement('canvas');
+  cv.width = 800; cv.height = 400;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(img, 0, 0, 800, 400);
+  URL.revokeObjectURL(url);
+  const px = ctx.getImageData(0, 0, 800, 400).data;
+  let inked = 0;
+  for (let i = 0; i < px.length; i += 4) if (px[i] < 100) inked++;
+  ok('pipeline · the stroke actually rasterises', inked > 100, 'dark pixels: ' + inked);
+
+  const rgb = E.rgbaToRgbOnWhite(px);
+  const packed = await E.deflate(rgb);
+  const pdf = E.pdfDocument(packed || rgb, {
+    width: 800, height: 400, pageWidth: 400, pageHeight: 200,
+    filter: packed ? 'FlateDecode' : 'DCTDecode',
+  });
+  ok('pipeline · a PDF comes out the other end', pdf.length > 1000, 'bytes ' + pdf.length);
+  ok('pipeline · sized to the drawing, not to the raster',
+     text(pdf).indexOf('/MediaBox[0 0 400 200]') > 0);
+  host.remove();
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

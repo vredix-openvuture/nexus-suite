@@ -1,0 +1,326 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>bar harness</title></head>
+<body>
+<div id="stage"></div>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = [];
+let pass = 0, fail = 0;
+try {
+function ok(name, cond, detail) {
+  if (cond) { pass++; out.push('PASS  ' + name); }
+  else { fail++; out.push('FAIL  ' + name + (detail ? '  →  ' + detail : '')); }
+}
+function eq(name, got, want) {
+  const g = JSON.stringify(got), w = JSON.stringify(want);
+  ok(name, g === w, 'got ' + g + ' want ' + w);
+}
+
+/* A stand-in for the drawing surface: the toolbar is what is under test, not
+   the stroke engine. Every method the bar calls is here and records its effect. */
+function makeSurface(host) {
+  return {
+    host, mode: 'draw', pen: 'fountain', color: '#2f2f2f', size: 3,
+    autoGrow: false, bgType: 'none', bgSize: 27, bgOpacity: 0.12,
+    paper: 'paper', paperStyle: true, strokes: [], objects: [],
+    W: 1600, H: 900, viewX: 0, viewY: 0, viewW: 1600,
+    selection: [], selObjects: [], selectShape: 'lasso', ruler: { on: false, angle: null },
+    setPen(p) { this.pen = p; }, setMode(m) { this.mode = m; },
+    setColor(c) { this.color = c; }, setSize(v) { this.size = v; }, getSize() { return this.size; },
+    setPaper(p) { this.paper = p; }, setPaperStyle(v) { this.paperStyle = v; },
+    setBackground(t) { if (t != null) this.bgType = t; },
+    setSelectShape(k) { this.selectShape = k; },
+    setPenMap(m) { this.penMap = m; },
+    setRuler(on, angle) { this.ruler = { on: !!on, angle: angle == null || angle === '' ? null : Number(angle) }; return this.ruler; },
+    hasSelection() { return this.selection.length + this.selObjects.length > 0; },
+    setSelectionColor(c) { this.recolored = c; },
+    deleteSelection() {}, duplicateSelection() {}, addObject() {},
+    viewCenter() { return { x: this.W / 2, y: this.H / 2 }; },
+    undo() { this.undos = (this.undos || 0) + 1; }, redo() { this.redos = (this.redos || 0) + 1; },
+    clear() {}, persist() {},
+  };
+}
+
+function freshSettings() {
+  return JSON.parse(JSON.stringify(window.DEFAULT_SETTINGS.quicksketch));
+}
+function makePlugin() {
+  const p = new window.NexusSuite({}, {});
+  p.saveSettings = () => { p._saves = (p._saves || 0) + 1; };
+  return p;
+}
+function build(plugin, settings, opts) {
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const wrap = stage.createDiv('nx-sketch');
+  const bar = wrap.createDiv('nx-sketch-bar');
+  const pad = wrap.createDiv('nx-sketch-pad');
+  const surface = makeSurface(pad);
+  plugin._buildSketchBar(bar, surface, settings, opts);
+  return { wrap, bar, pad, surface, sub: bar.nextElementSibling };
+}
+const icons = (root, sel) => Array.from(root.querySelectorAll(sel)).map(e => e.dataset.icon);
+const ITEMS = window.BAR_ITEMS, DEFAULTS = window.BAR_DEFAULTS;
+const item = (id) => ITEMS.find(i => i.id === id);
+/* The pen button wears the icon of the drawing pen behind it, not the table's. */
+const iconOf = (id) => (id === 'pen' ? 'pen-tool' : item(id).icon);
+const expectTools = (list) => list.filter(id => item(id).kind === 'tool').map(iconOf);
+const expectActions = (list) => list.filter(id => item(id).kind === 'action').map(id => item(id).icon);
+const expectOverflow = (list) => ITEMS.filter(i => list.indexOf(i.id) < 0).map(i => i.label);
+const labels = (root, sel) => Array.from(root.querySelectorAll(sel)).map(e => e.getAttribute('aria-label'));
+
+localStorage.removeItem('nexus-suite-sketchbar');
+
+// ── 1 · default compact bar ────────────────────────────────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'compact', onDone: () => {}, onFullscreen: () => {} });
+  eq('compact · tools', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn'), expectTools(DEFAULTS.compact));
+  eq('compact · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
+     expectActions(DEFAULTS.compact).concat(['more-horizontal', 'maximize-2', 'check']));
+  ok('compact · options row is a sibling of the bar', t.sub && t.sub.classList.contains('nx-sketch-subbar'));
+}
+
+// ── 2 · the ⋯ menu holds exactly what the bar left out ─────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'compact', onDone: () => {} });
+  const more = Array.from(t.bar.querySelectorAll('.nx-sk-btn')).find(b => b.dataset.icon === 'more-horizontal');
+  more.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const pop = document.querySelector('.nx-sk-pop');
+  eq('overflow · contents', Array.from(pop.querySelectorAll('.nx-sk-menuitem-lbl')).map(e => e.textContent),
+     expectOverflow(DEFAULTS.compact));
+  pop.remove();
+}
+
+// ── 3 · full editor puts everything in the bar, so there is no ⋯ ───────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full', onCollapse: () => {} });
+  eq('full · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
+     expectActions(DEFAULTS.full).map(i => i === 'layout-grid' ? 'square' : i).concat(['minimize-2']));
+  t.surface.bgType = 'grid';
+  const t2 = build(plugin, s, { mode: 'full', onCollapse: () => {} });
+  ok('full · the background button shows the current pattern',
+     icons(t2.bar, '.nx-sk-grp-actions .nx-sk-btn').indexOf('square') >= 0);
+  ok('full · no overflow button', icons(t.bar, '.nx-sk-btn').indexOf('more-horizontal') === -1);
+}
+
+// ── 4 · options row contents, pinned by default ────────────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full' });
+  ok('pinned · row is open', t.sub.classList.contains('is-open'));
+  eq('pinned · pen chips', icons(t.sub, '.nx-sk-subpen'),
+     ['pen-tool', 'pen', 'pencil', 'brush', 'feather']);
+  ok('pinned · size favourites present', t.sub.querySelectorAll('.nx-sk-fav').length === 3);
+  ok('pinned · swatches present', t.sub.querySelectorAll('.nx-sk-color').length >= 5);
+  ok('pinned · palette book at the end of the colours',
+     icons(t.sub, '.nx-sk-colors .nx-sk-color').indexOf('palette') >= 0);
+}
+
+// ── 5 · the eraser has no options, so the row collapses ────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full' });
+  const eraser = Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn')).find(b => b.dataset.icon === 'eraser');
+  eraser.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('eraser · surface in erase mode', t.surface.mode === 'erase');
+  ok('eraser · row marked empty', t.sub.classList.contains('is-empty'));
+  ok('eraser · row not open', !t.sub.classList.contains('is-open'));
+  ok('eraser · its bar button is active', eraser.classList.contains('is-active'));
+}
+
+// ── 6 · reveal mode opens on a tool tap and closes on the first stroke ─────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  s.bar = { mode: 'reveal', compact: null, full: null };
+  const t = build(plugin, s, { mode: 'full' });
+  ok('reveal · starts closed', !t.sub.classList.contains('is-open'));
+  const pen = t.bar.querySelector('.nx-sk-grp-tools .nx-sk-btn');
+  pen.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('reveal · a tool tap opens it', t.sub.classList.contains('is-open'));
+  t.pad.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  ok('reveal · the first stroke closes it', !t.sub.classList.contains('is-open'));
+  pen.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('reveal · reopens after that', t.sub.classList.contains('is-open'));
+  pen.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('reveal · tapping the active tool again closes it', !t.sub.classList.contains('is-open'));
+}
+
+// ── 7 · every tool keeps its own colour ────────────────────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full' });
+  const toolBtn = (icon) => Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn')).find(b => b.dataset.icon === icon);
+  const swatch = (i) => t.sub.querySelectorAll('.nx-sk-colors .nx-sk-color')[i];
+
+  eq('colour · pen starts at the default ink', t.surface.color, s.ink);
+  swatch(2).dispatchEvent(new MouseEvent('click', { bubbles: true }));   // '#d92f2f'
+  const penColor = t.surface.color;
+  eq('colour · pen took the swatch', penColor, '#d92f2f');
+
+  toolBtn('highlighter').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('colour · highlighter did NOT inherit the pen ink', t.surface.color !== penColor);
+  eq('colour · highlighter started at its palette head', t.surface.color, s.palettes[0].colors[0]);
+  swatch(3).dispatchEvent(new MouseEvent('click', { bubbles: true }));   // '#1f9e57'
+  const markerColor = t.surface.color;
+
+  toolBtn('pen-tool').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('colour · the pen got its own ink back', t.surface.color, penColor);
+  toolBtn('highlighter').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('colour · the highlighter got its own ink back', t.surface.color, markerColor);
+  eq('colour · both are stored per tool', s.toolColors, { pen: penColor, marker: markerColor });
+}
+
+// ── 8 · a tool can be put on its own palette ───────────────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  s.palettes = [
+    { name: 'Ink', colors: ['#111111', '#222222'] },
+    { name: 'Wash', colors: ['#ffcc00', '#00ccff'] },
+  ];
+  s.activePalette = 0;
+  const t = build(plugin, s, { mode: 'full' });
+  const toolBtn = (icon) => Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn')).find(b => b.dataset.icon === icon);
+  toolBtn('highlighter').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const book = Array.from(t.sub.querySelectorAll('.nx-sk-colors .nx-sk-color')).find(e => e.dataset.icon === 'palette');
+  book.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const pop = document.querySelector('.nx-sk-palpop');
+  ok('palette · popover names the tool it applies to',
+     (pop.querySelector('.nx-sk-pop-title') || {}).textContent === 'Palette · Highlighter');
+  pop.querySelectorAll('.nx-sk-palrow')[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('palette · assigned to the highlighter only', s.toolPalettes, { marker: 1 });
+  eq('palette · colour jumped to the new palette', t.surface.color, '#ffcc00');
+  eq('palette · swatches follow the highlighter',
+     Array.from(t.sub.querySelectorAll('.nx-sk-colors .nx-sk-color')).filter(e => !e.dataset.icon).length, 2);
+  toolBtn('pen-tool').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('palette · the pen was NOT moved to the new palette', s.toolPalettes.pen === undefined);
+  eq('palette · the pen shows the default palette again',
+     Array.from(t.sub.querySelectorAll('.nx-sk-colors .nx-sk-color')).filter(e => !e.dataset.icon)
+       .map(e => e.style.getPropertyValue('--c')), ['#111111', '#222222']);
+  eq('palette · and keeps the ink it had', t.surface.color, s.ink);
+  const popLeft = document.querySelector('.nx-sk-pop'); if (popLeft) popLeft.remove();
+}
+
+// ── 9 · rebuilding the bar must not stack options rows ─────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const wrap = stage.createDiv('nx-sketch');
+  const bar = wrap.createDiv('nx-sketch-bar');
+  const pad = wrap.createDiv('nx-sketch-pad');
+  const surface = makeSurface(pad);
+  for (let i = 0; i < 3; i++) { bar.empty(); plugin._buildSketchBar(bar, surface, s, { mode: 'compact' }); }
+  eq('rebuild · exactly one options row', wrap.querySelectorAll('.nx-sketch-subbar').length, 1);
+  eq('rebuild · exactly one tool group', wrap.querySelectorAll('.nx-sk-grp-tools').length, 1);
+}
+
+// ── 10 · the per-device override ───────────────────────────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  s.bar = { mode: 'pinned', compact: ['pen', 'undo'], full: null };
+  eq('device · shared config applies', plugin.barConfig(s).compact, ['pen', 'undo']);
+  plugin.setBarOverride({ enabled: true, mode: 'reveal', compact: ['marker'], full: null });
+  const cfg = plugin.barConfig(s);
+  eq('device · override wins for mode', cfg.mode, 'reveal');
+  eq('device · override wins for the list', cfg.compact, ['marker']);
+  eq('device · a null list still falls back to the default', cfg.full.length, DEFAULTS.full.length);
+  plugin.setBarOverride(null);
+  eq('device · removing it goes back to shared', plugin.barConfig(s).compact, ['pen', 'undo']);
+  eq('device · and back to the shared mode', plugin.barConfig(s).mode, 'pinned');
+}
+
+// ── 11 · barConfig refuses a bar you cannot draw with ──────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  s.bar = { mode: 'pinned', compact: ['undo', 'redo'], full: null };
+  eq('guard · a bar with no tool gets the pen back', plugin.barConfig(s).compact, ['pen', 'undo', 'redo']);
+  s.bar.compact = ['pen', 'lasso', 'undo'];
+  eq('guard · unknown ids are dropped', plugin.barConfig(s).compact, ['pen', 'undo']);
+  s.bar.mode = 'sideways';
+  eq('guard · an unknown mode falls back to pinned', plugin.barConfig(s).mode, 'pinned');
+}
+
+// ── 12 · a user-trimmed bar renders exactly what was asked for ─────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  s.bar = { mode: 'pinned', compact: ['pen', 'eraser', 'clear'], full: null };
+  const t = build(plugin, s, { mode: 'compact', onDone: () => {} });
+  eq('custom · tools', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn'), ['pen-tool', 'eraser']);
+  eq('custom · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
+     ['trash-2', 'more-horizontal', 'check']);
+  const more = Array.from(t.bar.querySelectorAll('.nx-sk-btn')).find(b => b.dataset.icon === 'more-horizontal');
+  more.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const pop = document.querySelector('.nx-sk-pop');
+  eq('custom · everything not in the bar moved into the ⋯ menu',
+     Array.from(pop.querySelectorAll('.nx-sk-menuitem-lbl')).map(e => e.textContent),
+     expectOverflow(['pen', 'eraser', 'clear']));
+  // A tool in the menu still has to select that tool.
+  Array.from(pop.querySelectorAll('.nx-sk-menuitem'))[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('custom · picking a tool from the menu switches to it', t.surface.pen, 'marker');
+  const left = document.querySelector('.nx-sk-pop'); if (left) left.remove();
+}
+
+// ── 13 · a slate note has no auto-extend toggle to offer ───────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full', slate: true });
+  ok('slate · no auto-extend button', icons(t.bar, '.nx-sk-btn').indexOf('chevrons-down') === -1);
+  ok('slate · and none in a menu either', icons(t.bar, '.nx-sk-btn').indexOf('more-horizontal') === -1);
+}
+
+// ── 14 · picking a pen type from the options row ───────────────────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full' });
+  const chips = t.sub.querySelectorAll('.nx-sk-subpen');
+  chips[2].dispatchEvent(new MouseEvent('click', { bubbles: true }));   // pencil
+  eq('pen types · surface switched', t.surface.pen, 'pencil');
+  ok('pen types · the chip is active', t.sub.querySelectorAll('.nx-sk-subpen')[2].classList.contains('is-active'));
+  eq('pen types · the bar button shows the chosen pen',
+     t.bar.querySelector('.nx-sk-grp-tools .nx-sk-btn').dataset.icon, 'pen-tool');
+  // Size favourites are per pen, so switching must reload them.
+  ok('pen types · favourites reloaded', t.sub.querySelectorAll('.nx-sk-fav').length === 3);
+}
+
+
+// ── 15 · a colour or size tap must not tear down the row under the finger ──
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full' });
+  const swatches = () => t.sub.querySelectorAll('.nx-sk-colors .nx-sk-color');
+  const before = swatches()[3];
+  before.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('stability · the swatch element survives its own click', swatches()[3] === before);
+  ok('stability · and is the active one now', before.classList.contains('is-active'));
+  // Tapping the active swatch again opens the picker — only possible if the
+  // element is still in the tree.
+  before.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('stability · tapping it again opens the colour picker', !!document.querySelector('.nx-sk-pop'));
+  const p2 = document.querySelector('.nx-sk-pop'); if (p2) p2.remove();
+
+  const fav = t.sub.querySelectorAll('.nx-sk-fav')[2];
+  fav.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('stability · the size button survives its own click', t.sub.querySelectorAll('.nx-sk-fav')[2] === fav);
+  eq('stability · and applied its width', t.surface.size, 8);
+
+  // Leaving the eraser DOES change the tool, so there the row must rebuild.
+  const eraser = Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn')).find(b => b.dataset.icon === 'eraser');
+  eraser.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('stability · eraser collapses the row', t.sub.classList.contains('is-empty'));
+  t.bar.querySelector('.nx-sk-grp-tools .nx-sk-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('stability · going back to the pen brings the row back', !t.sub.classList.contains('is-empty'));
+  ok('stability · with its pen chips rebuilt', t.sub.querySelectorAll('.nx-sk-subpen').length === 5);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+</script>
+</body></html>

@@ -1,0 +1,250 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>objects harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --background-secondary:#252525;
+  --background-modifier-border:#3a3a3a; --interactive-accent:#fb6734; --text-muted:#999; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+#stage { width: 800px; }
+.svg-icon { display:block; width:17px; height:17px; }
+</style></head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+try {
+const O = window.sketchObjects;
+const C = window.sketchCanvas;
+
+// ── the object model ───────────────────────────────────────────────────────
+{
+  const obj = { kind: 'sticker', id: 'star', x: 10, y: 20, w: 40, h: 30 };
+  eq('obj · bounds', O.objectBounds(obj), { minX: 10, minY: 20, maxX: 50, maxY: 50 });
+
+  const list = [
+    { kind: 'note', x: 0, y: 0, w: 100, h: 100 },
+    { kind: 'sticker', id: 'star', x: 40, y: 40, w: 30, h: 30 },
+  ];
+  eq('obj · the topmost one wins where they overlap', O.objectAt(list, 50, 50), 1);
+  eq('obj · and the one underneath elsewhere', O.objectAt(list, 10, 10), 0);
+  eq('obj · nothing outside them', O.objectAt(list, 500, 500), -1);
+
+  const placed = O.placeObject(100, 100, 800, 400, 400);
+  eq('obj · a wide image is scaled to the cap', [placed.w, placed.h], [400, 200]);
+  eq('obj · and centred on the drop point', [placed.x, placed.y], [-100, 0]);
+  const small = O.placeObject(100, 100, 50, 50, 400);
+  eq('obj · a small one is not blown up', [small.w, small.h], [50, 50]);
+
+  const moved = O.transformObject(obj, { a: 2, b: 0, c: 0, d: 2, e: 0, f: 0 });
+  eq('obj · scaling moves and grows it', [moved.x, moved.y, moved.w, moved.h], [20, 40, 80, 60]);
+  const tiny = O.transformObject(obj, { a: 0.001, b: 0, c: 0, d: 0.001, e: 0, f: 0 });
+  ok('obj · but never below a grabbable size', tiny.w >= O.MIN_SIZE && tiny.h >= O.MIN_SIZE);
+}
+
+// ── note text ──────────────────────────────────────────────────────────────
+{
+  eq('text · empty text is one empty line', O.wrapText('', 200, 14, 10), ['']);
+  eq('text · a short line stays whole', O.wrapText('hello there', 400, 14, 10), ['hello there']);
+  const wrapped = O.wrapText('one two three four five six seven eight nine ten', 120, 14, 8);
+  ok('text · a long line is broken up', wrapped.length > 1, JSON.stringify(wrapped));
+  ok('text · and no line overruns the box',
+     wrapped.every(l => l.length <= Math.floor((120 - 16) / (14 * O.GLYPH_RATIO))), JSON.stringify(wrapped));
+  const hard = O.wrapText('Donaudampfschifffahrtsgesellschaftskapitaen', 100, 14, 8);
+  ok('text · a word longer than the line is split, not left to run off',
+     hard.length > 1 && hard.every(l => l.length <= 10), JSON.stringify(hard));
+  eq('text · newlines are kept', O.wrapText('a\nb', 400, 14, 10), ['a', 'b']);
+}
+
+// ── SVG emitted for the page and the export ────────────────────────────────
+{
+  const svg = O.objectSVG({ kind: 'image', x: 1, y: 2, w: 30, h: 40, href: 'data:image/png;base64,AAA' });
+  ok('svg · an image emits an <image>', svg.indexOf('<image') === 0, svg);
+  ok('svg · with the data URI intact', svg.indexOf('data:image/png;base64,AAA') > 0);
+  eq('svg · an image with no source emits nothing', O.objectSVG({ kind: 'image', x: 0, y: 0, w: 1, h: 1 }), '');
+
+  const st = O.objectSVG({ kind: 'sticker', id: 'check', x: 0, y: 0, w: 24, h: 24, color: '#ff0000' });
+  ok('svg · a sticker emits its path', st.indexOf('<path') > 0 && st.indexOf('#ff0000') > 0, st);
+
+  const note = O.objectSVG({ kind: 'note', x: 0, y: 0, w: 200, h: 120, color: 'blue', text: 'hi <there> & "you"' });
+  ok('svg · a note emits paper and text', note.indexOf('<rect') === 0 && note.indexOf('<text') > 0);
+  ok('svg · and escapes what the user typed',
+     note.indexOf('&lt;there&gt;') > 0 && note.indexOf('&amp;') > 0 && note.indexOf('<there>') < 0, note);
+
+  eq('svg · an unknown kind emits nothing', O.objectSVG({ kind: 'nonsense', x: 0, y: 0, w: 1, h: 1 }), '');
+  ok('svg · the list emitter concatenates',
+     O.objectsSVG([{ kind: 'sticker', id: 'star', x: 0, y: 0, w: 24, h: 24 }, { kind: 'sticker', id: 'star', x: 0, y: 0, w: 24, h: 24 }])
+       .split('<g ').length === 3);
+}
+
+// ── the ruler ──────────────────────────────────────────────────────────────
+{
+  eq('ruler · a fixed angle gives that direction at once',
+     C.rulerDirection(0, 0, 0, 0, 0), { x: 1, y: 0 });
+  const d90 = C.rulerDirection(90, 0, 0, 0, 0);
+  ok('ruler · 90° points down the page', Math.abs(d90.x) < 1e-9 && Math.abs(d90.y - 1) < 1e-9);
+  eq('ruler · free waits until the stroke has committed', C.rulerDirection(null, 0, 0, 1, 0), null);
+  const free = C.rulerDirection(null, 0, 0, 30, 40);
+  ok('ruler · then follows where it started', Math.abs(free.x - 0.6) < 1e-9 && Math.abs(free.y - 0.8) < 1e-9);
+
+  const proj = C.projectToLine(0, 0, { x: 1, y: 0 }, 50, 999);
+  eq('ruler · a sample is projected onto the line', [proj.x, proj.y], [50, 0]);
+  const back = C.projectToLine(10, 10, { x: 0, y: 1 }, 999, 40);
+  eq('ruler · off-axis travel is dropped', [back.x, back.y], [10, 40]);
+}
+
+// ── the surface with objects on it ─────────────────────────────────────────
+function makeSurface(opts) {
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const pad = stage.createDiv('nx-sketch-pad');
+  pad.style.width = '800px';
+  const s = new window.NexusSketchSurface(pad, Object.assign({ W: 800, H: 400 }, opts || {}));
+  s._invCTM = () => null;
+  s._pt = (e) => ({ x: e.__x, y: e.__y });
+  s._uPerPx = () => 1;
+  return s;
+}
+function ptr(s, type, x, y) {
+  const e = new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 });
+  e.__x = x; e.__y = y;
+  if (type === 'pointerdown') s._onDown(e);
+  else if (type === 'pointermove') s._onMove(e);
+  else s._onUp(e);
+}
+function drag(s, path) {
+  ptr(s, 'pointerdown', path[0][0], path[0][1]);
+  for (let i = 1; i < path.length; i++) ptr(s, 'pointermove', path[i][0], path[i][1]);
+  ptr(s, 'pointerup', path[path.length - 1][0], path[path.length - 1][1]);
+}
+
+{
+  const s = makeSurface();
+  const i = s.addObject({ kind: 'note', x: 100, y: 100, w: 200, h: 120, color: 'yellow', text: 'hello' });
+  eq('surface · the object was added', i, 0);
+  eq('surface · and arrives selected, so it can be moved next', s.selObjects, [0]);
+  ok('surface · it is rendered under the ink layer',
+     s.gObjects.childNodes.length > 0 && s.svg.firstElementChild !== s.gStrokes);
+
+  s.updateObject(0, { text: 'changed' });
+  eq('surface · updating replaces the record', s.objects[0].text, 'changed');
+  ok('surface · records are not mutated in place', s.undoStack.some(op => op.t === 'objs'));
+  s.undo();
+  eq('surface · undo restores the old text', s.objects[0].text, 'hello');
+  s.redo();
+  eq('surface · redo applies it again', s.objects[0].text, 'changed');
+
+  s.removeObjects([0]);
+  eq('surface · removing takes it off the page', s.objects.length, 0);
+  s.undo();
+  eq('surface · and undo brings it back', s.objects.length, 1);
+}
+
+{
+  const s = makeSurface();
+  s.addObject({ kind: 'sticker', id: 'star', x: 100, y: 100, w: 60, h: 60, color: '#111' });
+  s.setMode('select');
+  // A tap on an object picks it up — lassoing a photo would be silly.
+  drag(s, [[130, 130], [180, 130], [230, 130]]);
+  eq('surface · tapping an object selects it', s.selObjects, [0]);
+  eq('surface · and dragging moves it', s.objects[0].x, 200);
+  s.undo();
+  eq('surface · the move is undoable', s.objects[0].x, 100);
+
+  s.setSelectShape('rect');
+  s.clearSelection();
+  drag(s, [[50, 50], [250, 250]]);
+  eq('surface · a marquee catches it by its centre', s.selObjects, [0]);
+
+  s.duplicateSelection(10, 10);
+  eq('surface · duplicate copies objects too', s.objects.length, 2);
+  s.deleteSelection();
+  eq('surface · delete removes them', s.objects.length, 1);
+}
+
+{
+  // The export must carry the objects, or the sidecar stops being the drawing.
+  const s = makeSurface();
+  s.addObject({ kind: 'note', x: 10, y: 10, w: 100, h: 60, color: 'pink', text: 'note me' });
+  const svg = s.toSVGString();
+  ok('export · the note is drawn into the file', svg.indexOf('note me') > 0);
+  ok('export · and recorded in the metadata', svg.indexOf('"objects"') > 0);
+  const round = window.parseSketchSVG(svg);
+  eq('export · it survives a round trip', round.objects.length, 1);
+  eq('export · with its text', round.objects[0].text, 'note me');
+}
+
+{
+  // With the ruler on, a wobbly stroke comes out straight.
+  const s = makeSurface({ shapeSnap: false });
+  s.setRuler(true, 0);
+  ok('ruler · the pad says it is armed', s.host.classList.contains('is-ruler'));
+  drag(s, [[100, 100], [140, 130], [180, 70], [220, 120]]);
+  const pts = s.strokes[0].points;
+  ok('ruler · every point sits on the line', pts.every(p => Math.abs(p[1] - 100) < 0.6),
+     JSON.stringify(pts.map(p => p[1])));
+  ok('ruler · and it still travelled sideways', Math.max(...pts.map(p => p[0])) > 200);
+
+  s.setRuler(false);
+  drag(s, [[100, 200], [140, 240], [180, 210]]);
+  ok('ruler · turned off, the stroke bends again',
+     s.strokes[1].points.some(p => Math.abs(p[1] - 200) > 5));
+}
+
+
+// ── sections and the outline ───────────────────────────────────────────────
+{
+  const s = makeSurface();
+  s.addSection(500, 'Later');
+  s.addSection(100, 'Beginning');
+  eq('outline · sections are kept in page order', s.sections.map(x => x.title), ['Beginning', 'Later']);
+  ok('outline · and drawn on the page', s.gSections.childNodes.length === 4, 'nodes ' + s.gSections.childNodes.length);
+
+  s.renameSection(0, 'Start');
+  eq('outline · renaming works', s.sections[0].title, 'Start');
+  s.undo();
+  eq('outline · and is undoable', s.sections[0].title, 'Beginning');
+  s.redo();
+
+  s.removeSection(0);
+  eq('outline · removing works', s.sections.map(x => x.title), ['Later']);
+  s.undo();
+  eq('outline · and is undoable too', s.sections.length, 2);
+
+  const svg = s.toSVGString();
+  ok('outline · sections are drawn into the exported file', svg.indexOf('Later') > 0);
+  ok('outline · and recorded in the metadata', svg.indexOf('"sections"') > 0);
+  const round = window.parseSketchSVG(svg);
+  eq('outline · they survive a round trip', round.sections.length, 2);
+
+  // A name from the user is text, not markup — in the drawn part. The metadata
+  // block is CDATA and legitimately holds it raw, so only the body is checked.
+  s.addSection(700, 'a <b> & "c"');
+  const file = s.toSVGString();
+  const drawn = file.slice(file.indexOf(']]>') + 3);
+  ok('outline · a section name is escaped where it is drawn',
+     drawn.indexOf('a &lt;b&gt; &amp; &quot;c&quot;') > 0 && drawn.indexOf('<b> &') < 0, drawn.slice(0, 300));
+
+  // A title containing the CDATA terminator would otherwise truncate the
+  // metadata and leave a file that no longer parses.
+  const evil = makeSurface();
+  evil.addSection(50, 'closes ]]> here');
+  evil.addObject({ kind: 'note', x: 0, y: 0, w: 100, h: 60, color: 'grey', text: 'and ]]> again' });
+  const evilFile = evil.toSVGString();
+  const reread = window.parseSketchSVG(evilFile);
+  ok('outline · a title containing ]]> does not break the file', !!reread, 'unparseable');
+  eq('outline · and reads back intact', reread && reread.sections[0].title, 'closes ]]> here');
+  eq('outline · the note text too', reread && reread.objects[0].text, 'and ]]> again');
+
+  eq('outline · scrolling reports honestly when there is nowhere to scroll', s.scrollToY(500), false);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+</script>
+</body></html>

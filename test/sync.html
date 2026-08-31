@@ -1,0 +1,284 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>sync harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+(async () => {
+try {
+const S = window.vaultSyncLib;
+const W = window.webdavLib;
+const Z = window.zipLib;
+
+const f = (mtime, size) => ({ mtime, size });
+/* The base remembers what EACH side looked like — see baseSide(). */
+const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: remoteEntry === undefined ? localEntry : remoteEntry });
+
+// ── the three-way decision, one file at a time ─────────────────────────────
+{
+  const same = f(1000, 10);
+  const base = b(same);
+  eq('decide · nothing anywhere', S.decide('a', null, null, null).action, 'none');
+  eq('decide · untouched on both sides', S.decide('a', same, same, base).action, 'none');
+
+  eq('decide · new here', S.decide('a', f(2000, 5), null, null).action, 'upload');
+  eq('decide · new there', S.decide('a', null, f(2000, 5), null).action, 'download');
+
+  eq('decide · edited here', S.decide('a', f(3000, 20), same, base).action, 'upload');
+  eq('decide · edited there', S.decide('a', same, f(3000, 20), base).action, 'download');
+
+  // The case a two-way sync cannot answer.
+  eq('decide · deleted here', S.decide('a', null, same, base).action, 'deleteRemote');
+  eq('decide · deleted there', S.decide('a', same, null, base).action, 'deleteLocal');
+  eq('decide · deleted on both sides', S.decide('a', null, null, base).action, 'none');
+
+  eq('decide · edited on both sides is a conflict',
+     S.decide('a', f(3000, 20), f(4000, 30), base).action, 'conflict');
+  eq('decide · deleted here and edited there is a conflict',
+     S.decide('a', null, f(4000, 30), base).action, 'conflict');
+  eq('decide · edited here and deleted there is a conflict',
+     S.decide('a', f(3000, 20), null, base).action, 'conflict');
+  // Both sides ended up with the same thing — nothing to argue about.
+  eq('decide · both edited to the same result is not a conflict',
+     S.decide('a', f(3000, 20), f(3000, 20), base).action, 'none');
+
+  // Clock skew between machines is not an edit.
+  eq('decide · a second of clock skew is not a change',
+     S.decide('a', f(1900, 10), same, base).action, 'none');
+  ok('decide · three seconds is', S.decide('a', f(4000, 10), same, base).action === 'upload');
+  ok('decide · and a different size always is',
+     S.decide('a', f(1000, 11), same, base).action === 'upload');
+
+  /* The regression that made this a two-sided record: a server stamps its own
+     time on an upload, so the sides legitimately differ afterwards. With one
+     timestamp for both, the next run called the remote side changed and
+     downloaded back what had just been uploaded — for ever. */
+  const mine = f(1000, 10), theirs = f(61000, 10);
+  eq('decide · after an upload the two sides may differ and nothing is due',
+     S.decide('a', mine, theirs, b(mine, theirs)).action, 'none');
+  eq('decide · and a real later edit is still caught',
+     S.decide('a', f(99000, 12), theirs, b(mine, theirs)).action, 'upload');
+
+  // A state file from before the record had two sides is still readable.
+  eq('decide · an old one-sided base is read, not treated as new',
+     S.decide('a', same, same, same).action, 'none');
+  eq('base · both sides are recorded', S.agreement(mine, theirs), { local: mine, remote: theirs });
+  eq('base · a missing side is null', S.agreement(mine, null).remote, null);
+}
+
+// ── refusing to run ────────────────────────────────────────────────────────
+{
+  /* The failure this guards against: a wrong URL, or a folder renamed on the
+     server, answers with an empty listing — and every file then looks deleted
+     remotely. Without the guard the plan is to delete the whole vault. */
+  const local = {}, base = {};
+  for (let i = 0; i < 40; i++) { local['n' + i + '.md'] = f(1000, 10); base['n' + i + '.md'] = b(f(1000, 10)); }
+  const wiped = S.planSync(local, {}, base);
+  eq('guard · without it, everything would go', wiped.deleteLocal.length, 40);
+  const verdict = S.safetyCheck(wiped, local, {}, base);
+  ok('guard · an empty server folder stops the run', !verdict.safe);
+  ok('guard · and says why in words', /empty/.test(verdict.reason), verdict.reason);
+
+  // A first sync has nothing recorded, so an empty server is simply a new one.
+  ok('guard · a first sync against an empty server is fine',
+     S.safetyCheck(S.planSync(local, {}, {}), local, {}, {}).safe);
+
+  // Deleting a few files is normal work.
+  const fewGone = {};
+  Object.keys(local).forEach((k, i) => { if (i > 4) fewGone[k] = f(1000, 10); });
+  ok('guard · deleting five of forty is left alone',
+     S.safetyCheck(S.planSync(local, fewGone, base), local, fewGone, base).safe);
+
+  // Deleting most of them is not.
+  const mostGone = { 'n0.md': f(1000, 10), 'n1.md': f(1000, 10) };
+  const big = S.safetyCheck(S.planSync(local, mostGone, base), local, mostGone, base);
+  ok('guard · deleting most of them stops the run', !big.safe);
+  ok('guard · and counts them out loud', /38 of 40/.test(big.reason), big.reason);
+
+  // The same protection in the other direction.
+  const gone = {};
+  const remoteAll = {};
+  Object.keys(local).forEach(k => { remoteAll[k] = f(1000, 10); });
+  const wipeRemote = S.safetyCheck(S.planSync(gone, remoteAll, base), gone, remoteAll, base);
+  ok('guard · and it protects the server side too', !wipeRemote.safe, JSON.stringify(wipeRemote));
+}
+
+// ── the whole plan ─────────────────────────────────────────────────────────
+{
+  const local  = { 'a.md': f(2000, 5), 'both.md': f(1000, 9), 'mine.md': f(3000, 4) };
+  const remote = { 'b.md': f(2000, 5), 'both.md': f(1000, 9), 'theirs.md': f(3000, 4) };
+  const base   = { 'both.md': b(f(1000, 9)), 'gone.md': b(f(500, 2)) };
+  const plan = S.planSync(local, remote, base);
+  eq('plan · new here goes up', plan.upload.map(x => x.path), ['a.md', 'mine.md']);
+  eq('plan · new there comes down', plan.download.map(x => x.path), ['b.md', 'theirs.md']);
+  eq('plan · nothing untouched is moved', plan.conflict.length, 0);
+  // 'gone.md' was in the agreement and is on neither side now.
+  eq('plan · a file gone from both sides needs nothing', S.planSize(plan), 4);
+
+  const skipped = S.planSync(local, remote, base, { skip: p => p === 'a.md' });
+  ok('plan · a skipped path is reported and not acted on',
+     skipped.skipped.indexOf('a.md') >= 0 && skipped.upload.every(x => x.path !== 'a.md'));
+}
+
+// ── conflicts ──────────────────────────────────────────────────────────────
+{
+  const verdict = { path: 'notes/Idea.md', action: 'conflict' };
+  const mine = f(5000, 10), theirs = f(9000, 12);
+  eq('conflict · keep both by default', S.resolveConflict(verdict, 'keepBoth', mine, theirs).act, 'keepBoth');
+  eq('conflict · newer picks the server here', S.resolveConflict(verdict, 'newer', mine, theirs).act, 'download');
+  eq('conflict · and this device the other way', S.resolveConflict(verdict, 'newer', theirs, mine).act, 'upload');
+  eq('conflict · a tie is not decided by a coin toss',
+     S.resolveConflict(verdict, 'newer', mine, mine).act, 'keepBoth');
+  eq('conflict · this device wins', S.resolveConflict(verdict, 'local', mine, theirs).act, 'upload');
+  eq('conflict · the server wins', S.resolveConflict(verdict, 'remote', mine, theirs).act, 'download');
+  // A side that no longer has the file resolves to a deletion, not an upload of nothing.
+  eq('conflict · preferring a side that deleted it deletes it',
+     S.resolveConflict(verdict, 'local', null, theirs).act, 'deleteRemote');
+
+  eq('conflict · the copy says where it came from',
+     S.conflictCopyName('notes/Idea.md', 'Tablet', '2026-08-31 1400'),
+     'notes/Idea (conflict Tablet 2026-08-31 1400).md');
+  eq('conflict · a file without an extension still works',
+     S.conflictCopyName('LICENSE', 'Desk', '2026-08-31 1400'), 'LICENSE (conflict Desk 2026-08-31 1400)');
+  eq('conflict · a dot in a folder name is not an extension',
+     S.conflictCopyName('a.b/Idea', 'Desk', 'x'), 'a.b/Idea (conflict Desk x)');
+  ok('conflict · a device name cannot inject a path separator',
+     S.conflictCopyName('a.md', 'me/../etc', 'x').indexOf('/etc') < 0,
+     S.conflictCopyName('a.md', 'me/../etc', 'x'));
+}
+
+// ── what never travels ─────────────────────────────────────────────────────
+{
+  const withConfig = S.makeSkip({ config: true });
+  const without = S.makeSkip({ config: false });
+
+  ok('skip · a note is synced', !withConfig('Journal/2026-08-31.md'));
+  ok('skip · settings travel when config is on', !withConfig('.obsidian/appearance.json'));
+  ok('skip · and not when it is off', without('.obsidian/appearance.json'));
+
+  // The point of D3: settings follow, the window layout does not.
+  ok('skip · the window layout never travels', withConfig('.obsidian/workspace.json'));
+  ok('skip · nor the mobile one', withConfig('.obsidian/workspace-mobile.json'));
+  ok('skip · nor the graph view', withConfig('.obsidian/graph.json'));
+  ok('skip · nor the sync\'s own state', withConfig('.obsidian/plugins/nexus-suite/sync-state.json'));
+  ok('skip · but a plugin\'s settings do', !withConfig('.obsidian/plugins/dataview/data.json'));
+
+  ok('skip · git is never synced', withConfig('.git/config'));
+  ok('skip · nor the trash', withConfig('.trash/old.md'));
+  ok('skip · nor Syncthing leftovers', withConfig('Notes/a.sync-conflict-20260831.md'));
+  ok('skip · nor node_modules', withConfig('.obsidian/plugins/x/node_modules/y.js'));
+
+  const custom = S.makeSkip({ config: true, exclude: ['Archive/', '*.tmp', 'exact.md'] });
+  ok('skip · a folder rule', custom('Archive/2020/old.md'));
+  ok('skip · a glob', custom('anything.tmp'));
+  ok('skip · an exact path', custom('exact.md'));
+  ok('skip · and nothing else', !custom('Archive.md'));
+  ok('skip · an empty path is never synced', custom(''));
+}
+
+// ── backups ────────────────────────────────────────────────────────────────
+{
+  eq('backup · the name sorts by date', S.backupName('My Vault', '2026-08-31T12:00'), 'My Vault 2026-08-31.zip');
+  eq('backup · an awkward vault name is cleaned', S.backupName('a/b:c', '2026-01-02'), 'a b c 2026-01-02.zip');
+  eq('backup · and an empty one still gets a name', S.backupName('', '2026-01-02'), 'vault 2026-01-02.zip');
+
+  ok('backup · the first one is always needed', S.needsBackup('', '2026-08-31'));
+  ok('backup · a second one the same day is not', !S.needsBackup('2026-08-31', '2026-08-31'));
+  ok('backup · the next day it is', S.needsBackup('2026-08-31', '2026-09-01'));
+
+  const names = ['v 2026-08-28.zip', 'v 2026-08-29.zip', 'v 2026-08-30.zip', 'v 2026-08-31.zip'];
+  eq('rotate · under the limit, nothing goes', S.backupsToDelete(names, 4), []);
+  eq('rotate · over it, the oldest go first', S.backupsToDelete(names, 2),
+     ['v 2026-08-28.zip', 'v 2026-08-29.zip']);
+  eq('rotate · keeping one keeps the newest', S.backupsToDelete(names, 1).length, 3);
+}
+
+// ── URLs and PROPFIND ──────────────────────────────────────────────────────
+{
+  eq('url · joined', W.joinUrl('https://h/dav/Vault', 'Notes/a.md'), 'https://h/dav/Vault/Notes/a.md');
+  eq('url · a trailing slash on the base is not doubled',
+     W.joinUrl('https://h/dav/Vault/', 'a.md'), 'https://h/dav/Vault/a.md');
+  eq('url · the root itself', W.joinUrl('https://h/dav/Vault', ''), 'https://h/dav/Vault/');
+  eq('url · a space is encoded', W.joinUrl('https://h/d', 'My Notes/a b.md'), 'https://h/d/My%20Notes/a%20b.md');
+  eq('url · and each segment separately, so a slash cannot escape',
+     W.joinUrl('https://h/d', 'a/b.md'), 'https://h/d/a/b.md');
+
+  eq('href · an absolute path back to a vault path',
+     W.hrefToPath('/dav/Vault/Notes/a.md', 'https://h/dav/Vault'), 'Notes/a.md');
+  eq('href · a full URL too',
+     W.hrefToPath('https://h/dav/Vault/Notes/a.md', 'https://h/dav/Vault'), 'Notes/a.md');
+  eq('href · percent-encoding is undone',
+     W.hrefToPath('/dav/Vault/My%20Notes/a.md', 'https://h/dav/Vault'), 'My Notes/a.md');
+  eq('href · a trailing slash on a folder goes',
+     W.hrefToPath('/dav/Vault/Notes/', 'https://h/dav/Vault'), 'Notes');
+
+  const XML = '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">'
+    + '<d:response><d:href>/dav/V/</d:href><d:propstat><d:prop>'
+    + '<d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>'
+    + '<d:response><d:href>/dav/V/a.md</d:href><d:propstat><d:prop>'
+    + '<d:resourcetype/><d:getlastmodified>Mon, 31 Aug 2026 10:00:00 GMT</d:getlastmodified>'
+    + '<d:getcontentlength>42</d:getcontentlength><d:getetag>"abc"</d:getetag>'
+    + '</d:prop></d:propstat></d:response></d:multistatus>';
+  const list = W.parseListing(XML, 'https://h/dav/V');
+  eq('propfind · both entries', list.length, 2);
+  ok('propfind · the collection is marked', list[0].folder === true);
+  eq('propfind · the file path', list[1].path, 'a.md');
+  eq('propfind · its size', list[1].size, 42);
+  ok('propfind · its date is parsed', list[1].mtime > 0);
+  eq('propfind · the etag loses its quotes', list[1].etag, 'abc');
+  eq('propfind · rubbish gives nothing rather than throwing', W.parseListing('not xml at all', 'x'), []);
+}
+
+// ── the archive ────────────────────────────────────────────────────────────
+{
+  // Known vector: the CRC-32 of "123456789" is 0xCBF43926.
+  eq('zip · crc32 of the standard check string',
+     Z.crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
+  eq('zip · of nothing', Z.crc32(new Uint8Array(0)), 0);
+
+  const stamp = Z.dosDateTime(new Date(2026, 7, 31, 14, 30, 20));
+  eq('zip · the DOS date', stamp.date, ((2026 - 1980) << 9) | (8 << 5) | 31);
+  eq('zip · and the time, in two-second steps', stamp.time, (14 << 11) | (30 << 5) | 10);
+  ok('zip · anything before 1980 is clamped rather than wrapping',
+     Z.dosDateTime(new Date(1970, 0, 1)).date >= (0 << 9));
+
+  const archive = await Z.zipArchive([
+    { name: 'a.md', data: '# hello', date: new Date(2026, 7, 31) },
+    { name: 'sub/b.txt', data: 'x'.repeat(500), date: new Date(2026, 7, 31) },
+  ]);
+  const text = Array.from(archive).map(b => String.fromCharCode(b)).join('');
+  ok('zip · starts with a local file header', text.indexOf('PK\x03\x04') === 0);
+  ok('zip · has a central directory', text.indexOf('PK\x01\x02') > 0);
+  ok('zip · and an end record', text.indexOf('PK\x05\x06') > 0);
+  ok('zip · both names are in it', text.indexOf('a.md') > 0 && text.indexOf('sub/b.txt') > 0);
+
+  // The end record has to describe the directory exactly, or nothing opens it.
+  const eocd = text.lastIndexOf('PK\x05\x06');
+  const u16 = (at) => archive[at] | (archive[at + 1] << 8);
+  const u32 = (at) => (archive[at] | (archive[at + 1] << 8) | (archive[at + 2] << 16) | (archive[at + 3] << 24)) >>> 0;
+  eq('zip · the end record counts both entries', u16(eocd + 10), 2);
+  const centralAt = u32(eocd + 16);
+  const centralSize = u32(eocd + 12);
+  ok('zip · and points at the directory', text.slice(centralAt, centralAt + 4) === 'PK\x01\x02');
+  eq('zip · whose size reaches exactly the end record', centralAt + centralSize, eocd);
+
+  const empty = await Z.zipArchive([]);
+  eq('zip · an empty archive is still a valid one', empty.length, 22);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

@@ -1,0 +1,257 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>selection harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --background-secondary:#252525;
+  --background-modifier-border:#3a3a3a; --background-modifier-hover:rgba(255,255,255,.075);
+  --background-modifier-active-hover:rgba(255,255,255,.12);
+  --text-normal:#dcddde; --text-muted:#999; --interactive-accent:#fb6734; --text-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+#stage { width: 800px; }
+.svg-icon { display:block; width:17px; height:17px; }
+</style></head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+function near(n, g, w, tol) { ok(n, Math.abs(g - w) <= (tol == null ? 0.6 : tol), 'got ' + g + ' want ~' + w); }
+
+try {
+const S = window.sketchSelect;
+
+// ── the pure geometry ──────────────────────────────────────────────────────
+{
+  const square = [[0, 0], [10, 0], [10, 10], [0, 10]];
+  ok('geom · a point inside the square', S.pointInPolygon(5, 5, square));
+  ok('geom · a point outside it', !S.pointInPolygon(15, 5, square));
+  ok('geom · a point outside on the other axis', !S.pointInPolygon(5, -3, square));
+
+  // A concave lasso is the whole reason the hit test is a ray cast and not a box.
+  const cShape = [[0, 0], [10, 0], [10, 3], [3, 3], [3, 7], [10, 7], [10, 10], [0, 10]];
+  ok('geom · concave lasso excludes the notch', !S.pointInPolygon(6, 5, cShape));
+  ok('geom · and includes the arms', S.pointInPolygon(1, 5, cShape));
+
+  eq('geom · rect marquee corners', S.rectPoly({ x: 1, y: 2 }, { x: 5, y: 8 }),
+     [[1, 2], [5, 2], [5, 8], [1, 8]]);
+  const ell = S.ellipsePoly({ x: 0, y: 0 }, { x: 10, y: 10 }, 8);
+  eq('geom · ellipse marquee is closed-ish', ell.length, 8);
+  ok('geom · ellipse marquee contains its centre', S.pointInPolygon(5, 5, ell));
+  ok('geom · but not its corner', !S.pointInPolygon(0.4, 0.4, ell));
+}
+
+// ── hit testing over strokes ───────────────────────────────────────────────
+{
+  const strokes = [
+    { size: 2, points: [[1, 1, .5], [2, 2, .5]] },        // fully inside
+    { size: 2, points: [[50, 50, .5], [60, 60, .5]] },     // fully outside
+    { size: 2, points: [[8, 8, .5], [40, 40, .5]] },       // one point inside
+  ];
+  const region = S.rectPoly({ x: 0, y: 0 }, { x: 10, y: 10 });
+  eq('hit · any point inside selects the stroke', S.hitStrokes(strokes, region), [0, 2]);
+  eq('hit · an empty region selects nothing', S.hitStrokes(strokes, []), []);
+}
+
+// ── transforms ─────────────────────────────────────────────────────────────
+{
+  const pts = [[0, 0, .5], [10, 0, .5]];
+  eq('xform · translate', S.transformPoints(pts, S.translate(5, 3)), [[5, 3, .5], [15, 3, .5]]);
+  eq('xform · scale about a corner', S.transformPoints(pts, S.scaleAround(2, 2, 0, 0)), [[0, 0, .5], [20, 0, .5]]);
+  const rot = S.transformPoints(pts, S.rotateAround(Math.PI / 2, 0, 0));
+  near('xform · rotate 90° moves x into y', rot[1][1], 10);
+  near('xform · and clears x', rot[1][0], 0);
+  ok('xform · pressure is never touched by a transform', rot[1][2] === 0.5);
+  near('xform · matScale reports uniform growth', S.matScale(S.scaleAround(3, 3, 0, 0)), 3, 0.001);
+  near('xform · and the geometric mean of a non-uniform one', S.matScale(S.scaleAround(4, 1, 0, 0)), 2, 0.001);
+}
+
+// ── handles ────────────────────────────────────────────────────────────────
+{
+  const box = { minX: 0, minY: 0, maxX: 10, maxY: 10 };
+  const ids = S.handlePositions(box).map(h => h.id);
+  eq('handles · eight around the box plus rotate', ids,
+     ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'rotate']);
+  eq('handles · se pulls against nw', S.anchorFor('se', box), { x: 0, y: 0 });
+  eq('handles · nw pulls against se', S.anchorFor('nw', box), { x: 10, y: 10 });
+  eq('handles · hit test finds the corner', S.handleAt(box, { x: 10, y: 10 }, 3), 'se');
+  eq('handles · and nothing in the middle', S.handleAt(box, { x: 5, y: 5 }, 3), null);
+
+  // Dragging se to double the box must double the geometry.
+  const m = S.handleMatrix('se', box, { x: 20, y: 20 }, {});
+  const moved = S.transformPoints([[10, 10, .5]], m);
+  eq('handles · dragging se to 20,20 doubles the box', moved, [[20, 20, .5]]);
+  // An edge handle only moves its own axis.
+  const e = S.transformPoints([[10, 10, .5]], S.handleMatrix('e', box, { x: 20, y: 99 }, {}));
+  eq('handles · the east handle leaves y alone', e, [[20, 10, .5]]);
+  // Collapsing to zero would be a one-way door.
+  const flat = S.transformPoints([[10, 10, .5]], S.handleMatrix('se', box, { x: 0, y: 0 }, {}));
+  ok('handles · a box cannot be collapsed to nothing', Math.abs(flat[0][0]) > 0.01 || Math.abs(flat[0][1]) > 0.01,
+     JSON.stringify(flat));
+}
+
+// ── recognised shapes stay editable ────────────────────────────────────────
+{
+  const ellipse = { kind: 'ellipse', cx: 10, cy: 10, rx: 5, ry: 3 };
+  eq('shape · ellipse offers rx, ry and centre', S.shapeControlPoints(ellipse).map(c => c.id), ['rx', 'ry', 'c']);
+  const wider = S.moveShapeControl(ellipse, 'rx', { x: 18, y: 10 });
+  eq('shape · dragging rx widens it', wider.rx, 8);
+  eq('shape · without moving the centre', [wider.cx, wider.cy], [10, 10]);
+  const moved = S.moveShapeControl(ellipse, 'c', { x: 0, y: 0 });
+  eq('shape · dragging the centre moves it', [moved.cx, moved.cy], [0, 0]);
+
+  const poly = { kind: 'poly', pts: [[0, 0], [10, 0], [10, 10], [0, 10]] };
+  const recornered = S.moveShapeControl(poly, 'p2', { x: 30, y: 30 });
+  eq('shape · a corner of a polygon moves alone', recornered.pts, [[0, 0], [10, 0], [30, 30], [0, 10]]);
+  ok('shape · the original is not mutated', poly.pts[2][0] === 10);
+
+  eq('shape · scaling keeps an ellipse an ellipse',
+     S.transformShape(ellipse, S.scaleAround(2, 2, 0, 0)), { kind: 'ellipse', cx: 20, cy: 20, rx: 10, ry: 6 });
+  ok('shape · rotating one gives up its handles rather than lying',
+     S.transformShape(ellipse, S.rotateAround(0.4, 0, 0)) === null);
+  const rotPoly = S.transformShape(poly, S.rotateAround(Math.PI / 2, 0, 0));
+  ok('shape · a polygon survives rotation', rotPoly && rotPoly.kind === 'poly');
+}
+
+// ── the surface, driven end to end ─────────────────────────────────────────
+function makeSurface(strokes) {
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const pad = stage.createDiv('nx-sketch-pad');
+  pad.style.width = '800px';
+  const s = new window.NexusSketchSurface(pad, { W: 800, H: 400, strokes: strokes || [] });
+  // The harness has no layout engine behind getScreenCTM, so pin the mapping:
+  // one viewBox unit is one pixel at this size.
+  s._invCTM = () => null;
+  s._pt = (e) => ({ x: e.__x, y: e.__y });
+  s._uPerPx = () => 1;
+  return s;
+}
+function ptr(surface, type, x, y, extra) {
+  const e = new PointerEvent(type, Object.assign({ bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0 }, extra || {}));
+  e.__x = x; e.__y = y;
+  if (type === 'pointerdown') surface._onDown(e);
+  else if (type === 'pointermove') surface._onMove(e);
+  else surface._onUp(e);
+}
+function stroke(pts, over) {
+  return Object.assign({ color: '#111111', size: 3, thinning: 0, taper: 0, opacity: 1, pen: 'fountain', cap: 'round', points: pts }, over || {});
+}
+function drag(surface, path, extra) {
+  ptr(surface, 'pointerdown', path[0][0], path[0][1], extra);
+  for (let i = 1; i < path.length; i++) ptr(surface, 'pointermove', path[i][0], path[i][1], extra);
+  ptr(surface, 'pointerup', path[path.length - 1][0], path[path.length - 1][1], extra);
+}
+
+{
+  const s = makeSurface([
+    stroke([[10, 10, .5], [30, 30, .5]]),
+    stroke([[300, 300, .5], [320, 320, .5]]),
+  ]);
+  s.setMode('select');
+  s.setSelectShape('rect');
+  ok('surface · select mode marks the pad', s.host.classList.contains('is-select'));
+  drag(s, [[0, 0], [50, 25], [50, 50]]);
+  eq('surface · the marquee caught only the near stroke', s.selection, [0]);
+  ok('surface · a frame is drawn', !!s.gSel.querySelector('.nx-sk-selbox'));
+  eq('surface · with eight handles and a rotate', s.gSel.querySelectorAll('.nx-sk-selhandle').length, 9);
+
+  // Drag from inside the frame → the ink moves with it.
+  const before = s.strokes[0].points.map(p => p.slice());
+  drag(s, [[20, 20], [40, 20], [60, 20]]);
+  eq('surface · dragging the frame moves the stroke', s.strokes[0].points[0][0], before[0][0] + 40);
+  eq('surface · and leaves the other one alone', s.strokes[1].points[0][0], 300);
+  ok('surface · the move is undoable', s.undoStack.length > 0);
+  s.undo();
+  eq('surface · undo puts it back', s.strokes[0].points[0][0], before[0][0]);
+  s.redo();
+  eq('surface · redo moves it again', s.strokes[0].points[0][0], before[0][0] + 40);
+}
+
+{
+  const s = makeSurface([stroke([[10, 10, .5], [30, 30, .5]]), stroke([[12, 12, .5], [28, 28, .5]])]);
+  s.setMode('select');
+  s.setSelectShape('rect');
+  drag(s, [[0, 0], [50, 50]]);
+  eq('surface · both strokes caught', s.selection.length, 2);
+
+  s.setSelectionColor('#ff0000');
+  eq('surface · recolouring hits every selected stroke',
+     s.strokes.map(st => st.color), ['#ff0000', '#ff0000']);
+  s.undo();
+  eq('surface · and is undoable', s.strokes.map(st => st.color), ['#111111', '#111111']);
+  eq('surface · a colour undo KEEPS the selection', s.selection.length, 2);
+  s.redo();
+
+  s.duplicateSelection(10, 10);
+  eq('surface · duplicate adds copies', s.strokes.length, 4);
+  eq('surface · the copies are what stays selected', s.selection, [2, 3]);
+  eq('surface · offset by the given amount', s.strokes[2].points[0][0], s.strokes[0].points[0][0] + 10);
+  s.undo();
+  eq('surface · undoing a duplicate removes them again', s.strokes.length, 2);
+  s.redo();
+  // Adding strokes back renumbers them, so the selection is dropped on purpose.
+  eq('surface · a renumbering undo drops the selection', s.selection, []);
+  drag(s, [[0, 0], [50, 50]]);
+
+  const caught = s.selection.length;
+  s.deleteSelection();
+  eq('surface · delete removes the selected strokes', s.strokes.length, 4 - caught);
+  eq('surface · and empties the selection', s.selection, []);
+  s.undo();
+  eq('surface · undoing a delete restores them', s.strokes.length, 4);
+}
+
+{
+  // Scaling by a handle: the box doubles, and so does the ink width.
+  const s = makeSurface([stroke([[100, 100, .5], [200, 200, .5]], { size: 4 })]);
+  s.setMode('select');
+  s.setSelectShape('rect');
+  drag(s, [[90, 90], [210, 210]]);
+  eq('scale · one stroke selected', s.selection, [0]);
+  const box = s._selBox();
+  drag(s, [[box.maxX, box.maxY], [box.minX + (box.maxX - box.minX) * 2, box.minY + (box.maxY - box.minY) * 2]]);
+  near('scale · the far end moved out', s.strokes[0].points[1][0], box.minX + (200 - box.minX) * 2, 1.5);
+  ok('scale · the ink got thicker with it', s.strokes[0].size > 7 && s.strokes[0].size < 9, 'size ' + s.strokes[0].size);
+}
+
+{
+  // A snapped shape keeps its description and can be re-cornered afterwards.
+  const shape = { kind: 'poly', pts: [[100, 100], [200, 100], [200, 200], [100, 200]] };
+  const s = makeSurface([stroke(window.shapeToPoints(shape), { shape })]);
+  s.setMode('select');
+  s.setSelectShape('rect');
+  drag(s, [[90, 90], [210, 210]]);
+  eq('shape edit · the shape is selected', s.selection, [0]);
+  ok('shape edit · its control points are shown', s.gSel.querySelectorAll('.nx-sk-selctrl').length === 4);
+  drag(s, [[200, 200], [260, 260], [300, 300]]);
+  eq('shape edit · the dragged corner moved', s.strokes[0].shape.pts[2], [300, 300]);
+  eq('shape edit · the others did not', s.strokes[0].shape.pts[0], [100, 100]);
+  ok('shape edit · and the outline was regenerated',
+     s.strokes[0].points.some(p => p[0] > 290), 'max x ' + Math.max(...s.strokes[0].points.map(p => p[0])));
+}
+
+{
+  // Erasing renumbers the strokes, so a stale selection must not survive it.
+  const s = makeSurface([stroke([[10, 10, .5], [30, 30, .5]]), stroke([[40, 40, .5], [60, 60, .5]])]);
+  s.setMode('select');
+  s.setSelectShape('rect');
+  drag(s, [[0, 0], [80, 80]]);
+  eq('stale · both selected', s.selection.length, 2);
+  s.setMode('erase');
+  eq('stale · leaving select drops the selection', s.selection, []);
+  ok('stale · and clears the overlay', s.gSel.childNodes.length === 0);
+
+  s.setMode('select');
+  drag(s, [[0, 0], [80, 80]]);
+  s.clear();
+  eq('stale · clearing the drawing drops it too', s.selection, []);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+</script>
+</body></html>

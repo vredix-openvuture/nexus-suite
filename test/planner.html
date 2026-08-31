@@ -1,0 +1,238 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>planner harness</title>
+<link rel="stylesheet" href="plugin/styles.css">
+<style>
+:root { --background-primary:#1e1e1e; --background-secondary:#252525;
+  --background-modifier-border:#3a3a3a; --background-modifier-hover:rgba(255,255,255,.075);
+  --text-normal:#dcddde; --text-muted:#999; --text-faint:#777;
+  --interactive-accent:#fb6734; --text-on-accent:#fff; --radius-m:8px; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+#stage { width: 820px; }
+.svg-icon { display:block; width:15px; height:15px; }
+</style></head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+(async () => {
+try {
+const P = window.plannerLib;
+const TFile = window.obsidianStub.TFile;
+
+// ── dates ──────────────────────────────────────────────────────────────────
+{
+  eq('date · a day later', P.addDays('2026-09-03', 1), '2026-09-04');
+  eq('date · across a month end', P.addDays('2026-09-30', 1), '2026-10-01');
+  eq('date · across a year end', P.addDays('2026-12-31', 1), '2027-01-01');
+  eq('date · backwards', P.addDays('2026-01-01', -1), '2025-12-31');
+  eq('date · a leap day exists in 2028', P.addDays('2028-02-28', 1), '2028-02-29');
+  eq('date · and not in 2027', P.addDays('2027-02-28', 1), '2027-03-01');
+  eq('date · rubbish comes back unchanged', P.addDays('nonsense', 1), 'nonsense');
+
+  eq('month · label', P.monthLabel('2026-09'), 'September 2026');
+  eq('month · a month later', P.addMonths('2026-11', 2), '2027-01');
+  eq('month · and earlier', P.addMonths('2026-01', -1), '2025-12');
+  eq('month · a whole year on', P.addMonths('2026-06', 12), '2027-06');
+
+  // 2026-09-03 is a Thursday.
+  eq('week · Thursday is index 3 with Monday first', P.weekdayIndex('2026-09-03', 'monday'), 3);
+  eq('week · and 4 with Sunday first', P.weekdayIndex('2026-09-03', 'sunday'), 4);
+  eq('week · the week starts on the Monday', P.startOfWeek('2026-09-03', 'monday'), '2026-08-31');
+  eq('week · or on the Sunday', P.startOfWeek('2026-09-03', 'sunday'), '2026-08-30');
+}
+
+// ── the grid ───────────────────────────────────────────────────────────────
+{
+  const weeks = P.monthGrid('2026-09', 'monday');
+  eq('grid · always six rows, so the block never changes height', weeks.length, P.MONTH_ROWS);
+  eq('grid · seven days each', weeks[0].length, 7);
+  eq('grid · September 2026 starts on a Tuesday, so the row opens on 31 August',
+     weeks[0][0].date, '2026-08-31');
+  ok('grid · and that day is marked as outside the month', !weeks[0][0].inMonth);
+  ok('grid · the first of the month is inside it', weeks[0][1].inMonth && weeks[0][1].day === 1);
+  const all = weeks.flat();
+  eq('grid · every day of the month is present',
+     all.filter(d => d.inMonth).length, 30);
+  eq('grid · the days run without a gap',
+     all.every((d, i) => i === 0 || d.date === P.addDays(all[i - 1].date, 1)), true);
+
+  const sunday = P.monthGrid('2026-09', 'sunday');
+  eq('grid · a Sunday-first month starts a day earlier', sunday[0][0].date, '2026-08-30');
+
+  const week = P.weekDays('2026-09-03', 'monday');
+  eq('week · seven days from the Monday', week.map(d => d.date),
+     ['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05', '2026-09-06']);
+}
+
+// ── the block format ───────────────────────────────────────────────────────
+{
+  const src = [
+    'view: month',
+    'month: 2026-09',
+    'title: Autumn',
+    '2026-09-03: Ship 0.25',
+    '2026-09-11: Dentist, 14:00',
+  ].join('\n');
+  const cfg = P.parsePlanner(src);
+  eq('parse · the view', cfg.view, 'month');
+  eq('parse · the month', cfg.month, '2026-09');
+  eq('parse · the title', cfg.title, 'Autumn');
+  eq('parse · the entries', cfg.entries,
+     { '2026-09-03': 'Ship 0.25', '2026-09-11': 'Dentist, 14:00' });
+  eq('parse · and it round trips', P.stringifyPlanner(cfg), src);
+
+  // A colon in the text is not a config line.
+  eq('parse · a time in the text survives',
+     P.parsePlanner('2026-09-11: Dentist, 14:00').entries['2026-09-11'], 'Dentist, 14:00');
+  // An empty entry is not stored at all.
+  eq('parse · a blank day is not an entry', P.parsePlanner('2026-09-01:   ').entries, {});
+  // Anything unrecognised is kept and written back untouched.
+  const odd = P.parsePlanner('view: month\nsomething odd\nnote: keep me');
+  ok('parse · unknown lines are kept', odd.extra.indexOf('something odd') >= 0);
+  ok('parse · and unknown keys too', odd.extra.indexOf('note: keep me') >= 0);
+  ok('parse · so they survive a rewrite', P.stringifyPlanner(odd).indexOf('something odd') >= 0);
+
+  eq('parse · weekstart', P.parsePlanner('weekstart: sunday').weekStart, 'sunday');
+  eq('parse · defaults to monday', P.parsePlanner('').weekStart, 'monday');
+  eq('parse · an empty block is a month view', P.parsePlanner('').view, 'month');
+
+  const sorted = P.parsePlanner('2026-09-20: late\n2026-09-01: early');
+  ok('stringify · entries come out in date order',
+     P.stringifyPlanner(sorted).indexOf('09-01') < P.stringifyPlanner(sorted).indexOf('09-20'));
+
+  const one = P.parsePlanner('2026-09-01: x');
+  P.setEntry(one, '2026-09-01', '');
+  eq('entry · clearing one removes it rather than storing a blank', one.entries, {});
+  P.setEntry(one, '2026-09-02', '  spaced  ');
+  eq('entry · text is trimmed', one.entries['2026-09-02'], 'spaced');
+  P.setEntry(one, '2026-09-03', 'two\nlines');
+  eq('entry · a newline cannot break the one-line-per-day format',
+     one.entries['2026-09-03'], 'two lines');
+}
+
+// ── rendered, and writing back ─────────────────────────────────────────────
+function makeApp(text) {
+  const file = new TFile();
+  file.path = 'Plan.md'; file.basename = 'Plan'; file.extension = 'md';
+  const store = { 'Plan.md': { file, text } };
+  return {
+    _store: store,
+    vault: {
+      getAbstractFileByPath(p) { return store[p] ? store[p].file : null; },
+      async read(f) { return store[f.path].text; },
+      async modify(f, next) { store[f.path].text = next; },
+      async create(p, t) { const nf = new TFile(); nf.path = p; nf.basename = p.split('/').pop().replace('.md',''); store[p] = { file: nf, text: t }; return nf; },
+    },
+    workspace: { getLeaf: () => ({ openFile() {} }) },
+    internalPlugins: { getPluginById: () => null },
+  };
+}
+function ctxFor(app) {
+  return {
+    sourcePath: 'Plan.md',
+    getSectionInfo() {
+      const lines = app._store['Plan.md'].text.split('\n');
+      const start = lines.findIndex(l => l.trim().indexOf('```nexus-planner') === 0);
+      if (start < 0) return null;
+      let end = start + 1;
+      while (end < lines.length && lines[end].trim().indexOf('```') !== 0) end++;
+      return { text: app._store['Plan.md'].text, lineStart: start, lineEnd: end };
+    },
+  };
+}
+function blockOf(app) {
+  const lines = app._store['Plan.md'].text.split('\n');
+  const start = lines.findIndex(l => l.trim().indexOf('```nexus-planner') === 0);
+  let end = start + 1;
+  while (end < lines.length && lines[end].trim().indexOf('```') !== 0) end++;
+  return lines.slice(start + 1, end);
+}
+
+{
+  const NOTE = ['# Plan', '', '```nexus-planner', 'view: month', 'month: 2026-09', '```', '', 'After.'].join('\n');
+  const app = makeApp(NOTE);
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const el = stage.createDiv();
+  const pl = new window.NexusPlanner({ app, settings: { planner: { enabled: true } } });
+  pl.today = () => '2026-09-15';
+  pl.render('view: month\nmonth: 2026-09', el, ctxFor(app));
+
+  eq('render · seven weekday headings', el.querySelectorAll('.nx-pl-dow-c').length, 7);
+  eq('render · forty-two cells', el.querySelectorAll('.nx-pl-cell').length, 42);
+  eq('render · the month is named', el.querySelector('.nx-pl-title').textContent, 'September 2026');
+  eq('render · one cell is today', el.querySelectorAll('.nx-pl-cell.is-today').length, 1);
+  ok('render · and it is the fifteenth',
+     el.querySelector('.nx-pl-cell.is-today .nx-pl-num').textContent === '15');
+  ok('render · days outside the month are marked',
+     el.querySelectorAll('.nx-pl-cell.is-outside').length > 0);
+
+  // Type into a day and leave it.
+  const cells = el.querySelectorAll('.nx-pl-cell');
+  const input = cells[15].querySelector('.nx-pl-input');   // index 0 is 31 Aug, so 15 is 15 Sep
+  input.value = 'Ship the release';
+  input.dispatchEvent(new Event('blur'));
+  await sleep(0);
+  ok('write · the line is saved into the block',
+     blockOf(app).some(l => l === '2026-09-15: Ship the release'), blockOf(app).join('|'));
+  ok('write · the note around it survives', app._store['Plan.md'].text.indexOf('After.') > 0);
+
+  // A second day, after the block has already been rewritten once.
+  const el2 = document.querySelector('#stage > div');
+  const again = el2.querySelectorAll('.nx-pl-cell')[16].querySelector('.nx-pl-input');
+  again.value = 'Dentist';
+  again.dispatchEvent(new Event('blur'));
+  await sleep(0);
+  const block = blockOf(app);
+  ok('write · and so is the second one', block.some(l => l === '2026-09-16: Dentist'), block.join('|'));
+  ok('write · without losing the first', block.some(l => l.indexOf('Ship the release') >= 0), block.join('|'));
+
+  // Clearing a day removes the line.
+  const el3 = document.querySelector('#stage > div');
+  const clear = el3.querySelectorAll('.nx-pl-cell')[15].querySelector('.nx-pl-input');
+  eq('write · the value came back on re-render', clear.value, 'Ship the release');
+  clear.value = '';
+  clear.dispatchEvent(new Event('blur'));
+  await sleep(0);
+  ok('write · clearing removes the line',
+     !blockOf(app).some(l => l.indexOf('Ship the release') >= 0), blockOf(app).join('|'));
+}
+
+{
+  // Paging and switching view write themselves back too.
+  const NOTE = ['```nexus-planner', 'view: month', 'month: 2026-09', '```'].join('\n');
+  const app = makeApp(NOTE);
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const el = stage.createDiv();
+  const pl = new window.NexusPlanner({ app, settings: { planner: { enabled: true } } });
+  pl.today = () => '2026-09-15';
+  pl.render('view: month\nmonth: 2026-09', el, ctxFor(app));
+
+  el.querySelectorAll('.nx-pl-tool')[2].click();   // next month
+  await sleep(0);
+  ok('page · forward writes the new month', blockOf(app).indexOf('month: 2026-10') >= 0, blockOf(app).join('|'));
+  document.querySelector('#stage > div').querySelectorAll('.nx-pl-tool')[0].click();   // previous
+  await sleep(0);
+  ok('page · and back again', blockOf(app).indexOf('month: 2026-09') >= 0, blockOf(app).join('|'));
+
+  document.querySelector('#stage > div').querySelectorAll('.nx-pl-tool')[3].click();   // to the week
+  await sleep(0);
+  ok('page · switching to the week is saved', blockOf(app).indexOf('view: week') >= 0, blockOf(app).join('|'));
+  const weekEl = document.querySelector('#stage > div');
+  eq('page · a week is seven cells', weekEl.querySelectorAll('.nx-pl-cell').length, 7);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>quicknote harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+try {
+const Q = window.quicknoteLib;
+const X = window.extcommandLib;
+
+// ── the shared command builder ─────────────────────────────────────────────
+{
+  eq('cmd · a plain command', X.tokenizeCommand('whisper -f {in} -of {out}'),
+     ['whisper', '-f', '{in}', '-of', '{out}']);
+  eq('cmd · quotes group a path with a space',
+     X.tokenizeCommand('"/opt/my tools/whisper" {in} {out}'), ['/opt/my tools/whisper', '{in}', '{out}']);
+  eq('cmd · nothing in, nothing out', X.tokenizeCommand(''), []);
+
+  const built = X.buildCommand('whisper-cli -f {in} -otxt -of {out} -l de', '/tmp/a.webm', '/tmp/a');
+  eq('cmd · the binary', built.command, 'whisper-cli');
+  eq('cmd · and its arguments', built.args, ['-f', '/tmp/a.webm', '-otxt', '-of', '/tmp/a', '-l', 'de']);
+  // The argv goes to execFile, never to a shell, so a space is just a space.
+  eq('cmd · a path with a space stays one argument',
+     X.buildCommand('w {in} {out}', '/tmp/my clips/a.webm', '/tmp/x').args[0], '/tmp/my clips/a.webm');
+  ok('cmd · a missing input placeholder is refused', !!X.buildCommand('w {out}', 'a', 'b').error);
+  ok('cmd · a missing output placeholder is refused', !!X.buildCommand('w {in}', 'a', 'b').error);
+  ok('cmd · and an empty command is', !!X.buildCommand('', 'a', 'b').error);
+}
+
+// ── the transcript ─────────────────────────────────────────────────────────
+{
+  eq('speech · whitespace collapses', Q.cleanTranscript('  hello    there  '), ['hello there']);
+  eq('speech · a pause is a paragraph', Q.cleanTranscript('one thing\n\nanother thing'),
+     ['one thing', 'another thing']);
+  eq('speech · carriage returns do not survive', Q.cleanTranscript('a\r\nb'), ['a', 'b']);
+  eq('speech · nothing in, nothing out', Q.cleanTranscript(''), []);
+  eq('speech · null does not throw', Q.cleanTranscript(null), []);
+}
+
+// ── the note ───────────────────────────────────────────────────────────────
+{
+  // Eight words exactly: Remember to call the supplier about the pricing.
+  eq('note · the first words become the name',
+     Q.titleFrom(['Remember to call the supplier about the pricing idea today']),
+     'Remember to call the supplier about the pricing');
+  eq('note · at most eight words', Q.titleFrom(['a b c d e f g h i j k']).split(' ').length, 8);
+  eq('note · characters a file system refuses are stripped',
+     Q.titleFrom(['a/b:c*d?e']), 'a b c d e');
+  eq('note · a leading dot would make it hidden', Q.titleFrom(['...quiet']), 'quiet');
+  eq('note · nothing said still gets a name', Q.titleFrom([], 'Quick note'), 'Quick note');
+  eq('note · and so does a line of pure punctuation', Q.titleFrom(['///'], 'Quick note'), 'Quick note');
+
+  eq('note · the path', Q.notePath('Inbox/Quicknote', 'An idea', ''), 'Inbox/Quicknote/An idea.md');
+  eq('note · with a stamp when the name is taken',
+     Q.notePath('Inbox/Quicknote', 'An idea', '2026-08-31 1400'), 'Inbox/Quicknote/An idea 2026-08-31 1400.md');
+  eq('note · a trailing slash on the folder is not doubled',
+     Q.notePath('Inbox/Quicknote/', 'x', ''), 'Inbox/Quicknote/x.md');
+
+  const body = Q.noteBody(['first thought', 'second thought'],
+    { recorded: '2026-08-31T14:00', seconds: 12.6, engine: 'local', task: true });
+  ok('note · it opens with frontmatter', body.indexOf('---\nnexus-type: quicknote') === 0);
+  ok('note · the recording time is in it', body.indexOf('recorded: 2026-08-31T14:00') > 0);
+  ok('note · the length is rounded', body.indexOf('seconds: 13') > 0, body);
+  ok('note · the engine is recorded, so a bad transcript can be explained later',
+     body.indexOf('engine: local') > 0);
+  ok('note · asking for a task writes the field the tasks module reads',
+     body.indexOf('nexus-task: true') > 0);
+  ok('note · the paragraphs are separated', body.indexOf('first thought\n\nsecond thought') > 0, body);
+
+  const plain = Q.noteBody(['just this'], { recorded: '2026-08-31T14:00', engine: 'browser' });
+  ok('note · without the task flag when it was not asked for', plain.indexOf('nexus-task') < 0);
+
+  eq('note · both engines are offered', Q.ENGINES.map(x => x.id), ['local', 'browser']);
+  ok('note · and each one says what it costs', Q.ENGINES.every(x => x.note && x.note.length > 20));
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+</script>
+</body></html>

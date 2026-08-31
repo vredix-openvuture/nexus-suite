@@ -1,0 +1,136 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>sketch search harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+try {
+const S = window.sketchSearch;
+const score = window.fieldScore;
+
+// ── what a sketch offers to a search ───────────────────────────────────────
+{
+  const doc = S.sketchDocument('Inbox/Quicksketch/a.svg', {
+    title: 'Roadmap Q3',
+    sections: [{ y: 10, title: 'Risks' }, { y: 400, title: 'Budget' }],
+    objects: [
+      { kind: 'note', text: 'call the supplier' },
+      { kind: 'image', href: 'data:…' },
+      { kind: 'note' },
+    ],
+    ocr: ['scribbled deadline'],
+  });
+  eq('doc · the title', doc.fields.title, ['roadmap q3']);
+  eq('doc · every section name', doc.fields.sections, ['risks', 'budget']);
+  eq('doc · sticky notes with text, and only those', doc.fields.notes, ['call the supplier']);
+  eq('doc · recognised handwriting', doc.fields.ocr, ['scribbled deadline']);
+  ok('doc · and it says it has been read', doc.hasOcr);
+
+  const bare = S.sketchDocument('Inbox/Quicksketch/untitled.svg', { strokes: [] });
+  eq('doc · an untitled sketch falls back to its file name', bare.display, 'untitled');
+  ok('doc · and is honest about never having been read', !bare.hasOcr);
+}
+
+// ── ranking ────────────────────────────────────────────────────────────────
+{
+  const docs = [
+    S.sketchDocument('a.svg', { title: 'Budget', ocr: [] }),
+    S.sketchDocument('b.svg', { title: 'Other', sections: [{ y: 0, title: 'Budget' }] }),
+    S.sketchDocument('c.svg', { title: 'Other', objects: [{ kind: 'note', text: 'budget notes' }] }),
+    S.sketchDocument('d.svg', { title: 'Other', ocr: ['budget'] }),
+    S.sketchDocument('e.svg', { title: 'Nothing at all' }),
+  ];
+  const hits = S.searchSketches('budget', docs, score);
+  eq('rank · everything that mentions it is found', hits.length, 4);
+  eq('rank · the title wins', hits[0].doc.path, 'a.svg');
+  eq('rank · a section beats a note', hits[1].doc.path, 'b.svg');
+  eq('rank · and recognised handwriting comes last', hits[3].doc.path, 'd.svg');
+  eq('rank · the match says where it came from', hits[0].best.label, 'Title');
+  eq('rank · including when it is a guess', hits[3].best.label, 'Handwriting');
+
+  eq('rank · an empty query finds nothing', S.searchSketches('', docs, score), []);
+  eq('rank · a word nobody wrote finds nothing', S.searchSketches('zzzz', docs, score), []);
+
+  // Two words narrow, they do not widen.
+  const two = S.searchSketches('budget notes', docs, score);
+  eq('rank · every term has to hit', two.length, 1);
+  eq('rank · and the one that has both wins', two[0].doc.path, 'c.svg');
+}
+
+// ── the OCR command line ───────────────────────────────────────────────────
+{
+  eq('cmd · a plain command', S.tokenizeCommand('tesseract {in} {out} -l eng'),
+     ['tesseract', '{in}', '{out}', '-l', 'eng']);
+  eq('cmd · quotes group', S.tokenizeCommand('"/opt/my ocr/bin" {in} {out}'),
+     ['/opt/my ocr/bin', '{in}', '{out}']);
+  eq('cmd · single quotes too', S.tokenizeCommand("'a b' c"), ['a b', 'c']);
+  eq('cmd · an empty argument survives quoting', S.tokenizeCommand('a "" b'), ['a', '', 'b']);
+  eq('cmd · extra whitespace collapses', S.tokenizeCommand('  a   b  '), ['a', 'b']);
+  eq('cmd · nothing in, nothing out', S.tokenizeCommand(''), []);
+
+  const built = S.buildOcrCommand('tesseract {in} {out} -l deu', '/tmp/p.png', '/tmp/p');
+  eq('cmd · the binary is separated from its arguments', built.command, 'tesseract');
+  eq('cmd · and the placeholders are filled', built.args, ['/tmp/p.png', '/tmp/p', '-l', 'deu']);
+
+  // A path is never handed to a shell, so a space in it is just a character.
+  const spaced = S.buildOcrCommand('tesseract {in} {out}', '/tmp/my sketches/p.png', '/tmp/my sketches/p');
+  eq('cmd · a path with a space stays one argument', spaced.args[0], '/tmp/my sketches/p.png');
+
+  ok('cmd · a template with no input placeholder is refused',
+     !!S.buildOcrCommand('tesseract {out}', 'a', 'b').error);
+  ok('cmd · nor without an output one',
+     !!S.buildOcrCommand('tesseract {in}', 'a', 'b').error);
+  ok('cmd · an empty template is refused', !!S.buildOcrCommand('', 'a', 'b').error);
+  ok('cmd · and the refusal says which one is missing',
+     S.buildOcrCommand('tesseract {out}', 'a', 'b').error.indexOf('{in}') > 0);
+}
+
+// ── cleaning what came back ────────────────────────────────────────────────
+{
+  // This is the real output of `tesseract` on a rendered page, verbatim.
+  eq('clean · the real thing', S.cleanOcrText('Nexus handwriting probe\n\f'), ['Nexus handwriting probe']);
+  eq('clean · blank lines go', S.cleanOcrText('a word\n\n\nanother line'), ['a word', 'another line']);
+  eq('clean · so does noise with nothing readable in it',
+     S.cleanOcrText('hello\n| , _ ~\n.\nworld here'), ['hello', 'world here']);
+  eq('clean · single characters are noise, not words', S.cleanOcrText('a\nreal words'), ['real words']);
+  eq('clean · runs of spaces collapse', S.cleanOcrText('too   many    gaps'), ['too many gaps']);
+  eq('clean · nothing in, nothing out', S.cleanOcrText(''), []);
+  eq('clean · null does not throw', S.cleanOcrText(null), []);
+  ok('clean · accented words survive', S.cleanOcrText('Grüße nach Köln').length === 1);
+}
+
+// ── the surface storing it ─────────────────────────────────────────────────
+{
+  const host = document.createElement('div');
+  host.style.width = '400px';
+  document.body.appendChild(host);
+  const s = new window.NexusSketchSurface(host, { W: 400, H: 200 });
+  eq('surface · nothing read yet', s.ocr, []);
+  s.setOcr(['first line', 'second line']);
+  eq('surface · the text is kept', s.ocr, ['first line', 'second line']);
+  const svg = s.toSVGString();
+  ok('surface · and written into the sidecar', svg.indexOf('"ocr"') > 0);
+  ok('surface · but never drawn on the page — it is a guess, not ink',
+     svg.slice(svg.indexOf(']]>')).indexOf('first line') < 0);
+  const round = window.parseSketchSVG(svg);
+  eq('surface · it survives a round trip', round.ocr, ['first line', 'second line']);
+  const doc = S.sketchDocument('x.svg', round);
+  eq('surface · and reaches the index', S.searchSketches('second', [doc], score).length, 1);
+  host.remove();
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+</script>
+</body></html>

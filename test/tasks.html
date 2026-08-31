@@ -1,0 +1,148 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>tasks harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+(async () => {
+try {
+const T = window.tasksLib;
+const TFile = window.obsidianStub.TFile;
+
+/* A vault of markdown files with frontmatter, and nothing else. */
+function makeVault(files) {
+  const store = {};
+  for (const [path, fm] of Object.entries(files)) {
+    const f = new TFile();
+    f.path = path;
+    f.basename = path.split('/').pop().replace(/\.md$/, '');
+    f.extension = 'md';
+    store[path] = { file: f, fm: Object.assign({}, fm) };
+  }
+  const app = {
+    vault: {
+      getMarkdownFiles() { return Object.values(store).map(r => r.file); },
+      getAbstractFileByPath(p) { return store[p] ? store[p].file : null; },
+    },
+    metadataCache: {
+      getFileCache(f) { return store[f.path] ? { frontmatter: store[f.path].fm } : null; },
+    },
+    fileManager: {
+      async processFrontMatter(f, fn) { fn(store[f.path].fm); },
+    },
+  };
+  return {
+    _store: store,
+    plugin: {
+      app,
+      settings: { tasksCalendar: { tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items' } } },
+    },
+  };
+}
+
+// ── which notes count ──────────────────────────────────────────────────────
+{
+  ok('flag · true counts', T.isNoteTask({ 'nexus-task': true }));
+  ok('flag · the string "true" counts, because YAML is not always typed',
+     T.isNoteTask({ 'nexus-task': 'true' }));
+  ok('flag · so does yes', T.isNoteTask({ 'nexus-task': 'yes' }));
+  ok('flag · and 1', T.isNoteTask({ 'nexus-task': 1 }));
+  ok('flag · false does not', !T.isNoteTask({ 'nexus-task': false }));
+  ok('flag · absent does not', !T.isNoteTask({ title: 'x' }));
+  ok('flag · no frontmatter at all does not', !T.isNoteTask(null));
+  ok('flag · a real task note is NOT a note tracking itself',
+     !T.isNoteTask({ 'nexus-type': 'task', 'nexus-task': true }));
+}
+
+// ── they turn up in the task list, wherever they live ──────────────────────
+{
+  const v = makeVault({
+    'Tasks/Items/t-abc.md': { 'nexus-type': 'task', title: 'A real task', 'nexus-project': 'Roadmap' },
+    'Journal/2026-08-31.md': { 'nexus-task': true, title: 'Follow up on the pricing idea' },
+    'Ideas/Sketchy.md': { 'nexus-task': 'yes', due: '2026-09-05', priority: 7 },
+    'Ideas/Plain.md': { title: 'Just a note' },
+    'Tasks/Projects/Roadmap.md': { 'nexus-type': 'project' },
+  });
+  const list = T.listTasks(v.plugin);
+  eq('list · both kinds are in one list', list.length, 3);
+  const titles = list.map(t => t.title).sort();
+  eq('list · including notes from anywhere in the vault', titles,
+     ['A real task', 'Follow up on the pricing idea', 'Sketchy']);
+  ok('list · a plain note is left alone', !titles.includes('Just a note'));
+
+  const note = list.find(t => t.title === 'Sketchy');
+  eq('list · a note task is keyed by its path', note.key, 'Ideas/Sketchy.md');
+  ok('list · and says it is one', note.fromNote === true);
+  eq('list · its due date is read', note.dueDay, '2026-09-05');
+  eq('list · and its priority', note.priority, 7);
+  eq('list · it is local, because a note is not on a server', note.provider, 'local');
+
+  const real = list.find(t => t.title === 'A real task');
+  ok('list · a real task note is untouched by any of this', !real.fromNote);
+  eq('list · and still keyed by its basename', real.key, 't-abc');
+}
+
+// ── ticking one writes to the note itself ──────────────────────────────────
+{
+  const v = makeVault({
+    'Ideas/Sketchy.md': { 'nexus-task': true },
+    'Tasks/Items/t-abc.md': { 'nexus-type': 'task', title: 'A real task' },
+  });
+  const state = T.taskState(v.plugin, 'Ideas/Sketchy.md');
+  ok('tick · the note resolves by its path', !!state);
+  ok('tick · and is reported as a note task', state.fromNote === true);
+
+  await T.setTaskDone(v.plugin, 'Ideas/Sketchy.md', true);
+  eq('tick · done is written into the note', v._store['Ideas/Sketchy.md'].fm.status, 'completed');
+  ok('tick · with a completion stamp', !!v._store['Ideas/Sketchy.md'].fm.completed);
+  eq('tick · and it reads back as done', T.listNoteTasks(v.plugin)[0].done, true);
+
+  await T.setTaskDone(v.plugin, 'Ideas/Sketchy.md', false);
+  eq('tick · un-ticking works too', v._store['Ideas/Sketchy.md'].fm.status, 'needs-action');
+
+  // The two key spaces must not collide.
+  ok('tick · a task note still resolves by its basename', !!T.taskState(v.plugin, 't-abc'));
+  ok('tick · and a path that is neither resolves to nothing',
+     T.taskState(v.plugin, 'Ideas/Nothing.md') === null);
+}
+
+// ── turning tracking on and off ────────────────────────────────────────────
+{
+  const v = makeVault({ 'Ideas/Thought.md': { title: 'A thought' } });
+  const file = v.plugin.app.vault.getAbstractFileByPath('Ideas/Thought.md');
+
+  const on = await T.toggleNoteTask(v.plugin, file);
+  eq('toggle · it goes on', on, true);
+  eq('toggle · and the field is written', v._store['Ideas/Thought.md'].fm['nexus-task'], true);
+  eq('toggle · so the note is now in the list', T.listTasks(v.plugin).length, 1);
+
+  await T.setTaskDone(v.plugin, 'Ideas/Thought.md', true);
+  const off = await T.toggleNoteTask(v.plugin, file);
+  eq('toggle · and off again', off, false);
+  ok('toggle · the field is gone', v._store['Ideas/Thought.md'].fm['nexus-task'] === undefined);
+  eq('toggle · so it leaves the list', T.listTasks(v.plugin).length, 0);
+  // The status stays, so switching tracking back on does not resurrect it as open.
+  eq('toggle · but the status it collected stays', v._store['Ideas/Thought.md'].fm.status, 'completed');
+
+  eq('toggle · forcing it on is idempotent', await T.toggleNoteTask(v.plugin, file, true), true);
+  eq('toggle · and forcing it on again stays on', await T.toggleNoteTask(v.plugin, file, true), true);
+  ok('toggle · something that is not a file is refused rather than thrown at',
+     await T.toggleNoteTask(v.plugin, null) === null);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

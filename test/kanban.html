@@ -1,0 +1,277 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>kanban harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --background-secondary:#252525;
+  --background-modifier-border:#3a3a3a; --interactive-accent:#fb6734; --text-muted:#999; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+.svg-icon { display:block; width:16px; height:16px; }
+</style></head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+(async () => {
+try {
+const K = window.kanbanLib;
+const TFile = window.obsidianStub.TFile;
+
+const NOTE = [
+  '# Board note',
+  '',
+  '```nexus-kanban',
+  'title: Roadmap',
+  '## Backlog',
+  '- [ ] First card',
+  '## Doing',
+  '## Done',
+  '```',
+  '',
+  'Text below the board.',
+].join('\n');
+
+/* A vault just real enough: files, read, modify. */
+function makeApp(text) {
+  const file = new TFile();
+  file.path = 'Board.md';
+  file.basename = 'Board';
+  const store = { 'Board.md': { file, text } };
+  return {
+    _store: store,
+    vault: {
+      getAbstractFileByPath(p) { return store[p] ? store[p].file : null; },
+      async read(f) { return store[f.path].text; },
+      async modify(f, next) { store[f.path].text = next; },
+      async create(p, t) { const nf = new TFile(); nf.path = p; store[p] = { file: nf, text: t }; return nf; },
+      adapter: { async exists() { return true; }, async mkdir() {} },
+    },
+    metadataCache: { getFirstLinkpathDest: (name) => (store[name + '.md'] ? store[name + '.md'].file : null) },
+    workspace: { getLeaf: () => ({ openFile() {} }) },
+    fileManager: { async processFrontMatter() {} },
+  };
+}
+
+/* Live preview: Obsidian re-derives the block's line span from the CURRENT
+   text every time it is asked. */
+function freshCtx(app) {
+  return {
+    sourcePath: 'Board.md',
+    getSectionInfo() {
+      const lines = app._store['Board.md'].text.split('\n');
+      const start = lines.findIndex(l => l.trim().indexOf('```nexus-kanban') === 0);
+      if (start < 0) return null;
+      let end = start + 1;
+      while (end < lines.length && lines[end].trim().indexOf('```') !== 0) end++;
+      return { text: app._store['Board.md'].text, lineStart: start, lineEnd: end };
+    },
+  };
+}
+/* Reading mode: the span is whatever it was when the block was first rendered,
+   and it does NOT follow edits made underneath it. */
+function staleCtx(app) {
+  const snapshot = freshCtx(app).getSectionInfo();
+  return { sourcePath: 'Board.md', getSectionInfo() { return snapshot; } };
+}
+
+function board(app, ctx) {
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const el = stage.createDiv();
+  // NexusKanban takes the PLUGIN, and reads app + settings off it.
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  kb.render(app._store['Board.md'].text.split('\n').slice(3, 8).join('\n'), el, ctx);
+  return { kb, el };
+}
+function blockOf(app) {
+  const lines = app._store['Board.md'].text.split('\n');
+  const start = lines.findIndex(l => l.trim().indexOf('```nexus-kanban') === 0);
+  let end = start + 1;
+  while (end < lines.length && lines[end].trim().indexOf('```') !== 0) end++;
+  return lines.slice(start + 1, end);
+}
+async function addCard(el, columnIndex, title) {
+  const col = el.querySelectorAll('.nx-kb-col')[columnIndex];
+  const input = col.querySelector('.nx-kb-add-input');
+  input.value = title;
+  const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+  input.dispatchEvent(ev);
+  await sleep(0);
+}
+
+// ── the parser round trips ─────────────────────────────────────────────────
+{
+  const src = 'title: Roadmap\n## Backlog\n- [ ] First card\n## Doing\n## Done';
+  const cfg = K.parseKanban(src);
+  eq('parse · three columns', cfg.buckets.map(b => b.title), ['Backlog', 'Doing', 'Done']);
+  eq('parse · one card', cfg.buckets[0].cards.map(c => c.text), ['First card']);
+  eq('parse · and it round trips', K.stringifyKanban(cfg).trim(), src.trim());
+}
+
+// ── the reported bug: only one card per column ─────────────────────────────
+{
+  const app = makeApp(NOTE);
+  const ctx = freshCtx(app);
+  let { el } = board(app, ctx);
+  await addCard(el, 1, 'Alpha');
+  await sleep(0);
+  eq('live · the first card is written', blockOf(app).filter(l => l.indexOf('Alpha') >= 0).length, 1);
+  await addCard(el, 1, 'Beta');
+  await sleep(0);
+  const block = blockOf(app);
+  eq('live · and so is the second', block.filter(l => l.indexOf('Beta') >= 0).length, 1);
+  ok('live · without losing the first', block.some(l => l.indexOf('Alpha') >= 0), block.join('|'));
+  ok('live · and the fence is still intact',
+     app._store['Board.md'].text.split('\n').filter(l => l.trim() === '```').length === 1,
+     app._store['Board.md'].text);
+  ok('live · the note below the board survived',
+     app._store['Board.md'].text.indexOf('Text below the board.') > 0);
+}
+
+// ── the same thing where the line span does not follow edits ───────────────
+{
+  const app = makeApp(NOTE);
+  const ctx = staleCtx(app);
+  const { el } = board(app, ctx);
+  await addCard(el, 1, 'Alpha');
+  await sleep(0);
+  await addCard(el, 1, 'Beta');
+  await sleep(0);
+  const text = app._store['Board.md'].text;
+  const block = blockOf(app);
+  ok('stale · both cards are on the board', block.some(l => l.indexOf('Alpha') >= 0) && block.some(l => l.indexOf('Beta') >= 0),
+     block.join('|'));
+  ok('stale · the fence is not duplicated', text.split('\n').filter(l => l.trim() === '```').length === 1, text);
+  ok('stale · and nothing outside the block was eaten', text.indexOf('Text below the board.') > 0, text);
+}
+
+// ── a card can be pointed at a note that already exists ────────────────────
+{
+  const app = makeApp(NOTE);
+  const existing = new TFile();
+  existing.path = 'Kanban module.md';
+  existing.basename = 'Kanban module';
+  app._store['Kanban module.md'] = { file: existing, text: '# Kanban module' };
+  const ctx = freshCtx(app);
+  const { kb, el } = board(app, ctx);
+  ok('link · the board can resolve an existing note', !!kb.noteByName('Kanban module'));
+
+  const cfg = K.parseKanban(K.stringifyKanban(K.parseKanban('## Backlog\n- [ ] [[Kanban module|Kanban]] @2026-08-25 #plugin')));
+  const card = cfg.buckets[0].cards[0];
+  eq('link · the link is parsed off the card', card.link, 'Kanban module');
+  eq('link · with its alias', card.alias, 'Kanban');
+  eq('link · its due date', card.due, '2026-08-25');
+  eq('link · and its tags', card.tags, ['plugin']);
+  eq('link · the title shown is the alias', K.cardTitle(card), 'Kanban');
+  eq('link · and it round trips', K.cardLine(card).trim(), '- [ ] [[Kanban module|Kanban]] @2026-08-25 #plugin');
+  void el;
+}
+
+// ── editing a card ─────────────────────────────────────────────────────────
+{
+  const app = makeApp(NOTE);
+  const ctx = freshCtx(app);
+  const { el } = board(app, ctx);
+  const card = el.querySelector('.nx-kb-card');
+  ok('edit · the card is on the board', !!card);
+  const menu = card.querySelector('.nx-kb-card-menu');
+  ok('edit · and it has a menu to edit it with', !!menu);
+  const box = card.querySelector('.nx-kb-check');
+  box.checked = true;
+  box.dispatchEvent(new Event('change', { bubbles: true }));
+  await sleep(0);
+  ok('edit · ticking it writes through to the note',
+     blockOf(app).some(l => l.indexOf('- [x] First card') >= 0), blockOf(app).join('|'));
+}
+
+
+// ── the reported bug, reproduced: the element is detached after the first
+//    save, so getSectionInfo stops answering and every later edit was lost ──
+{
+  const app = makeApp(NOTE);
+  let answers = 0;
+  const ctx = {
+    sourcePath: 'Board.md',
+    getSectionInfo() {
+      // Obsidian re-renders the block after the first write, which detaches the
+      // element the handlers are bound to. From then on it returns null.
+      if (answers++ > 0) return null;
+      return freshCtx(app).getSectionInfo();
+    },
+  };
+  const { el } = board(app, ctx);
+  await addCard(el, 1, 'Alpha');
+  await sleep(0);
+  await addCard(el, 1, 'Beta');
+  await sleep(0);
+  await addCard(el, 2, 'Gamma');
+  await sleep(0);
+  const block = blockOf(app);
+  ok('detached · the first card is saved', block.some(l => l.indexOf('Alpha') >= 0), block.join('|'));
+  ok('detached · and so is the second', block.some(l => l.indexOf('Beta') >= 0), block.join('|'));
+  ok('detached · and one in another column', block.some(l => l.indexOf('Gamma') >= 0), block.join('|'));
+  ok('detached · the fence is intact',
+     app._store['Board.md'].text.split('\n').filter(l => l.trim() === '```').length === 1);
+  ok('detached · and the text below the board is untouched',
+     app._store['Board.md'].text.indexOf('Text below the board.') > 0);
+}
+
+// ── two boards in one note must not overwrite each other ───────────────────
+{
+  const TWO = [
+    '```nexus-kanban',
+    'title: First',
+    '## A',
+    '- [ ] one',
+    '```',
+    '',
+    'Between them.',
+    '',
+    '```nexus-kanban',
+    'title: Second',
+    '## B',
+    '- [ ] two',
+    '```',
+  ].join('\n');
+  const app = makeApp(TWO);
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const el = stage.createDiv();
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  // Render the SECOND board, and give it a context that has already gone stale.
+  kb.render('title: Second\n## B\n- [ ] two', el, { sourcePath: 'Board.md', getSectionInfo: () => null });
+  await addCard(el, 0, 'added');
+  await sleep(0);
+  const text = app._store['Board.md'].text;
+  ok('two boards · the card landed in the second board',
+     text.indexOf('title: Second') < text.indexOf('added'), text);
+  ok('two boards · the first board is untouched', text.indexOf('- [ ] one') > 0, text);
+  ok('two boards · and its title survives', text.indexOf('title: First') > 0, text);
+  ok('two boards · both fences are still there',
+     text.split('\n').filter(l => l.trim() === '```').length === 2, text);
+}
+
+// ── locateBlock on its own ─────────────────────────────────────────────────
+{
+  const app = makeApp(NOTE);
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const lines = NOTE.split('\n');
+  const body = 'title: Roadmap\n## Backlog\n- [ ] First card\n## Doing\n## Done';
+  eq('locate · by body, with no help at all', kb.locateBlock(lines, body, null), { start: 2, end: 8 });
+  eq('locate · a body nobody wrote, with one board, still resolves',
+     kb.locateBlock(lines, 'nonsense', null), { start: 2, end: 8 });
+  eq('locate · nothing to find in a note with no board',
+     kb.locateBlock(['# just text', ''], 'anything', null), null);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

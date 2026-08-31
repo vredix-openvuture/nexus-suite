@@ -1,0 +1,27 @@
+require('./dom-ext.js');
+
+window.NexusSuite = require('../src/main.js');
+window.NexusSketchSurface = require('../src/views/sketch.js').NexusSketchSurface;
+window.DEFAULT_SETTINGS = require('../src/constants.js').DEFAULT_SETTINGS;
+window.BAR_ITEMS = require('../src/constants.js').BAR_ITEMS;
+window.sketchSelect = require('../src/lib/sketchselect.js');
+window.shapeToPoints = require('../src/views/sketch.js').shapeToPoints;
+window.recognizeShape = require('../src/views/sketch.js').recognizeShape;
+window.sketchCanvas = require('../src/lib/sketchcanvas.js');
+window.sketchObjects = require('../src/lib/sketchobjects.js');
+window.parseSketchSVG = require('../src/views/sketch.js').parseSketchSVG;
+window.BAR_DEFAULTS = require('../src/constants.js').BAR_DEFAULTS;
+window.sketchGestures = require('../src/lib/sketchgestures.js');
+window.sketchExport = require('../src/lib/sketchexport.js');
+window.sketchSearch = require('../src/lib/sketchsearch.js');
+window.fieldScore = require('../src/modals/search.js').fieldScore;
+window.kanbanLib = require('../src/lib/kanban.js');
+window.obsidianStub = require('obsidian');
+window.tasksLib = require('../src/lib/tasks.js');
+window.plannerLib = require('../src/lib/planner.js');
+window.NexusPlanner = require('../src/views/plannerblock.js').NexusPlanner;
+window.vaultSyncLib = require('../src/lib/vaultsync.js');
+window.webdavLib = require('../src/lib/webdav.js');
+window.zipLib = require('../src/lib/zip.js');
+window.quicknoteLib = require('../src/lib/quicknote.js');
+window.extcommandLib = require('../src/lib/extcommand.js');

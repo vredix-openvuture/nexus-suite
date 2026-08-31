@@ -1,0 +1,68 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="plugin/styles.css">
+<style>
+:root { --background-primary:#1e1e1e; --background-secondary:#252525;
+  --background-modifier-border:#3a3a3a; --background-modifier-hover:rgba(255,255,255,.075);
+  --background-modifier-active-hover:rgba(255,255,255,.12);
+  --text-normal:#dcddde; --text-muted:#999; --interactive-accent:#fb6734; --text-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+.svg-icon { display:block; width:17px; height:17px; }
+/* Measure the END state, not a frame of the collapse animation. */
+* { transition: none !important; }
+</style></head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script src="bundle.js"></script>
+<script>
+const out=[]; let fail=0;
+function eq(n,g,w){ const ok=JSON.stringify(g)===JSON.stringify(w); if(!ok)fail++;
+  out.push((ok?'PASS  ':'FAIL  ')+n+(ok?'':'  → got '+JSON.stringify(g)+' want '+JSON.stringify(w))); }
+function ok(n,c,d){ if(!c)fail++; out.push((c?'PASS  ':'FAIL  ')+n+(c?'':'  → '+d)); }
+
+/* Same shape as the real surface's toolbar-facing API — the bar builder reads
+   all of it while rendering, so a gap here fails the page, not the code. */
+function surf(host){ return { host, mode:'draw', pen:'fountain', color:'#2f2f2f', size:3,
+  autoGrow:false, bgType:'none', bgSize:27, bgOpacity:0.12, paper:'paper', paperStyle:true,
+  strokes:[], objects:[], selection:[], selObjects:[], selectShape:'lasso',
+  ruler:{on:false, angle:null}, W:1600, H:900, viewX:0, viewY:0, viewW:1600, sections:[],
+  setPen(p){this.pen=p;}, setMode(m){this.mode=m;}, setColor(c){this.color=c;}, setSize(v){this.size=v;},
+  getSize(){return this.size;}, setPaper(){}, setPaperStyle(){}, setBackground(){},
+  setSelectShape(k){this.selectShape=k;}, setPenMap(m){this.penMap=m;},
+  setRuler(on,a){this.ruler={on:!!on,angle:a==null||a===''?null:Number(a)};return this.ruler;},
+  hasSelection(){return false;}, setSelectionColor(){}, deleteSelection(){}, duplicateSelection(){},
+  addObject(){}, addSection(){}, removeSection(){}, scrollToY(){return false;},
+  viewCenter(){return {x:this.W/2,y:this.H/2};},
+  undo(){}, redo(){}, clear(){}, persist(){} }; }
+
+const plugin = new window.NexusSuite({},{}); plugin.saveSettings=()=>{};
+const s = JSON.parse(JSON.stringify(window.DEFAULT_SETTINGS.quicksketch));
+const stage = document.getElementById('stage');
+
+// Rebuild the code block's real DOM: wrap > bar-wrap > bar, then pad.
+const wrap = stage.createDiv('nx-sketch is-edit');
+const barWrap = wrap.createDiv('nx-sketch-bar-wrap');
+const bar = barWrap.createDiv('nx-sketch-bar');
+const pad = wrap.createDiv('nx-sketch-pad');
+pad.style.height = '80px';
+const surface = surf(pad);
+plugin._buildSketchBar(bar, surface, s, { mode:'compact', onDone:()=>{}, onFullscreen:()=>{} });
+
+const sub = bar.nextElementSibling;
+ok('options row landed inside the collapse wrapper', sub.parentElement === barWrap, sub.parentElement.className);
+const editH = barWrap.getBoundingClientRect().height;
+ok('edit mode · both rows have height', editH > 60, 'height ' + editH);
+
+wrap.classList.remove('is-edit'); wrap.classList.add('is-view');
+const viewH = barWrap.getBoundingClientRect().height;
+ok('view mode · the toolbar collapses to a hairline', viewH < 16, 'height ' + viewH);
+
+// Prove where the leftover comes from: with the options row gone from the DOM
+// the wrapper is what it always was, before this rework existed.
+const withSub = barWrap.getBoundingClientRect().height;
+sub.remove();
+const withoutSub = barWrap.getBoundingClientRect().height;
+eq('the leftover height is NOT the options row', withSub, withoutSub);
+out.push('  leftover = the bar\'s own padding + border: ' + withoutSub + 'px');
+
+out.push(''); out.push(fail===0 ? 'ALL GREEN' : fail+' FAILED');
+document.getElementById('out').textContent = out.join('\n');
+</script></body></html>

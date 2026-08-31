@@ -1,0 +1,163 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>gesture harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --background-modifier-border:#3a3a3a; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+#stage { width: 800px; }
+.svg-icon { display:block; width:17px; height:17px; }
+</style></head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+try {
+const G = window.sketchGestures;
+
+// ── decoding what the hardware reports ─────────────────────────────────────
+{
+  eq('decode · nothing pressed', G.decodeButtons(0), { barrel: false, eraserTip: false });
+  eq('decode · the tip alone is not a gesture', G.decodeButtons(1), { barrel: false, eraserTip: false });
+  eq('decode · the side button', G.decodeButtons(2), { barrel: true, eraserTip: false });
+  eq('decode · tip and side button together', G.decodeButtons(3), { barrel: true, eraserTip: false });
+  eq('decode · the eraser end', G.decodeButtons(32), { barrel: false, eraserTip: true });
+  eq('decode · rubbish is not a gesture', G.decodeButtons(undefined), { barrel: false, eraserTip: false });
+}
+
+// ── double-tap needs time AND place ────────────────────────────────────────
+{
+  const first = { x: 100, y: 100, t: 1000 };
+  ok('double · a quick tap in the same spot counts', G.isDoubleTap(first, 102, 101, 1100));
+  ok('double · too slow does not', !G.isDoubleTap(first, 102, 101, 1000 + G.DOUBLE_TAP_MS + 1));
+  ok('double · too far does not', !G.isDoubleTap(first, 100 + G.DOUBLE_TAP_R + 5, 100, 1050));
+  ok('double · with nothing before it, nothing happens', !G.isDoubleTap(null, 100, 100, 1000));
+}
+
+// ── profiles and overrides ─────────────────────────────────────────────────
+{
+  const generic = G.resolveMap('generic', null);
+  eq('profile · the generic preset', generic.barrel, 'eraseHold');
+  const spen = G.resolveMap('spen', null);
+  eq('profile · the S Pen has no eraser end to map', spen.eraserTip, 'none');
+  const over = G.resolveMap('generic', { barrel: 'undo' });
+  eq('profile · an override wins', over.barrel, 'undo');
+  eq('profile · and leaves the rest of the preset alone', over.eraserTip, 'eraseToggle');
+  eq('profile · an action this build does not know is ignored',
+     G.resolveMap('generic', { barrel: 'teleport' }).barrel, 'eraseHold');
+  eq('profile · an unknown profile falls back rather than throwing',
+     G.resolveMap('nonexistent', null).barrel, 'eraseHold');
+  ok('profile · every preset only names actions that exist',
+     G.PROFILE_IDS.every(id => Object.keys(G.PEN_PROFILES[id].map)
+       .every(k => G.PEN_ACTIONS.some(a => a.id === G.PEN_PROFILES[id].map[k]))));
+  ok('profile · every gesture is covered by every preset',
+     G.PROFILE_IDS.every(id => G.PEN_GESTURES.every(g => G.PEN_PROFILES[id].map[g.id] != null)));
+  ok('hold · only the hold action is a hold', G.isHoldAction('eraseHold') && !G.isHoldAction('undo'));
+}
+
+// ── the surface reporting them ─────────────────────────────────────────────
+function makeSurface(map) {
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const pad = stage.createDiv('nx-sketch-pad');
+  pad.style.width = '800px';
+  const s = new window.NexusSketchSurface(pad, { W: 800, H: 400, shapeSnap: false, penMap: map || {} });
+  s._invCTM = () => null;
+  s._pt = (e) => ({ x: e.__x, y: e.__y });
+  s._uPerPx = () => 1;
+  return s;
+}
+function pen(s, type, x, y, buttons, t) {
+  const e = new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: 'pen', button: 0, buttons: buttons || 0, pressure: 0.5 });
+  e.__x = x; e.__y = y;
+  if (t != null) Object.defineProperty(e, 'timeStamp', { value: t });
+  if (type === 'pointerdown') s._onDown(e);
+  else if (type === 'pointermove') s._onMove(e);
+  else s._onUp(e);
+}
+
+{
+  const s = makeSurface({ barrel: 'eraseHold', eraserTip: 'eraseToggle', doubleTap: 'undo' });
+  const seen = [];
+  s.onGesture = (action, phase, id) => { seen.push(id + '/' + action + ':' + phase); return true; };
+
+  pen(s, 'pointerdown', 100, 100, 1 | 2);   // tip down with the side button held
+  eq('surface · the side button is reported on press', seen, ['barrel/eraseHold:start']);
+  pen(s, 'pointerup', 100, 100, 0);
+  eq('surface · and on release', seen, ['barrel/eraseHold:start', 'barrel/eraseHold:end']);
+
+  seen.length = 0;
+  pen(s, 'pointerdown', 100, 100, 1);
+  pen(s, 'pointermove', 120, 120, 1 | 2);   // pressed mid-stroke, which is when it matters
+  ok('surface · pressing it mid-stroke is reported', seen.indexOf('barrel/eraseHold:start') >= 0, JSON.stringify(seen));
+  pen(s, 'pointerup', 120, 120, 0);
+
+  seen.length = 0;
+  pen(s, 'pointerdown', 300, 300, 32);
+  eq('surface · the eraser end is reported', seen, ['eraserTip/eraseToggle:start']);
+  pen(s, 'pointerup', 300, 300, 0);
+}
+
+{
+  const s = makeSurface({ doubleTap: 'undo' });
+  let fired = 0;
+  s.onGesture = (action) => { if (action === 'undo') fired++; return true; };
+
+  // Two dots in the same place, quickly.
+  pen(s, 'pointerdown', 200, 200, 1, 1000);
+  pen(s, 'pointerup', 200, 200, 0, 1010);
+  pen(s, 'pointerdown', 201, 201, 1, 1100);
+  pen(s, 'pointerup', 201, 201, 0, 1110);
+  eq('double · a double-tap fires its action', fired, 1);
+  eq('double · and the two stray dots are not left behind', s.strokes.length, 0);
+
+  // A real stroke between them is not a double-tap.
+  fired = 0;
+  pen(s, 'pointerdown', 400, 200, 1, 2000);
+  pen(s, 'pointerup', 400, 200, 0, 2010);
+  pen(s, 'pointerdown', 400, 200, 1, 2100);
+  pen(s, 'pointermove', 500, 260, 1, 2140);
+  pen(s, 'pointerup', 500, 260, 0, 2150);
+  eq('double · a stroke is never a double-tap', fired, 0);
+  ok('double · and it is kept', s.strokes.length > 0);
+
+  // Two taps far apart in time are two taps.
+  fired = 0;
+  const before = s.strokes.length;
+  pen(s, 'pointerdown', 600, 200, 1, 5000);
+  pen(s, 'pointerup', 600, 200, 0, 5010);
+  pen(s, 'pointerdown', 600, 200, 1, 9000);
+  pen(s, 'pointerup', 600, 200, 0, 9010);
+  eq('double · slow taps do not fire', fired, 0);
+  eq('double · and both dots stay', s.strokes.length, before + 2);
+}
+
+{
+  // A gesture mapped to nothing must not reach the handler at all.
+  const s = makeSurface({ barrel: 'none' });
+  let fired = 0;
+  s.onGesture = () => { fired++; return true; };
+  pen(s, 'pointerdown', 100, 100, 1 | 2);
+  eq('surface · an unmapped gesture is silent', fired, 0);
+}
+
+{
+  // A finger or mouse has no pen buttons to report.
+  const s = makeSurface({ barrel: 'undo' });
+  let fired = 0;
+  s.onGesture = () => { fired++; return true; };
+  const e = new PointerEvent('pointerdown', { bubbles: true, pointerId: 9, pointerType: 'mouse', button: 0, buttons: 2 });
+  e.__x = 10; e.__y = 10;
+  s._onDown(e);
+  eq('surface · a mouse right-click is not a pen gesture', fired, 0);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+</script>
+</body></html>
