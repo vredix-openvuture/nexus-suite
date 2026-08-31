@@ -23,6 +23,9 @@ run what you use.
 | **CalDAV** | Server accounts, local calendars, events, tasks | — |
 | **Search** | Weighted over title, tags, headings, properties, text | omnisearch |
 | **Kanban** | Boards with columns and cards in a note, plus the board view of your tasks | kanban |
+| **Planner** | A month on one screen, one line per day | — |
+| **Vault sync** | The whole vault to a WebDAV server, with daily backups | Syncthing, Obsidian Sync |
+| **QuickNote** | A note you speak instead of type | — |
 | **Workspaces** | Save and switch pane layouts | — |
 
 Built for a card-based vault layout and designed to work on mobile as well as
@@ -198,6 +201,181 @@ so the board still reads correctly on the tablet, where no sync runs. Without a
 credential on the device (or without a kanban view on the server) it falls back
 to your own columns and says so.
 
+## Quick Sketch
+
+A ```` ```quicksketch ```` block is a pad you draw on with pen, touch or mouse.
+Each drawing is a standalone `.svg` sidecar: an image any tool can open, with the
+raw stroke data (points and pressure) kept in its `<metadata>` so it stays
+editable.
+
+### The toolbar
+
+Two rows. The top one holds the tools, the one under it holds the options of
+whichever tool is active: pen types, widths and colours for the pen, widths and
+colours for the highlighter. The eraser has nothing to configure, so that row
+collapses instead of sitting there empty.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Options row | Always open | The row stays under the bar. |
+| Options row | Opens when you pick a tool | The row opens on a tool tap and closes again on your first stroke, so the canvas is whole while you draw. |
+| Just this device | off | Keeps a separate toolbar on this device in `localStorage`. Never synced, so a phone can hold three buttons while the desktop holds all of them. |
+
+Which buttons live in the bar is yours to set, separately for a note and for the
+full-size editor. Anything you leave out moves into the bar's `⋯` menu. Save,
+full size and "open beside the note" are not in that list: they always stay in
+the bar, because hiding the way out of an editor is not a preference.
+
+At least one tool has to stay in the bar. Turning the last one off is refused.
+
+### Tools
+
+| Tool | What it does |
+|---|---|
+| **Pen** | Five nibs (fountain, ballpoint, pencil, brush, calligraphy), each with its own width, colour and behaviour sheet. |
+| **Highlighter** | Translucent, and overlapping strokes of one colour do not stack darker. |
+| **Eraser** | Removes whole strokes. |
+| **Select** | Lasso, rectangle or ellipse. Move, scale and rotate what you caught, recolour it, duplicate it, delete it. |
+| **Spacing** | Drag a line down to open blank paper, up to close it again. Everything below the line moves with it. |
+| **Insert** | An image (embedded, so the file stays standalone), a sticky note, or one of eight stickers. |
+| **Ruler** | A straight edge the pen slides along, free or locked to 0 / 45 / 90 / 135 degrees. Stays on across strokes. |
+| **Outline** | Named marks down the page, and a list to jump between them. What an endless sheet needs instead of headings. |
+| **Export** | SVG, PNG or PDF, written next to the sketch. |
+
+A shape that was recognised by holding the pen still keeps its description, so it
+can be re-cornered later and not just scaled as a block. Select it on its own and
+its own control points appear.
+
+### The page
+
+The sheet has a **fixed width** (settings, default 1100 px) and grows downward
+for as long as you keep writing. That cap is what stops a tablet turned to
+landscape from rendering the same note at a bigger ink size. Zoom runs from 0.3×
+for an overview to 5×, and a one-finger drag scrolls with the same throw as the
+note around it.
+
+### Pen buttons
+
+| Gesture | Reported as |
+|---|---|
+| Side button | `PointerEvent.buttons` bit 2 |
+| Eraser end | `PointerEvent.buttons` bit 5 |
+| Double-tap | Two taps of the tip, timed and placed by the plugin |
+
+Each maps to an action you pick, with presets per pen. Worth saying plainly: the
+S Pen's air actions, the ones you do without touching the screen, are handled by
+Android and never reach a web page. Neither does the Lenovo pen's top button. A
+browser only sees what the pen does on or near the glass.
+
+### Finding a sketch again
+
+`Search sketches` searches the title, the section names and the sticky notes of
+every sidecar. That works with nothing installed.
+
+Handwriting is added on top by `Read the handwriting in this sketch`, which runs
+a program you install yourself — the default command line is
+`tesseract {in} {out} -l eng`. Nothing is uploaded and nothing is bundled; the
+cost is that it is desktop only, because a phone has no shell to run it in. A hit
+in recognised handwriting is labelled as such in the results, because it is a
+guess.
+
+### Colours per tool
+
+Every tool remembers the ink it was last used with, so switching to the
+highlighter and back does not cost you the pen's colour. A tool can also be put
+on its own palette: pick the tool, then the swatch book at the end of the colour
+strip. Tools you never assign follow the palette marked active in the settings.
+
+The pen starts at the **Default ink color** setting on a vault that has never
+drawn; every other tool starts at the head of its own palette.
+
+Deleting a palette that a tool was using drops that tool back to the active one
+rather than silently moving it to a different set of colours.
+
+## Planner
+
+A ```` ```nexus-planner ```` block is a month on one screen with **one line per
+day**. It is not the tasks module and not the agenda: those answer what is due,
+this answers what a month is *for*, which is a much shorter answer. Daily and
+weekly notes stay where the detail goes.
+
+````md
+```nexus-planner
+view: month
+month: 2026-09
+2026-09-03: Ship 0.25
+2026-09-11: Dentist, 14:00
+```
+````
+
+The block **is** the plan, the same way a kanban board is: one line per day
+inside the fence, sorted by date, so it survives without the plugin and travels
+with the note. `view: week` gives seven roomier rows instead; the arrows page
+through months or weeks and write the new position back. Each cell has a small
+button that opens that day's daily note, using the core plugin's own format, so
+the planner never invents a second naming scheme.
+
+## A note as a task
+
+`nexus-task: true` in the frontmatter of **any** note puts it in the tasks view
+and lets you tick it there, without moving it into the task folder and without a
+second note standing in for it. Command *Track this note as a task* toggles it.
+
+The case this exists for is a thought written down in the middle of something
+else that should be picked up later. Taking it out of the note it belongs to
+would take the context with it, which is why a checklist line somewhere else is
+not good enough. Such a task shows a small note icon in the list, and clicking
+it opens the whole thing rather than a stub.
+
+## Vault sync
+
+The whole vault to a WebDAV server: Nextcloud, a Synology, anything that speaks
+it. Runs on mobile too, because it goes through Obsidian's own `requestUrl`.
+
+**Three-way, not two-way.** It compares what is here, what is on the server, and
+what was here the last time the two agreed. Without that third input a sync
+cannot tell a file you *deleted* from a file that has not *arrived* yet — so it
+either resurrects everything you delete or deletes everything you have not
+downloaded. The record of the last agreement lives in the plugin folder and is
+itself excluded from the sync.
+
+| | |
+|---|---|
+| **Credentials** | localStorage, per device. Never in `data.json` — that is a file in the vault, and the vault is what gets uploaded. |
+| **Conflicts** | Keep both by default: the server version keeps the file name, yours is saved beside it with the device name and time in it. Newer-wins, this-device-wins and server-wins are offered and are described as what they are, which is a choice to discard something. |
+| **Deletions** | Go through Obsidian's trash, not `unlink`. A sync that deletes the wrong file has to be recoverable. |
+| **Settings** | With *Carry the settings too* on, `.obsidian` travels — **except** `workspace.json`, `workspace-mobile.json`, `graph.json` and the sync's own state. Those describe this machine; carrying them would rearrange panes you deliberately arranged. |
+| **Backups** | One zip a day into `_backups`, taken after the first sync of the day, oldest removed past the number you keep. The ZIP writer is in the plugin (`lib/zip.js`) for the same reason the PDF writer is: it has to stay one bundled file. |
+
+### What it is not
+
+*Shared vault* makes each device leave a note on the server saying it is here,
+so you can be told when someone else is in the same vault. That is not live
+co-editing. Two people typing in the same paragraph at the same time needs a
+CRDT and a relay server holding the document in memory — a WebDAV server stores
+files and answers requests, and no arrangement of file uploads adds up to
+character-level merging. The honest version of that feature is a short sync
+interval plus a warning that someone else is in here.
+
+## QuickNote
+
+Command *Quick note (speak it)* opens a recorder. Say the thing, press stop, and
+it becomes a note — the first eight words become the file name, because that is
+what you will be scanning for later, and the exact time goes in the frontmatter
+where it does not have to be short.
+
+Two recognisers, and the difference is stated rather than hidden:
+
+- **A program on this machine** (default). Runs the command you configure on the
+  recording, e.g. `whisper-cli -f {in} -otxt -of {out} -l de`. Nothing leaves the
+  machine. Desktop only, because a phone has no shell to run it in.
+- **The browser's own recogniser.** No install and it works on mobile — but most
+  builds send the audio to the browser vendor to transcribe it, which is the
+  opposite of local, so it is never the default.
+
+Ticking *Track the note as a task* writes `nexus-task: true`, so a spoken
+reminder turns up in the tasks view.
+
 ## Build & source layout
 
 The plugin **source** lives in `src/`. Obsidian still only ever loads the
@@ -209,7 +387,21 @@ bundles `src/` into a single file each, so mobile stays intact.
 npm install        # once — pulls esbuild into ./node_modules (stignored, never synced)
 npm run dev        # watch: rebuilds main.js + styles.css on every save in src/
 npm run build      # one production build (minified, no sourcemap) — the resting state
+./test/run.sh      # toolbar tests; add "visual" to also write test/visual.png
 ```
+
+`test/run.sh` bundles the plugin against a stub of the Obsidian API and drives
+it in headless Chromium against a real DOM. It needs `chromium` and `python3` on
+PATH. Thirteen pages, ~590 checks: the toolbar and its options row, selection and
+transforms, the canvas and the spacing tool, objects and the ruler, pen gestures,
+export (the PDF is checked byte by byte), sketch search and the OCR command line,
+the kanban board writing itself back, notes as tasks, the planner, the sync
+decision table with the ZIP writer, and QuickNote.
+
+Some of it is verified outside the harness as well, because a structural check is
+not proof a file opens: the exported PDF passes `qpdf --check` and renders with
+`pdftoppm`, and a generated backup archive passes `unzip -t` and reads correctly
+in Python's `zipfile`.
 
 While `npm run dev` runs, edit anything under `src/`, then reload the plugin in
 Obsidian (disable/enable, or `Cmd/Ctrl-R`). Dev builds emit an external
