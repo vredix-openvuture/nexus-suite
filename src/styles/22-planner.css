@@ -107,6 +107,11 @@
 /* ── QuickNote recorder ──────────────────────────────────────────────────────
       One button, because the point is to start before the thought is gone. ── */
 .nx-qn-modal .nx-qn-status { color: var(--text-muted); font-size: 13px; margin-bottom: 10px; }
+/* The recorder cannot run on this device — the reason takes the place of the
+   status line and the button below it is dead, so nothing is spoken into a
+   recogniser that is not there. */
+.nx-qn-modal .nx-qn-status.is-blocked { color: var(--color-orange, #e9973f); }
+.nx-qn-modal .nx-qn-record:disabled { opacity: .5; cursor: not-allowed; }
 .nx-qn-record {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 9px 18px; font-size: 15px; border-radius: 999px;

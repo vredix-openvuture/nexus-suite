@@ -101,6 +101,9 @@ function parseCard(line) {
     link: link ? link[1].trim() : '',
     alias: link && link[2] ? link[2].trim() : '',
     text,
+    /* Filled by the parser from the indented lines under the card, so a card
+       can say more than fits on one line. Empty for a card that has none. */
+    desc: '',
     due: due ? due[1] : '',
     tags,
   };
@@ -108,6 +111,14 @@ function parseCard(line) {
 /* What the card is CALLED — its own text wins, otherwise the note it points at. */
 function cardTitle(card) {
   return card.text || card.alias || card.link || '';
+}
+/* A card's own lines: the checklist line, then its description indented under
+   it. Two spaces, because that is what an editor and a human both read as "this
+   belongs to the line above". */
+function cardLines(card) {
+  const out = [cardLine(card)];
+  String(card.desc || '').split('\n').forEach(l => { if (l.trim()) out.push('  ' + l.trim()); });
+  return out;
 }
 function cardLine(card) {
   const bits = [];
@@ -123,10 +134,15 @@ function parseKanban(src, defaults) {
     title: '', notes: '', template: '', compact: false, due: true, tags: true, counts: true,
   }, defaults || {}, { buckets: [], extra: [] });
   let cur = null;
+  // The card an indented line would belong to, cleared by anything that is not
+  // a card or one of its own lines — so a stray indent further down the column
+  // is kept as it was rather than glued onto a card three lines above.
+  let lastCard = null;
   String(src || '').split('\n').forEach(raw => {
     const line = raw.replace(/\s+$/, '');
     const head = line.match(RE_HEAD);
     if (head) {
+      lastCard = null;
       let title = head[1].trim();
       let limit = 0;
       const lim = title.match(/\s+@(\d+)$/);
@@ -141,9 +157,18 @@ function parseKanban(src, defaults) {
       // rather than dropping it on the floor.
       if (!cur) { cur = { title: 'Backlog', limit: 0, cards: [], extra: [] }; cfg.buckets.push(cur); }
       cur.cards.push(card);
+      lastCard = card;
+      return;
+    }
+    // An indented line under a card is that card's description. Checked after
+    // parseCard, so an indented checklist line is still a card of its own.
+    const cont = line.match(/^(?:\t+| {2,})(\S.*)$/);
+    if (cont && lastCard) {
+      lastCard.desc = lastCard.desc ? lastCard.desc + '\n' + cont[1].trim() : cont[1].trim();
       return;
     }
     if (!line.trim()) return;
+    lastCard = null;
     if (cur) { cur.extra.push(line); return; }
     const i = line.indexOf(':');
     if (i < 0) { cfg.extra.push(line); return; }
@@ -175,7 +200,7 @@ function stringifyKanban(cfg) {
   (cfg.extra || []).forEach(l => out.push(l));
   (cfg.buckets || []).forEach(b => {
     out.push('## ' + b.title + (b.limit ? ' @' + b.limit : ''));
-    (b.cards || []).forEach(c => out.push(cardLine(c)));
+    (b.cards || []).forEach(c => cardLines(c).forEach(l => out.push(l)));
     (b.extra || []).forEach(l => out.push(l));
   });
   return out.join('\n');
@@ -206,7 +231,7 @@ class NexusKanban {
   /* The starting block — the columns come from the settings so a new board is
      already the board this vault works with. */
   blockText(title) {
-    const cols = (this.s.buckets && this.s.buckets.length ? this.s.buckets : ['Backlog', 'In Arbeit', 'Erledigt']);
+    const cols = (this.s.buckets && this.s.buckets.length ? this.s.buckets : ['Backlog', 'In progress', 'Done']);
     const lines = ['```nexus-kanban'];
     if (title) lines.push('title: ' + title);
     if (this.s.notesFolder) lines.push('notes: ' + this.s.notesFolder);
@@ -336,8 +361,9 @@ class NexusKanban {
     list.dataset.i = String(index);
     bucket.cards.forEach((card, ci) => this.card(list, cfg, index, ci, card, el, ctx));
 
+    // No icon in front of the field: the dashed row and the placeholder already
+    // say what it is, and the + was one more thing to draw on every column.
     const add = col.createDiv('nx-kb-add');
-    setIcon(add.createSpan({ cls: 'nx-kb-add-ic' }), 'plus');
     const input = add.createEl('input', { cls: 'nx-kb-add-input', attr: { type: 'text', placeholder: 'New card' } });
     input.onkeydown = (e) => {
       if (e.key !== 'Enter') return;
@@ -345,7 +371,7 @@ class NexusKanban {
       const title = input.value.trim();
       if (!title) return;
       input.value = '';
-      bucket.cards.push({ done: false, link: '', alias: '', text: title, due: '', tags: [] });
+      bucket.cards.push({ done: false, link: '', alias: '', text: title, desc: '', due: '', tags: [] });
       this.save(el, ctx, cfg);
     };
   }
@@ -370,6 +396,10 @@ class NexusKanban {
     }
     line.createSpan({ cls: 'nx-kb-card-t', text: cardTitle(card) || '(no title)' });
 
+    // Four lines at most, the rest cut off with an ellipsis (CSS line-clamp) —
+    // a card is a glance, and the whole text is one click away in the editor.
+    if (card.desc) body.createDiv({ cls: 'nx-kb-card-desc', text: card.desc });
+
     const meta = body.createDiv('nx-kb-card-meta');
     if (card.due && cfg.due !== false) {
       const today = moment().format('YYYY-MM-DD');
@@ -388,10 +418,18 @@ class NexusKanban {
     dots.setAttribute('aria-label', 'Card menu');
     dots.onclick = (e) => { e.stopPropagation(); this.cardMenu(e, cfg, bi, ci, el, ctx); };
 
+    /* One click, the whole card. It used to open the linked note, which left a
+       card with a note as the one thing on the board that could not be edited,
+       and rename the rest — so the due date, the tags and the column each meant
+       a trip through the ⋮ menu. The note is now a button inside the editor.
+       Ctrl/⌘ still goes straight to the note, for a board used as an index. */
     c.onclick = (e) => {
       if (c.hasClass('is-dragging')) return;
-      if (note) this.app.workspace.getLeaf(e.ctrlKey || e.metaKey ? 'tab' : false).openFile(note);
-      else this.renameCard(cfg, bi, ci, el, ctx);
+      if (note && (e.ctrlKey || e.metaKey)) {
+        this.app.workspace.getLeaf('tab').openFile(note);
+        return;
+      }
+      this.editCard(cfg, bi, ci, el, ctx);
     };
     c.oncontextmenu = (e) => { e.preventDefault(); this.cardMenu(e, cfg, bi, ci, el, ctx); };
     this.dragSource(c, cfg, bi, ci, el, ctx);
@@ -476,7 +514,7 @@ class NexusKanban {
       }));
     }
     menu.addSeparator();
-    menu.addItem(i => i.setTitle('Rename').setIcon('pencil').onClick(() => this.renameCard(cfg, bi, ci, el, ctx)));
+    menu.addItem(i => i.setTitle('Edit…').setIcon('pencil').onClick(() => this.editCard(cfg, bi, ci, el, ctx)));
     menu.addItem(i => i.setTitle(card.due ? 'Due date (' + card.due + ')' : 'Due date').setIcon('calendar-days').onClick(async () => {
       const { NexusNameModal } = require('../modals/misc.js');
       const v = await new NexusNameModal(this.app, 'Due date (YYYY-MM-DD, empty = none)', card.due || '', true).openAndGet();
@@ -501,15 +539,74 @@ class NexusKanban {
     menu.showAtMouseEvent(evt);
   }
 
-  async renameCard(cfg, bi, ci, el, ctx) {
-    const { NexusNameModal } = require('../modals/misc.js');
-    const card = cfg.buckets[bi].cards[ci];
-    const name = await new NexusNameModal(this.app, 'Card text', cardTitle(card)).openAndGet();
-    if (name == null) return;
-    const t = String(name).trim();
-    // Matching the note name again means "just show the note" — keep it clean.
-    card.text = (card.link && t === (card.alias || card.link)) ? '' : t;
-    this.save(el, ctx, cfg);
+  /* The card editor. Everything the card is, in one modal — and every way out
+     of it except Cancel keeps the edits, so "create a note" or "to the note"
+     never throws away what was just typed. */
+  async editCard(cfg, bi, ci, el, ctx) {
+    const { NexusKanbanCardModal } = require('../modals/kanbancard.js');
+    const { NexusNamePickModal } = require('../modals/misc.js');
+    const bucket = cfg.buckets[bi];
+    const card = bucket && bucket.cards[ci];
+    if (!card) return;
+
+    const res = await new NexusKanbanCardModal(this.app, {
+      card,
+      columns: cfg.buckets.map(b => b.title),
+      columnIndex: bi,
+      note: card.link ? this.noteByName(card.link) : null,
+    }).openAndGet();
+    if (!res) return;
+
+    if (res.action === 'delete') {
+      bucket.cards.splice(ci, 1);
+      await this.save(el, ctx, cfg);
+      return;
+    }
+
+    // Matching the note's own name means "just show the note" — keep it clean.
+    const edited = res.card;
+    if (edited.link && edited.text && edited.text === (edited.alias || edited.link)) edited.text = '';
+    if (res.action === 'unlink') {
+      if (!edited.text) edited.text = edited.alias || edited.link;
+      edited.link = ''; edited.alias = '';
+    }
+    Object.assign(card, {
+      done: edited.done, text: edited.text, desc: edited.desc,
+      due: edited.due, tags: edited.tags, link: edited.link, alias: edited.alias,
+    });
+
+    // The column is applied before anything that navigates away, so a card that
+    // was moved and opened lands in the right place either way.
+    let index = ci;
+    if (res.column !== bi && cfg.buckets[res.column]) {
+      this.move(cfg, bi, ci, res.column, cfg.buckets[res.column].cards.length);
+      index = cfg.buckets[res.column].cards.length - 1;
+    }
+    const at = res.column !== bi ? res.column : bi;
+    await this.save(el, ctx, cfg);
+
+    if (res.action === 'open') {
+      const note = card.link ? this.noteByName(card.link) : null;
+      if (note) this.app.workspace.getLeaf(false).openFile(note);
+      return;
+    }
+    if (res.action === 'create') {
+      await this.createNote(cfg, at, index, el, ctx);
+      return;
+    }
+    if (res.action === 'link') {
+      new NexusNamePickModal(this.app, 'Which note?',
+        this.app.vault.getMarkdownFiles().map(f => f.path).sort((a, b) => a.localeCompare(b)),
+        (path) => {
+          const f = this.app.vault.getAbstractFileByPath(path);
+          if (!(f instanceof TFile)) return;
+          const target = cfg.buckets[at] && cfg.buckets[at].cards[index];
+          if (!target) return;
+          target.link = f.basename;
+          if (target.text && target.text === f.basename) target.text = '';
+          this.save(el, ctx, cfg);
+        }).open();
+    }
   }
 
   /* A card without a note becomes one: the note is created in the board's
@@ -651,6 +748,6 @@ class NexusKanban {
 }
 
 module.exports = {
-  NexusKanban, parseKanban, stringifyKanban, parseCard, cardLine, cardTitle,
+  NexusKanban, parseKanban, stringifyKanban, parseCard, cardLine, cardLines, cardTitle,
   bucketKind, kindVar, nxEdgeScroller,
 };

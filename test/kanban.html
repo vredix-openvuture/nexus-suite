@@ -267,6 +267,59 @@ async function addCard(el, columnIndex, title) {
      kb.locateBlock(['# just text', ''], 'anything', null), null);
 }
 
+// ── card descriptions ──────────────────────────────────────────────────────
+/* The board is ONE hand-editable text, so a description has to be a shape a
+   person would write by hand and the parser has to give it back unchanged. */
+{
+  const src = [
+    'title: Roadmap',
+    '## Backlog',
+    '- [ ] First card',
+    '  the first line of the description',
+    '  and a second one',
+    '- [ ] Second card',
+    '## Done',
+  ].join('\n');
+  const cfg = K.parseKanban(src);
+  const cards = cfg.buckets[0].cards;
+
+  eq('desc · an indented line under a card belongs to it',
+     cards[0].desc, 'the first line of the description\nand a second one');
+  eq('desc · the next card is a card, not more description', cards[1].text, 'Second card');
+  eq('desc · and it has none of its own', cards[1].desc, '');
+  eq('desc · it round trips', K.stringifyKanban(cfg).trim(), src.trim());
+  eq('desc · a card without one writes no extra line',
+     K.cardLines({ done: false, link: '', alias: '', text: 'Bare', desc: '', due: '', tags: [] }),
+     ['- [ ] Bare']);
+  eq('desc · one with a description writes it indented',
+     K.cardLines({ done: false, link: '', alias: '', text: 'Full', desc: 'a\nb', due: '', tags: [] }),
+     ['- [ ] Full', '  a', '  b']);
+}
+{
+  // An indented checklist line is still a card of its own — the check for a
+  // description runs after the card parser, never before it.
+  const cfg = K.parseKanban(['## Backlog', '- [ ] Outer', '  - [ ] Indented'].join('\n'));
+  eq('desc · an indented checklist line stays a card',
+     cfg.buckets[0].cards.map(c => c.text), ['Outer', 'Indented']);
+  eq('desc · so it is not swallowed as a description', cfg.buckets[0].cards[0].desc, '');
+}
+{
+  // A stray indent with no card above it is somebody's own text: kept where it
+  // was, never glued onto a card further up.
+  const cfg = K.parseKanban(['## Backlog', '  a note to self', '- [ ] Card'].join('\n'));
+  eq('desc · an indent with no card above it is left alone', cfg.buckets[0].cards[0].desc, '');
+  ok('desc · and is kept as the column\'s own text',
+     cfg.buckets[0].extra.join('|').indexOf('a note to self') >= 0, cfg.buckets[0].extra.join('|'));
+}
+{
+  const KC = window.kanbanCardLib;
+  eq('card editor · tags are typed with or without a #', KC.parseTags('#plugin, later  #ui'),
+     ['plugin', 'later', 'ui']);
+  eq('card editor · nothing typed is no tags', KC.parseTags('   '), []);
+  eq('card editor · a blank line cannot survive the block, so it is dropped',
+     KC.cleanDescription('one\n\n  \ntwo  '), 'one\ntwo');
+}
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
 out.push('');

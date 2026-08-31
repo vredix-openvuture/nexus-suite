@@ -37,7 +37,7 @@ const INK_VIEW = 'nx-ink-gallery';
 /* Columns of the task board when nothing else says otherwise. Also the
    fallback at every read site: loadSettings only merges one level deep, so a
    vault that already has `tasksCalendar.tasks` never sees a new nested key. */
-const TASK_BUCKETS = ['Backlog', 'In Arbeit', 'Wartet', 'Erledigt'];
+const TASK_BUCKETS = ['Backlog', 'In progress', 'Waiting', 'Done'];
 
 const DEFAULT_SETTINGS = {
   banner:     { enabled: true,  height: 250, fade: true, folder: 'attachments/banners', behindTabs: true,
@@ -86,7 +86,7 @@ const DEFAULT_SETTINGS = {
   /* Kanban: the standalone ```nexus-kanban``` boards. The task board on the
      tasks page has no switch of its own — it is a way of looking at the tasks
      module and lives and dies with it. */
-  kanban:     { enabled: true, buckets: ['Backlog', 'In Arbeit', 'Erledigt'],
+  kanban:     { enabled: true, buckets: ['Backlog', 'In progress', 'Done'],
                 notesFolder: '', boardsFolder: '', compact: false },
   /* The paper planner: a month on one screen with ONE line per day. Not the
      tasks module — that answers what is due, this answers what a month is for. */
@@ -368,7 +368,7 @@ const NX_MODULES = {
   kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note — plus the board view of your tasks' },
   planner:       { name: 'Planner',      sub: 'A month on one screen, one line per day — the paper-calendar view' },
   vaultSync:     { name: 'Vault sync',   sub: 'The whole vault to a WebDAV server, with daily backups and conflict copies' },
-  quicknote:     { name: 'QuickNote',    sub: 'A note you speak instead of type' },
+  quicknote:     { name: 'Quick Note',   sub: 'A note you speak instead of type' },
 };
 
 /* Checklist states (see styles/19-task-states.css). The character is what goes

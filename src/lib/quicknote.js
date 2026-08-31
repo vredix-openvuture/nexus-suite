@@ -43,12 +43,12 @@ function titleFrom(lines, fallback) {
   const first = (lines && lines.length) ? lines[0] : '';
   const words = String(first).split(/\s+/).filter(Boolean).slice(0, 8).join(' ');
   const clean = words.replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^\.+/, '');
-  return clean.slice(0, 60) || fallback || 'Quick note';
+  return clean.slice(0, 60) || fallback || 'Quick Note';
 }
 
 function notePath(folder, title, stamp) {
   const dir = String(folder || 'Inbox/Quicknote').replace(/\/+$/, '');
-  const safe = String(title).replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Quick note';
+  const safe = String(title).replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Quick Note';
   return dir + '/' + safe + (stamp ? ' ' + stamp : '') + '.md';
 }
 

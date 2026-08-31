@@ -136,7 +136,8 @@ class NexusSettingsTab extends PluginSettingTab {
 
     /* Ordered by what you reach for first and grouped by what the feature acts
        on: the dashboard and the look of the app, then what happens inside a
-       note, then drawing/capture, then planning, then the odd tools. */
+       note, then capture, then planning, then the tools that act on the vault
+       as a whole. */
     const groups = [
       { title: 'Start & look', tabs: [
         { id: 'homepage',      icon: 'home',             fn: (e) => this.tHomepage(e) },
@@ -158,11 +159,14 @@ class NexusSettingsTab extends PluginSettingTab {
         { id: 'propertyHider', icon: 'list',             fn: (e) => this.tPropHider(e) },
         { id: 'tagTools',      icon: 'tags',             fn: (e) => this.tTagTools(e) },
       ] },
-      { title: 'Drawing', tabs: [
+      /* Capture, not "Drawing": all three answer "get the thing into the vault
+         before it is gone" — with a pen, with a camera, with your voice. Vault
+         sync used to sit in here, which said nothing about what it does; it is
+         a tool that acts on the whole vault and lives with the other ones. */
+      { title: 'Capture', tabs: [
         { id: 'quicksketch',   icon: 'pencil-line',      fn: (e) => this.tSketch(e) },
-        { id: 'vaultSync',     icon: 'refresh-cw',       fn: (e) => this.tVaultSync(e) },
-        { id: 'quicknote',     icon: 'mic',              fn: (e) => this.tQuickNote(e) },
         { id: 'inkCapture',    icon: 'camera',           fn: (e) => this.tInkCapture(e) },
+        { id: 'quicknote',     icon: 'mic',              fn: (e) => this.tQuickNote(e) },
       ] },
       { title: 'Planning', tabs: [
         { id: 'calendar',      icon: 'calendar',         fn: (e) => this.tCalendar(e) },
@@ -172,6 +176,7 @@ class NexusSettingsTab extends PluginSettingTab {
         { id: 'search',        icon: 'search',           fn: (e) => this.tSearch(e) },
         { id: 'workspaces',    icon: 'layout-dashboard', fn: (e) => this.tWorkspaces(e) },
         { id: 'sprint',        icon: 'timer',            fn: (e) => this.tSprint(e) },
+        { id: 'vaultSync',     icon: 'refresh-cw',       fn: (e) => this.tVaultSync(e) },
       ] },
     ];
     const tabs = groups.flatMap(g => g.tabs);
@@ -244,7 +249,7 @@ class NexusSettingsTab extends PluginSettingTab {
     e.createEl('p', { cls: 'setting-item-description',
       text: 'The board mode of the tasks page. A task remembers its column in its own note (“bucket:”). A Vikunja project uses the columns of its kanban view instead — dragging a card there moves it on the server.' });
     const tk = (this.plugin.settings.tasksCalendar.tasks = this.plugin.settings.tasksCalendar.tasks || {});
-    nxMultiRow(e, 'Columns', 'One per row. The last-but-any column named “Erledigt”/“Done” completes a task that is dropped into it.',
+    nxMultiRow(e, 'Columns', 'One per row. A column whose name reads as done (“Done”, “Erledigt”, “Fertig”, …) completes a task that is dropped into it.',
       ((tk.buckets && tk.buckets.length ? tk.buckets : TASK_BUCKETS)).join('\n'), '\n', 'Backlog',
       async (v) => { tk.buckets = v.split('\n').map(x => x.trim()).filter(Boolean); await this.save(); this.plugin.refreshCalendarViews(); });
   }
@@ -821,7 +826,7 @@ class NexusSettingsTab extends PluginSettingTab {
     const s = this.plugin.settings.quicknote;
     this.head(e, s);
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Command "Quick note (speak it)" opens a recorder. Say the thing, stop, and it becomes a note — the first few words become the file name, because that is what you will scan for later.' });
+      text: 'Command "Quick Note (speak it)" opens a recorder. Say the thing, stop, and it becomes a note — the first few words become the file name, because that is what you will scan for later.' });
 
     new Setting(e).setName('Folder').setDesc('Where spoken notes are filed.')
       .addText(t => t.setPlaceholder('Inbox/Quicknote').setValue(s.folder || '')

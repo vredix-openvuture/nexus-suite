@@ -141,6 +141,18 @@
   font-size: .9em; line-height: 1.35; color: var(--text-normal);
   overflow-wrap: anywhere;
 }
+/* The card's own description. Four lines at most and then an ellipsis: a card
+   is a glance, and the whole text is one click away in the card editor.
+   `pre-line` keeps the line breaks the board file actually stores; the clamp
+   counts RENDERED lines, so a long single line still costs its wrapped share. */
+.nx-kb-card-desc {
+  font-size: .78em; line-height: 1.35; color: var(--text-muted);
+  white-space: pre-line; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.nx-kb-card.is-done .nx-kb-card-desc { color: var(--text-faint); }
+
 .nx-kb-card-meta,
 .nx-tb-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .nx-kb-card-menu {
@@ -185,8 +197,6 @@ body.is-mobile .nx-kb-card-menu { opacity: .6; }
 }
 .nx-kb-add:focus-within,
 .nx-tb-add:focus-within { border-color: var(--interactive-accent); border-style: solid; }
-.nx-kb-add-ic, .nx-tb-add-ic { display: inline-flex; }
-.nx-kb-add-ic .svg-icon, .nx-tb-add-ic .svg-icon { width: 13px; height: 13px; }
 .nx-kb-add-input,
 .nx-tb-add-input {
   flex: 1; min-width: 0;
@@ -246,3 +256,17 @@ body.is-mobile .nx-kb-card-menu { opacity: .6; }
   .nx-kb-col, .nx-tb-col { flex: 1 1 auto; min-width: 0; width: 100%; }
   .nx-kb-cards, .nx-tb-cards { max-height: 46vh; }
 }
+
+/* ── the card editor ── */
+.nx-kbc-modal .nx-kbc-desc textarea {
+  width: 100%; min-height: 5.5em; resize: vertical;
+  font-family: inherit; font-size: var(--font-ui-small);
+}
+.nx-kbc-modal .nx-kbc-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: 16px;
+}
+.nx-kbc-modal .nx-kbc-bar-right { display: flex; gap: 8px; }
+/* On a phone the settings rows stack, so the buttons must not sit in a row that
+   is wider than the modal. */
+body.is-mobile .nx-kbc-modal .nx-kbc-bar { flex-wrap: wrap; }

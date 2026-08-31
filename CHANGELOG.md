@@ -2,6 +2,47 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.26.0 — 2026-08-31
+
+### Changed
+
+- **A kanban card opens an editor, not a rename box.** Clicking a card asked for
+  its name and nothing else — and once a note was linked it opened the note
+  instead, so a card with a note was the one thing on the board that could not
+  be edited. One click now opens the whole card: text, description, due date,
+  tags, done, which column it is in, and the note it points at with **To the
+  note** as a button. Ctrl/⌘-click still goes straight to the note.
+- **A card can carry a description.** Indented lines under the card line in the
+  block are its own text and are shown under the title on the board — four lines
+  at most, the rest cut off with an ellipsis. It stays a hand-editable block: the
+  description is written back indented under its card, and an indented checklist
+  line is still a card of its own.
+- **The default columns are English.** They were `Backlog / In Arbeit /
+  Erledigt` — a German default in an English plugin, and stored in `data.json`
+  the first time anything saved, so changing the default alone would have left
+  every existing vault on them. An untouched set is rewritten once to
+  `Backlog / In progress / Done` (task board: `… / Waiting / Done`); columns
+  anybody picked are theirs and are never renamed. A column whose name reads as
+  done still completes a card in German, English or anything else.
+- **The new-card row has no + in front of it** — on either board. The dashed row
+  and the placeholder already say what it is.
+- **QuickNote is written Quick Note**, like Quick Sketch and Ink Capture. The
+  folder default (`Inbox/Quicknote`) is unchanged, because it is a path in your
+  vault and not a label.
+- **Vault sync and Quick Note left the "Drawing" settings group.** Neither draws
+  anything. The group is now **Capture** — Quick Sketch, Ink Capture, Quick Note,
+  all three "get the thing into the vault before it is gone" — and Vault sync
+  sits with the other tools that act on the whole vault.
+
+### Fixed
+
+- **Quick Note said what it needs *after* the recording, not before.** With the
+  local engine on a phone or tablet there is no shell to run a recogniser in, so
+  you could speak a paragraph, wait, and then be told to switch engines — with
+  the recording already gone. The recorder now refuses to start and says why,
+  and a command naming a program that is not installed reports that by name
+  instead of `spawn whisper-cli ENOENT`.
+
 ## 0.25.1 — 2026-08-31
 
 ### Fixed

@@ -26,3 +26,4 @@ window.webdavLib = require('../src/lib/webdav.js');
 window.zipLib = require('../src/lib/zip.js');
 window.quicknoteLib = require('../src/lib/quicknote.js');
 window.extcommandLib = require('../src/lib/extcommand.js');
+window.kanbanCardLib = require('../src/modals/kanbancard.js');

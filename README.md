@@ -25,7 +25,7 @@ run what you use.
 | **Kanban** | Boards with columns and cards in a note, plus the board view of your tasks | kanban |
 | **Planner** | A month on one screen, one line per day | — |
 | **Vault sync** | The whole vault to a WebDAV server, with daily backups | Syncthing, Obsidian Sync |
-| **QuickNote** | A note you speak instead of type | — |
+| **Quick Note** | A note you speak instead of type | — |
 | **Workspaces** | Save and switch pane layouts | — |
 
 Built for a card-based vault layout and designed to work on mobile as well as
@@ -153,9 +153,10 @@ notes: Projects/Roadmap
 ## Backlog
 - [ ] Rework the tab bar
 - [ ] [[Kanban module|Kanban]] @2026-08-25 #plugin
-## In Arbeit @2
+  the toolbar first, then the overflow menu
+## In progress @2
 - [ ] Vikunja buckets
-## Erledigt
+## Done
 - [x] Pinned tabs
 ```
 ````
@@ -164,11 +165,18 @@ notes: Projects/Roadmap
   above it).
 * `- [ ] text` = a card, `[x]` = done, `[[Note]]` / `[[Note|Title]]` links it to
   a note, `@2026-08-25` a due date, `#tag` a tag.
+* **Indented lines under a card are its description**, shown under the title on
+  the board — at most four lines, the rest cut off with an ellipsis. The whole
+  text is in the card editor.
+* **Clicking a card opens the card editor**: text, description, due date, tags,
+  done, which column it is in, and the note it points at — with *To the note* as
+  a button, so a card with a note can still be edited. Ctrl/⌘-click goes
+  straight to the note, for a board used as an index.
 * Drag with mouse or finger, between and inside columns. Dropping into a column
   whose name reads as "done" ticks the card; dragging it back out unticks it.
-* A card can **get** a note: *Create a note for this card* writes it into the
-  `notes:` folder (or next to the board), links it and opens it. *Link an
-  existing note* points the card at one you already have.
+* A card can **get** a note: *Create a note* writes it into the `notes:` folder
+  (or next to the board), links it and opens it. *Link a note* points the card
+  at one you already have.
 * Anything the parser doesn't understand is written back untouched — a rewrite
   can't eat a line you typed.
 
@@ -357,9 +365,9 @@ files and answers requests, and no arrangement of file uploads adds up to
 character-level merging. The honest version of that feature is a short sync
 interval plus a warning that someone else is in here.
 
-## QuickNote
+## Quick Note
 
-Command *Quick note (speak it)* opens a recorder. Say the thing, press stop, and
+Command *Quick Note (speak it)* opens a recorder. Say the thing, press stop, and
 it becomes a note — the first eight words become the file name, because that is
 what you will be scanning for later, and the exact time goes in the frontmatter
 where it does not have to be short.
@@ -375,6 +383,13 @@ Two recognisers, and the difference is stated rather than hidden:
 
 Ticking *Track the note as a task* writes `nexus-task: true`, so a spoken
 reminder turns up in the tasks view.
+
+Whether the recorder can run at all is decided **before** anything is recorded:
+with the local engine on a phone or tablet, or with a command that is not set,
+or with the browser engine on a device whose browser has no recogniser, the
+button is dead and the reason stands where the status line would be. On a
+desktop, a command naming a program that is not installed says exactly that
+instead of `spawn … ENOENT`.
 
 ## Build & source layout
 
@@ -396,7 +411,7 @@ PATH. Thirteen pages, ~590 checks: the toolbar and its options row, selection an
 transforms, the canvas and the spacing tool, objects and the ruler, pen gestures,
 export (the PDF is checked byte by byte), sketch search and the OCR command line,
 the kanban board writing itself back, notes as tasks, the planner, the sync
-decision table with the ZIP writer, and QuickNote.
+decision table with the ZIP writer, and Quick Note.
 
 Some of it is verified outside the harness as well, because a structural check is
 not proof a file opens: the exported PDF passes `qpdf --check` and renders with
@@ -445,6 +460,7 @@ src/
     cards.js         homepage card config modals (card/list/quicknote/stat/action/hero)
     image.js         hero image config, vault picker, zoom/crop
     misc.js          generic name-input modal
+    kanbancard.js    one kanban card: text, description, due, tags, column, its note
     search.js        fuzzy search suggest modal
     banner.js        top-banner modal
     workspace.js     workspace switcher

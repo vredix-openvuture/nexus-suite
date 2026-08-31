@@ -22,7 +22,7 @@ const { CalDavClient } = require('./lib/caldav.js');
 const { VikunjaClient } = require('./lib/vikunja.js');
 const { NexusConflictModal } = require('./modals/conflict.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
-const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
+const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TASK_BUCKETS, TIMER_VIEW } = require('./constants.js');
 const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxHexToHsl, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusAgenda } = require('./lib/agenda.js');
 const { NexusBoard } = require('./lib/board.js');
@@ -260,10 +260,10 @@ module.exports = class NexusSuite extends Plugin {
         const body = plannerTemplate(moment().format('YYYY-MM-DD'));
         editor.replaceSelection('```nexus-planner\n' + body + '\n```\n');
       } });
-    this.addCommand({ id: 'nexus-quicknote', name: 'Quick note (speak it)',
+    this.addCommand({ id: 'nexus-quicknote', name: 'Quick Note (speak it)',
       callback: () => {
         if (!this.settings.quicknote || this.settings.quicknote.enabled === false) {
-          new Notice('Nexus: QuickNote is off — Settings → QuickNote.');
+          new Notice('Nexus: Quick Note is off — Settings → Quick Note.');
           return;
         }
         const { NexusQuickNoteModal } = require('./modals/quicknote.js');
@@ -543,6 +543,23 @@ module.exports = class NexusSuite extends Plugin {
       if (!Array.isArray(ink.sources)) ink.sources = [];
       if (!ink.sources.some(x => x && x.id === 'paper'))
         ink.sources.unshift({ id: 'paper', label: 'Paper (camera)', folder: 'Inbox/Paper', enabled: true });
+    }
+    /* The default columns used to be German, and a default is written into
+       data.json the first time anything saves — so changing the default alone
+       would leave every vault that ever opened the settings on "In Arbeit".
+       An untouched set is rewritten once; columns anybody picked are theirs and
+       are never renamed. `bucketsTranslated` marks it done. */
+    if (!this.settings.bucketsTranslated) {
+      const same = (a, b) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
+      const kb = this.settings.kanban;
+      if (kb && same(kb.buckets, ['Backlog', 'In Arbeit', 'Erledigt'])) {
+        kb.buckets = DEFAULT_SETTINGS.kanban.buckets.slice();
+      }
+      const tk = (this.settings.tasksCalendar || {}).tasks;
+      if (tk && same(tk.buckets, ['Backlog', 'In Arbeit', 'Wartet', 'Erledigt'])) {
+        tk.buckets = TASK_BUCKETS.slice();
+      }
+      this.settings.bucketsTranslated = true;
     }
     // Tasks & Calendar: backfill nested defaults (shallow per-key merge above
     // does not deep-merge saved partial objects).
@@ -2288,8 +2305,13 @@ module.exports = class NexusSuite extends Plugin {
       fs.writeFileSync(inPath, Buffer.from(await blob.arrayBuffer()));
       const stdout = await new Promise((resolve, reject) => {
         cp.execFile(argv.command, argv.args, { timeout: 300000, maxBuffer: 8 * 1024 * 1024 }, (err, out, stderr) => {
-          if (err) reject(new Error((argv.command + ' failed: ' + (stderr || err.message)).trim()));
-          else resolve(out);
+          // ENOENT is the common one and "spawn whisper-cli ENOENT" says nothing
+          // to anybody: the program in the settings is simply not installed.
+          if (err && err.code === 'ENOENT') {
+            reject(new Error('“' + argv.command + '” is not installed on this machine — install it, or change the command in Settings → Quick Note.'));
+          } else if (err) {
+            reject(new Error((argv.command + ' failed: ' + (stderr || err.message)).trim()));
+          } else resolve(out);
         });
       });
       // Some recognisers write a file, others just print. Both are accepted so
@@ -2309,7 +2331,7 @@ module.exports = class NexusSuite extends Plugin {
     const folder = (cfg.folder || 'Inbox/Quicknote').replace(/\/+$/, '');
     await this.ensureFolderPath(folder);
     const stamp = moment().format('YYYY-MM-DD HHmm');
-    const title = quicknote.titleFrom(lines, 'Quick note');
+    const title = quicknote.titleFrom(lines, 'Quick Note');
     let path = quicknote.notePath(folder, title, '');
     if (this.app.vault.getAbstractFileByPath(path)) path = quicknote.notePath(folder, title, stamp);
     const body = quicknote.noteBody(lines, {

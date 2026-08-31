@@ -243,8 +243,9 @@ class NexusTaskBoard {
   }
 
   addRow(colEl, d, col) {
+    // No + in front of the field, same as the kanban board: the dashed row and
+    // the placeholder already say what it is.
     const row = colEl.createDiv('nx-tb-add');
-    setIcon(row.createSpan({ cls: 'nx-tb-add-ic' }), 'plus');
     const input = row.createEl('input', { cls: 'nx-tb-add-input', attr: { type: 'text', placeholder: 'New task' } });
     input.onkeydown = async (e) => {
       if (e.key !== 'Enter') return;

@@ -28,8 +28,19 @@ class NexusQuickNoteModal extends Modal {
     const { contentEl, modalEl } = this;
     modalEl.addClass('nx-qn-modal');
     contentEl.empty();
-    contentEl.createEl('h3', { text: 'Quick note' });
+    contentEl.createEl('h3', { text: 'Quick Note' });
     this.status = contentEl.createDiv({ cls: 'nx-qn-status', text: 'Ready.' });
+
+    /* Whether this device can do what the settings ask, asked BEFORE anything
+       is recorded. The engine was only checked on the way to the transcript, so
+       on a tablet you spoke a paragraph, waited, and then learned that the
+       local recogniser needs a desktop shell — with the recording already
+       thrown away. */
+    this.blocked = this.whyNot();
+    if (this.blocked) {
+      this.status.addClass('is-blocked');
+      this.say(this.blocked);
+    }
 
     this.button = contentEl.createEl('button', { cls: 'mod-cta nx-qn-record' });
     this.paintButton();
@@ -55,13 +66,27 @@ class NexusQuickNoteModal extends Modal {
     this.contentEl.empty();
   }
 
+  /* Empty when the recorder can run here, otherwise the reason it cannot. */
+  whyNot() {
+    if ((this.s.engine || 'local') === 'browser') {
+      return speechApi() ? '' : 'This device has no browser recogniser. Use the local engine on a desktop, or a device whose browser has one.';
+    }
+    if (!this.plugin.ocrAvailable()) {
+      return 'The local recogniser runs a program on the machine, and a phone or tablet has no shell for it. Settings → Quick Note → Recogniser → the browser\'s own.';
+    }
+    if (!String(this.s.command || '').trim()) {
+      return 'No command is set. Settings → Quick Note → Command, e.g. whisper-cli -f {in} -otxt -of {out} -l auto.';
+    }
+    return '';
+  }
+
   paintButton() {
     this.button.empty();
     const icon = this.button.createSpan({ cls: 'nx-qn-ic' });
     setIcon(icon, this.state === 'recording' ? 'square' : 'mic');
     this.button.createSpan({ text: this.state === 'recording' ? 'Stop' : 'Record' });
     this.button.toggleClass('is-recording', this.state === 'recording');
-    this.button.disabled = this.state === 'working';
+    this.button.disabled = this.state === 'working' || !!this.blocked;
   }
   say(text) { if (this.status) this.status.setText(text); }
   showLines(lines) {
