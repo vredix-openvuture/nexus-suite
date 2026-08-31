@@ -25,6 +25,7 @@
  * ========================================================================== */
 
 const { Notice, TFile, moment, setIcon } = require('obsidian');
+const blockedit = require('./blockedit.js');
 
 const RE_HEAD = /^\s{0,3}#{1,6}\s+(.*)$/;
 const RE_CARD = /^\s*[-*]\s+\[([ xX])\]\s?(.*)$/;
@@ -267,6 +268,7 @@ class NexusKanban {
     el.empty();
     el.addClass('nx-kb');
     el.toggleClass('is-compact', cfg.compact || !!this.s.compact);
+    el._nxSrc = src;   // what is on the board right now — see save()/locateBlock
     el._nxRepaint = (next) => { try { this.render(next != null ? next : src, el, ctx); } catch (e) {} };
 
     const head = el.createDiv('nx-kb-head');
@@ -628,21 +630,23 @@ class NexusKanban {
 
   /* ---- the board back into the block --------------------------------------- */
 
+  /* Finding the block again is shared with every other block that IS its data —
+     see lib/blockedit.js for why getSectionInfo alone is not enough. */
+  locateBlock(lines, previousSrc, info) {
+    return blockedit.locateFencedBlock(lines, 'nexus-kanban', previousSrc, info);
+  }
+
   async save(el, ctx, cfg) {
     const src = stringifyKanban(cfg);
+    // What is in the FILE right now — captured before the repaint, which
+    // replaces it on the element.
+    const previous = el._nxSrc;
     // Repaint from the new state first: the write goes through the vault and
     // Obsidian's own re-render lands a moment later — without this the card
     // would visibly snap back before it moves.
     if (el._nxRepaint) el._nxRepaint(src);
-    const info = ctx && ctx.getSectionInfo ? ctx.getSectionInfo(el) : null;
-    const file = ctx && ctx.sourcePath ? this.app.vault.getAbstractFileByPath(ctx.sourcePath) : null;
-    if (!info || !(file instanceof TFile)) {
-      new Notice('Nexus: could not locate the kanban block — the board was not saved.');
-      return;
-    }
-    const lines = (await this.app.vault.read(file)).split('\n');
-    lines.splice(info.lineStart + 1, info.lineEnd - info.lineStart - 1, ...src.split('\n'));
-    await this.app.vault.modify(file, lines.join('\n'));
+    const res = await blockedit.saveFencedBlock(this.app, TFile, el, ctx, 'nexus-kanban', src, previous);
+    if (!res.ok) new Notice('Nexus: ' + res.reason + ' — the board was not saved.');
   }
 }
 
