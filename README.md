@@ -354,6 +354,8 @@ itself excluded from the sync.
 | **Deletions** | Go through Obsidian's trash, not `unlink`. A sync that deletes the wrong file has to be recoverable. |
 | **Settings** | With *Carry the settings too* on, `.obsidian` travels — **except** `workspace.json`, `workspace-mobile.json`, `graph.json` and the sync's own state. Those describe this machine; carrying them would rearrange panes you deliberately arranged. |
 | **Backups** | One zip a day into `_backups`, taken after the first sync of the day, oldest removed past the number you keep. The ZIP writer is in the plugin (`lib/zip.js`) for the same reason the PDF writer is: it has to stay one bundled file. |
+| **Folders** | Created a segment at a time on both sides. `adapter.mkdir` is not the same call on desktop and mobile — asked for `Tasks/Items` where `Tasks` is missing, one makes both and the other refuses — so the device *receiving* a vault has to build the path itself. On the server side the folder is created once per run, not once per file in it. |
+| **When it goes wrong** | Settings → Vault sync → **The last run** says what the run did, names the first five failures in full, and has a *Sync* button that reports right there. Every failure, not only those five, goes to the console as `[Nexus] sync failed on "<path>": <reason>`. |
 
 ### What it is not
 

@@ -2,6 +2,33 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.26.1 — 2026-09-01
+
+### Fixed
+
+- **The second device could not receive the vault.** Syncing appeared to work —
+  and on the device that *uploads* it did — but the device downloading a vault
+  it does not have yet failed on every file in a folder deeper than one level,
+  over and over, because a file that never arrives never enters the state that
+  says it did. `adapter.mkdir` is not the same call on both platforms: asked for
+  `Tasks/Items` where `Tasks` does not exist, the desktop creates both and the
+  mobile adapter refuses. The sync now builds a local path a segment at a time,
+  the way the rest of the plugin already did. Reproduced in the test harness
+  against a mobile-style adapter, so it stays fixed.
+- **A folder on the server is created once per run, not once per file in it.** A
+  first upload of a vault with a few hundred folders spent thousands of requests
+  re-creating folders it had just made — slow everywhere, and on a server that
+  rate-limits, a wall of failures with nothing to do with the files.
+
+### Added
+
+- **Settings → Vault sync → The last run.** What the last sync did, the first
+  five failures in full, and a *Sync* button that reports right underneath.
+  Every failure — not only those five — now also goes to the console as
+  `[Nexus] sync failed on "<path>": <reason>`. Until now a failed run left a
+  Notice that was already gone and nothing else to look at, which is no way to
+  find out why a sync is failing on a tablet.
+
 ## 0.26.0 — 2026-08-31
 
 ### Changed

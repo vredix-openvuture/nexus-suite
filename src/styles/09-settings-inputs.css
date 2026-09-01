@@ -367,3 +367,10 @@ p.setting-item-description.nx-folded.is-open {
   padding-left: 10px;
   border-left: 2px solid var(--background-modifier-border);
 }
+
+/* ── the vault sync's last run ── */
+.nx-sync-report { margin: 4px 0 10px; display: flex; flex-direction: column; gap: 4px; }
+.nx-sync-report .nx-sync-err {
+  font-size: var(--font-ui-smaller); color: var(--color-red, #e5544a);
+  overflow-wrap: anywhere;
+}

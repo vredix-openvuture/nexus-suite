@@ -946,6 +946,40 @@ class NexusSettingsTab extends PluginSettingTab {
       .setDesc('Each device leaves a note on the server saying it is here, so you can be told when someone else is in the vault. This is NOT live co-editing — see the README for why that needs a server this does not have.')
       .addToggle(t => t.setValue(!!s.shared).onChange(async v => { s.shared = v; await this.save(); }));
 
+    /* What the last run actually did, including what it could not do. Without
+       this the only trace of a failure was a Notice that had already gone and a
+       console the tablet does not have — "thousands of sync errors" with no way
+       to see a single one of them. */
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'The last run' });
+    const runBox = e.createDiv('nx-sync-report');
+    const paintRun = () => {
+      runBox.empty();
+      const r = this.plugin.vaultSync && this.plugin.vaultSync.lastReport;
+      if (!r) {
+        runBox.createDiv({ cls: 'setting-item-description', text: 'Nothing has run on this device since Obsidian started.' });
+        return;
+      }
+      runBox.createDiv({ cls: 'setting-item-description',
+        text: this.plugin.vaultSync.describe(r) + (r.seconds ? ' (' + r.seconds + 's)' : '') });
+      if (r.blocked) runBox.createDiv({ cls: 'nx-sync-err', text: 'Stopped: ' + r.blocked });
+      if (r.error) runBox.createDiv({ cls: 'nx-sync-err', text: 'Failed: ' + r.error });
+      (r.errors || []).forEach(line => runBox.createDiv({ cls: 'nx-sync-err', text: line }));
+      if (r.failed > (r.errors || []).length) {
+        runBox.createDiv({ cls: 'setting-item-description',
+          text: 'and ' + (r.failed - r.errors.length) + ' more — every one of them is in the console.' });
+      }
+    };
+    paintRun();
+    new Setting(e).setName('Sync now').setDesc('Runs it and shows what happened, right here.')
+      .addButton(b => b.setButtonText('Sync').setCta().onClick(async () => {
+        if (!this.plugin.vaultSync) return;
+        b.setDisabled(true).setButtonText('Syncing…');
+        try { await this.plugin.vaultSync.syncNow(true); } finally {
+          b.setDisabled(false).setButtonText('Sync');
+          paintRun();
+        }
+      }));
+
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Backups' });
     e.createEl('p', { cls: 'setting-item-description',
       text: 'One zip a day into _backups on the server, taken after the first sync of the day. The oldest are removed once there are more than you want to keep.' });

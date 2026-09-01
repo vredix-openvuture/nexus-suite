@@ -115,6 +115,7 @@ class NexusVaultSync {
     if (this.running) { if (loud) new Notice('Nexus: a sync is already running.'); return null; }
     if (!this.s.enabled) { if (loud) new Notice('Nexus: vault sync is off — Settings → Vault sync.'); return null; }
     this.running = true;
+    this._remoteFolders = new Set();
     const started = Date.now();
     try {
       const client = this.client();
@@ -163,7 +164,12 @@ class NexusVaultSync {
     const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, errors: [] };
     const fail = (path, err) => {
       report.failed++;
-      if (report.errors.length < 5) report.errors.push(path + ': ' + (err && err.message ? err.message : 'unknown'));
+      const why = (err && err.message ? err.message : 'unknown');
+      // Every one of them goes to the console, not only the first five. A run
+      // that fails on hundreds of files is exactly the run whose report is too
+      // small to say why, and on mobile the console is the only way in.
+      console.error('[Nexus] sync failed on "' + path + '": ' + why);
+      if (report.errors.length < 5) report.errors.push(path + ': ' + why);
     };
     // Which paths ended up in agreement; what each side actually looks like
     // afterwards is read back below, because the server stamps its own time on
@@ -210,17 +216,62 @@ class NexusVaultSync {
   async upload(client, path) {
     const adapter = this.app.vault.adapter;
     const folder = path.indexOf('/') >= 0 ? path.slice(0, path.lastIndexOf('/')) : '';
-    if (folder) await client.ensureFolder(folder);
+    if (folder) await this.ensureRemoteFolder(client, folder);
     const buffer = await adapter.readBinary(path);
     await client.put(path, buffer);
+  }
+
+  /* The same folder is not created once per file in it.
+
+     `ensureFolder` walks the path with one MKCOL per segment, so a first upload
+     of a vault with two hundred folders and two thousand files spent thousands
+     of requests re-creating folders that were made moments earlier — slow
+     everywhere, and on a server that rate-limits, a wall of failures that has
+     nothing to do with the files. Remembered per run only, so a folder deleted
+     between two syncs is still created again. */
+  async ensureRemoteFolder(client, folder) {
+    if (!this._remoteFolders) this._remoteFolders = new Set();
+    if (this._remoteFolders.has(folder)) return;
+    await client.ensureFolder(folder);
+    let at = '';
+    for (const part of String(folder).split('/')) {
+      if (!part) continue;
+      at = at ? at + '/' + part : part;
+      this._remoteFolders.add(at);          // every parent exists too, by definition
+    }
   }
   async download(client, path) {
     const res = await client.get(path);
     if (!res) throw new Error('the server no longer has it');
-    const adapter = this.app.vault.adapter;
     const folder = path.indexOf('/') >= 0 ? path.slice(0, path.lastIndexOf('/')) : '';
-    if (folder && !(await adapter.exists(folder))) await adapter.mkdir(folder);
-    await adapter.writeBinary(path, res.arrayBuffer);
+    if (folder) await this.ensureLocalFolder(folder);
+    await this.app.vault.adapter.writeBinary(path, res.arrayBuffer);
+  }
+
+  /* Create a folder and every parent it needs, one segment at a time.
+
+     `adapter.mkdir` is NOT the same call on both platforms: asked for
+     "Tasks/Items" where "Tasks" does not exist yet, the desktop creates both
+     and the mobile adapter refuses. So the device that downloads a vault it
+     does not have yet — the second device, which is the whole point of the
+     sync — failed on every file in a folder deeper than one level, while the
+     device that uploads never noticed. The rest of the plugin already builds
+     folders this way (`kanban.ensureFolder`, `plugin.ensureFolderPath`); the
+     sync was the one place that did not. */
+  async ensureLocalFolder(folder) {
+    const adapter = this.app.vault.adapter;
+    let at = '';
+    for (const part of String(folder || '').split('/')) {
+      if (!part) continue;
+      at = at ? at + '/' + part : part;
+      if (await adapter.exists(at)) continue;
+      try { await adapter.mkdir(at); }
+      catch (e) {
+        // Two files in the same new folder race each other; the loser only has
+        // to care if the folder is still not there afterwards.
+        if (!(await adapter.exists(at))) throw new Error('could not create the folder "' + at + '": ' + (e && e.message ? e.message : 'unknown'));
+      }
+    }
   }
   async removeLocal(path) {
     const file = this.app.vault.getAbstractFileByPath(path);

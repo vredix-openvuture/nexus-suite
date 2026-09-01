@@ -274,6 +274,123 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   eq('zip · an empty archive is still a valid one', empty.length, 22);
 }
 
+// ── the runner: one MKCOL chain per folder, not per file ───────────────────
+{
+  const R = window.vaultSyncRunLib;
+  const adapter = {
+    async exists() { return true; },
+    async mkdir() {},
+    async readBinary() { return new ArrayBuffer(2); },
+    async writeBinary() {},
+  };
+  const plugin = {
+    app: { vault: { adapter, getAbstractFileByPath: () => null }, workspace: { onLayoutReady() {} } },
+    settings: { vaultSync: { enabled: true } },
+    getCredential: () => ({}), deviceId: () => 'test-device',
+  };
+  const vs = new R.NexusVaultSync(plugin);
+  const made = [];
+  const client = { async ensureFolder(p) { made.push(p); }, async put() {} };
+
+  await (async () => {
+    await vs.upload(client, 'Tasks/Items/one.md');
+    await vs.upload(client, 'Tasks/Items/two.md');
+    await vs.upload(client, 'Tasks/Items/three.md');
+    eq('runner · a folder is created once, not once per file in it', made, ['Tasks/Items']);
+    await vs.upload(client, 'Tasks/Projects/a.md');
+    eq('runner · a different folder is still created', made, ['Tasks/Items', 'Tasks/Projects']);
+    await vs.upload(client, 'Tasks/loose.md');
+    ok('runner · and a parent already walked through is not created again',
+       made.length === 2, made.join('|'));
+  })();
+}
+
+// ── the runner against a MOBILE file system ────────────────────────────────
+/* The decisions above are pure and were always right; what broke was carrying
+   them out on a phone. `adapter.mkdir` is not the same call on both platforms:
+   asked for "Tasks/Items" where "Tasks" does not exist, the desktop makes both
+   and the mobile adapter refuses. The device that downloads a vault it does not
+   have yet — the second device, which is the entire point — then failed on
+   every file deeper than one folder, and failed again on every run because a
+   file that never arrived never enters the state.
+
+   This adapter is the mobile one: mkdir with a missing parent throws. */
+{
+  const R = window.vaultSyncRunLib;
+
+  function mobileAdapter() {
+    const files = {}, folders = { '': true };
+    return {
+      _files: files, _folders: folders,
+      async exists(p) { return !!files[p] || !!folders[p]; },
+      async mkdir(p) {
+        const parent = p.indexOf('/') >= 0 ? p.slice(0, p.lastIndexOf('/')) : '';
+        if (!folders[parent]) throw new Error('ENOENT: no such directory, mkdir "' + p + '"');
+        folders[p] = true;
+      },
+      async writeBinary(p, data) {
+        const parent = p.indexOf('/') >= 0 ? p.slice(0, p.lastIndexOf('/')) : '';
+        if (!folders[parent]) throw new Error('ENOENT: no such directory, write "' + p + '"');
+        files[p] = data;
+      },
+      async readBinary(p) { return files[p]; },
+      async remove(p) { delete files[p]; },
+      async stat(p) { return files[p] ? { mtime: 1000, size: 1 } : null; },
+      async list() { return { files: [], folders: [] }; },
+    };
+  }
+  function runner(adapter) {
+    const plugin = {
+      app: { vault: { adapter, getAbstractFileByPath: () => null }, workspace: { onLayoutReady() {} } },
+      settings: { vaultSync: { enabled: true, url: 'https://example.invalid/dav', conflict: 'keepBoth' } },
+      getCredential: () => ({ username: 'u', secret: 'p' }),
+      deviceId: () => 'test-device',
+    };
+    return new R.NexusVaultSync(plugin);
+  }
+  const fakeServer = { async get() { return { arrayBuffer: new ArrayBuffer(4) }; } };
+
+  await (async () => {
+    const adapter = mobileAdapter();
+    const vs = runner(adapter);
+    let threw = '';
+    try { await vs.download(fakeServer, 'Tasks/Items/one.md'); }
+    catch (e) { threw = e && e.message ? e.message : String(e); }
+    ok('runner · a download two folders deep succeeds where mkdir is not recursive', !threw, threw);
+    ok('runner · the parent folder was created', !!adapter._folders['Tasks'], JSON.stringify(adapter._folders));
+    ok('runner · and so was the one below it', !!adapter._folders['Tasks/Items'], JSON.stringify(adapter._folders));
+    ok('runner · the file landed', !!adapter._files['Tasks/Items/one.md'], JSON.stringify(Object.keys(adapter._files)));
+  })();
+
+  await (async () => {
+    const adapter = mobileAdapter();
+    const vs = runner(adapter);
+    await vs.download(fakeServer, 'top.md');
+    ok('runner · a file at the vault root needs no folder at all', !!adapter._files['top.md']);
+  })();
+
+  await (async () => {
+    // A folder that is already there is not created twice, and does not throw.
+    const adapter = mobileAdapter();
+    const vs = runner(adapter);
+    await vs.ensureLocalFolder('a/b');
+    await vs.ensureLocalFolder('a/b');
+    ok('runner · creating a folder that exists is not an error', !!adapter._folders['a/b']);
+  })();
+
+  await (async () => {
+    // What the failure now READS like: the folder that could not be made, by
+    // name. The old one surfaced the adapter's own ENOENT and nothing else.
+    const adapter = mobileAdapter();
+    adapter.mkdir = async () => { throw new Error('EACCES'); };
+    const vs = runner(adapter);
+    let message = '';
+    try { await vs.ensureLocalFolder('Tasks/Items'); } catch (e) { message = e.message; }
+    ok('runner · a folder that truly cannot be made says which one',
+       message.indexOf('Tasks') >= 0 && message.indexOf('EACCES') >= 0, message);
+  })();
+}
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
 out.push('');
