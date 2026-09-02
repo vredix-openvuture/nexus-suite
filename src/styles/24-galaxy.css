@@ -1,0 +1,93 @@
+/* ============================================================================
+ *  GALAXY
+ *  The vault's links laid out in three dimensions and drawn on a plain 2D
+ *  canvas. The canvas cannot read a stylesheet, so the palette reaches it the
+ *  only way it can: as five custom properties the view resolves with
+ *  getComputedStyle and hands to the painter. Change the palette and the map
+ *  follows, exactly like the explorer rail — no colour is written in the JS.
+ *
+ *  Depth here is size, draw order and fade. Not glow: the style guide bans
+ *  shadow-as-accent, and a bloom over three hundred nodes is a smear anyway.
+ * ==========================================================================*/
+
+.nx-galaxy {
+  --nx-gx-ground: var(--nx-desk, var(--background-primary));
+  --nx-gx-star:   var(--nx-fg, var(--text-normal));
+  --nx-gx-hub:    var(--nx-accent, var(--interactive-accent));
+  --nx-gx-link:   var(--nx-fg-muted, var(--text-faint));
+  --nx-gx-lit:    var(--nx-fg-bright, var(--text-normal));
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--nx-gx-ground);
+}
+
+.nx-galaxy-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-ctl-gap);
+  padding: var(--nx-sp-2) var(--nx-sp-3);
+  border-bottom: var(--nx-hairline);
+  flex: 0 0 auto;
+}
+.nx-galaxy-count {
+  flex: 1;
+  font-size: .8em;
+  color: var(--nx-fg-muted, var(--text-muted));
+  font-variant-numeric: tabular-nums;
+}
+.nx-galaxy-bar .nx-btn.is-active {
+  background: var(--nx-sf-2);
+  border-color: var(--nx-accent, var(--interactive-accent));
+  color: var(--nx-fg, var(--text-normal));
+}
+
+/* The stage owns the pointer: a drag here turns the map, and must never start
+   a text selection or a page scroll — on a tablet the second one is what makes
+   a gesture feel broken. */
+.nx-galaxy-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+.nx-galaxy-stage:active { cursor: grabbing; }
+.nx-galaxy-stage canvas { display: block; width: 100%; height: 100%; }
+
+/* The label follows the node under the pointer, so it is positioned from JS and
+   must not take the pointer with it. */
+.nx-galaxy-label,
+.nx-galaxy-probe {
+  position: absolute;
+  pointer-events: none;
+  border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-smaller, .78em);
+  white-space: nowrap;
+}
+.nx-galaxy-label {
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  background: var(--nx-sf-3);
+  border: var(--nx-hairline);
+  color: var(--nx-fg, var(--text-normal));
+  transform: translate(-50%, -140%);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.nx-galaxy-label.is-on { opacity: 1; }
+/* A hit target of its own, because a star is a few pixels wide and a fingertip
+   is not. It is invisible; only what it lights up is seen. */
+.nx-galaxy-probe {
+  width: 44px; height: 44px;
+  transform: translate(-50%, -50%);
+  border-radius: var(--nx-r-circle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nx-galaxy-label { transition: none; }
+}

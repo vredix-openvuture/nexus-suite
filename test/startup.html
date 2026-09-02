@@ -1,0 +1,203 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>startup harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+(async () => {
+try {
+const Suite = window.NexusSuite;
+const HOME = window.HOME_VIEW;
+const makeWorkspace = window.obsidianStub.makeWorkspace;
+const sleep = (ms) => new Promise(r => window.setTimeout(r, ms));
+
+/* The plugin with a workspace and nothing else. Its settings are the real
+   defaults, so a test that forgets a key still describes a real install. */
+function plugin(viewTypes, homepage, pinned) {
+  const workspace = makeWorkspace(viewTypes);
+  const p = new Suite({ workspace, vault: {} }, {});
+  p.settings = JSON.parse(JSON.stringify(window.DEFAULT_SETTINGS));
+  p.settings.homepage.enabled = true;
+  Object.assign(p.settings.homepage, homepage || {});
+  if (pinned) p.settings.pinnedTabs = Object.assign(p.settings.pinnedTabs, pinned);
+  p.workspace = workspace;
+  return p;
+}
+
+/* ── The bug: the dashboard ate whatever tab was open ──────────────────────
+   openHomepage handed the ACTIVE leaf to setViewState, which replaces the view
+   in it. On startup that was the note the last session was left on. */
+{
+  const p = plugin(['markdown'], { startup: 'tab' });
+  const note = p.workspace.leaves[0];
+  await p.runHomepageStartup();
+  eq('tab · the open note is left alone', note.stateCalls.length, 0);
+  eq('tab · and still holds the note', note.viewType, 'markdown');
+  eq('tab · the dashboard got a tab of its own', p.workspace.newTabs, 1);
+  eq('tab · which is what the dashboard now lives in', p.workspace.getLeavesOfType(HOME).length, 1);
+  eq('tab · and it was brought to the front', p.workspace.revealed.length, 1);
+}
+
+{
+  // An empty tab is not a note, so taking it over costs nothing.
+  const p = plugin(['empty'], { startup: 'tab' });
+  const blank = p.workspace.leaves[0];
+  await p.runHomepageStartup();
+  eq('tab · an empty tab is reused', blank.viewType, HOME);
+  eq('tab · so no second one is opened', p.workspace.newTabs, 0);
+}
+
+{
+  // Already open somewhere: reveal it, do not build another.
+  const p = plugin(['markdown', HOME], { startup: 'tab' });
+  const note = p.workspace.leaves[0];
+  const home = p.workspace.leaves[1];
+  await p.runHomepageStartup();
+  eq('tab · a dashboard that is already open is reused', p.workspace.getLeavesOfType(HOME).length, 1);
+  eq('tab · nothing new is opened', p.workspace.newTabs, 0);
+  eq('tab · nothing is overwritten', note.stateCalls.length + home.stateCalls.length, 0);
+  ok('tab · the existing one is revealed', p.workspace.revealed[0] === home);
+}
+
+{
+  /* Pinned: the pinned dashboard IS the leaf to bring forward. Opening a
+     second one beside it is exactly what the pin exists to prevent. */
+  const p = plugin([HOME, 'markdown'], { startup: 'tab' }, { home: true });
+  const home = p.workspace.leaves[0];
+  p.workspace.activeIndex = 1;                 // the note is the active tab
+  p.applyPinnedTabs();
+  ok('pinned · the dashboard leaf is pinned', home.pinned === true);
+  await p.runHomepageStartup();
+  ok('pinned · the pinned leaf is the one revealed', p.workspace.revealed[0] === home);
+  eq('pinned · no tab is opened', p.workspace.newTabs, 0);
+  eq('pinned · and the note beside it is untouched', p.workspace.leaves[1].stateCalls.length, 0);
+}
+
+{
+  // closeAll: the main area is cleared BEFORE the dashboard goes up.
+  const p = plugin(['markdown', 'markdown', 'pdf'], { startup: 'closeAll' });
+  await p.runHomepageStartup();
+  const firstOpen = p.workspace.events.findIndex(e => e.indexOf('open:') === 0);
+  const lastClose = p.workspace.events.map((e, i) => e.indexOf('close:') === 0 ? i : -1).filter(i => i >= 0).pop();
+  eq('closeAll · every tab was closed', p.workspace.events.filter(e => e.indexOf('close:') === 0).length, 3);
+  ok('closeAll · and all of it happened before anything opened', lastClose < firstOpen,
+     p.workspace.events.join(' '));
+  eq('closeAll · the dashboard is what is left', p.workspace.getLeavesOfType(HOME).length, 1);
+}
+
+{
+  /* A pinned Nexus page survives "close every tab": guardPinnedTabs would put
+     it back 150 ms later, so closing it buys nothing but a flicker. */
+  const p = plugin(['markdown', 'nx-calendar-page'], { startup: 'closeAll' }, { calendar: true });
+  p.settings.tasksCalendar.enabled = true;
+  await p.runHomepageStartup();
+  eq('closeAll · the note was closed', p.workspace.getLeavesOfType('markdown').length, 0);
+  eq('closeAll · the pinned calendar page stayed', p.workspace.getLeavesOfType('nx-calendar-page').length, 1);
+  eq('closeAll · and the dashboard is up beside it', p.workspace.getLeavesOfType(HOME).length, 1);
+}
+
+{
+  const p = plugin(['markdown'], { startup: 'off' });
+  await p.runHomepageStartup();
+  eq('off · nothing happens at all', p.workspace.events.length + p.workspace.newTabs, 0);
+}
+
+{
+  /* Two callers at the same instant. The check for "one is already open" and
+     the setViewState that makes it true are not one step, so without a shared
+     promise both get through and the vault ends up with two dashboards. */
+  const p = plugin(['markdown'], { startup: 'off' });
+  const slow = p.workspace.leaves[0];
+  await Promise.all([p.openHomepage(), p.openHomepage(), p.openHomepage()]);
+  eq('open · three callers at once open exactly one dashboard', p.workspace.getLeavesOfType(HOME).length, 1);
+  eq('open · and only one new tab was taken', p.workspace.newTabs, 1);
+  eq('open · the note is still a note', slow.viewType, 'markdown');
+  await p.openHomepage();
+  eq('open · a later call reuses it', p.workspace.newTabs, 1);
+}
+
+{
+  const p = plugin(['markdown'], { startup: 'tab', enabled: false });
+  p.settings.homepage.enabled = false;
+  await p.runHomepageStartup();
+  eq('off · a disabled module opens nothing either', p.workspace.newTabs, 0);
+}
+
+// ── The last tab closed ────────────────────────────────────────────────────
+{
+  const p = plugin(['empty'], { startup: 'off', openWhenEmpty: true });
+  p.maybeOpenHomepageWhenEmpty();
+  await sleep(250);
+  eq('empty · closing the last tab brings the dashboard up', p.workspace.getLeavesOfType(HOME).length, 1);
+}
+
+{
+  const p = plugin([], { startup: 'off', openWhenEmpty: true });
+  p.maybeOpenHomepageWhenEmpty();
+  await sleep(250);
+  eq('empty · a main area with no leaf at all counts as empty', p.workspace.getLeavesOfType(HOME).length, 1);
+}
+
+{
+  const p = plugin(['markdown'], { startup: 'off', openWhenEmpty: true });
+  p.maybeOpenHomepageWhenEmpty();
+  await sleep(250);
+  eq('empty · a note still open means it is not empty', p.workspace.getLeavesOfType(HOME).length, 0);
+}
+
+{
+  const p = plugin(['empty'], { startup: 'off', openWhenEmpty: false });
+  p.maybeOpenHomepageWhenEmpty();
+  await sleep(250);
+  eq('empty · switched off, nothing happens', p.workspace.getLeavesOfType(HOME).length, 0);
+}
+
+{
+  // onunload detaches the dashboard; reopening it there would undo that.
+  const p = plugin(['empty'], { startup: 'off', openWhenEmpty: true });
+  p._unloading = true;
+  p.maybeOpenHomepageWhenEmpty();
+  await sleep(250);
+  eq('empty · while unloading it stays away', p.workspace.getLeavesOfType(HOME).length, 0);
+}
+
+{
+  /* Opening the dashboard fires layout-change, which calls this again. Without
+     the guard that is a loop that opens a tab per turn. */
+  const p = plugin(['empty'], { startup: 'off', openWhenEmpty: true });
+  p.maybeOpenHomepageWhenEmpty();
+  p.maybeOpenHomepageWhenEmpty();
+  p.maybeOpenHomepageWhenEmpty();
+  await sleep(250);
+  eq('empty · three events in a row still open one dashboard', p.workspace.getLeavesOfType(HOME).length, 1);
+  p.maybeOpenHomepageWhenEmpty();
+  await sleep(250);
+  eq('empty · and the one it opened stops it from firing again', p.workspace.getLeavesOfType(HOME).length, 1);
+}
+
+{
+  // The pin watchdog opens the same page; the two must not race into two tabs.
+  const p = plugin(['empty'], { startup: 'off', openWhenEmpty: true }, { home: true });
+  p.maybeOpenHomepageWhenEmpty();
+  p.guardPinnedTabs();
+  await sleep(400);
+  eq('empty · the pin watchdog and this one do not open two dashboards',
+     p.workspace.getLeavesOfType(HOME).length, 1);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

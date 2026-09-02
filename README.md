@@ -19,13 +19,13 @@ run what you use.
 | **Tags** | Rename, merge and remove tags vault-wide | tag-wrangler |
 | **Quick Sketch** | Low-latency vector drawing in a note | — |
 | **Ink Capture** | Scans and handwriting into the vault | — |
-| **Calendar** | Month view over your daily notes | calendar |
-| **CalDAV** | Server accounts, local calendars, events, tasks | — |
+| **Mini calendar** | Month grid over your daily notes, in the sidebar | calendar |
+| **Calendar** | Local calendars, events and tasks, as a full page | — |
 | **Search** | Weighted over title, tags, headings, properties, text | omnisearch |
 | **Kanban** | Boards with columns and cards in a note, plus the board view of your tasks | kanban |
 | **Planner** | A month on one screen, one line per day | — |
 | **Vault sync** | The whole vault to a WebDAV server, with daily backups | Syncthing, Obsidian Sync |
-| **Quick Note** | A note you speak instead of type | — |
+| **Chatter** | A note you speak instead of type | — |
 | **Workspaces** | Save and switch pane layouts | — |
 
 Built for a card-based vault layout and designed to work on mobile as well as
@@ -58,6 +58,13 @@ Two independent decisions, both in Settings → Theme:
 
 The style also reaches the plugin's own surfaces (dashboard, boards, tasks page,
 agenda, banner), so the app changes as a whole and not just around the edges.
+
+**Style and palette are the whole tab.** Corner radius and card gap used to be
+sliders here; they are geometry, and geometry comes from one token block that
+the theme and the plugin share — see `themes/Nexus/docs/style-guide.md` and
+`.claude/token-spec.md`. A slider competing with that block is how the same
+element ended up with a different corner on every page. The dashboard's own grid
+sliders moved to Settings → Dashboard, where the thing they size lives.
 Card gap and corner radius are Mirobo settings — "Almost nothing" has no cards
 to space out, so those two sliders disappear with it.
 
@@ -75,6 +82,32 @@ Grouped as **Nexus** (the six signature palettes), **Neutral**, **Classics**
 Minimal is the one to pair with "Almost nothing" for the full Notion look;
 every other combination works as well.
 
+## The galaxy
+
+Command *Open the galaxy*, or the ribbon's ⊙. Every note is a star, every link a
+line, laid out in three dimensions and drawn on a plain canvas — drag to turn
+it, and switch to 2D when you want the flat picture. A note's size is how many
+links it has, so the hubs of the vault are visible without reading a single
+title.
+
+It is a second graph view, not a change to Obsidian's. Obsidian's own is a
+closed core plugin: a plugin cannot add a toggle to it, read its layout or draw
+into it.
+
+Colour comes from the active palette, so it follows the theme. The layout is
+deterministic — the same vault opens the same way every time — and it stops
+when it has settled rather than spinning forever. Numbers for how long that
+takes, and where it stops being pleasant, are at the top of `src/lib/force3d.js`.
+
+## Hiding the attachment folder
+
+Settings → Explorer → *Hide the attachment folder*. The name defaults to
+whatever Obsidian is configured to use; if Obsidian keeps attachments beside
+each note there is no single folder to hide and you name one yourself.
+
+It hides the folder from the file tree and nothing else — the files stay where
+they are and every link keeps working.
+
 ## Tasks
 
 Projects and tasks are ordinary notes: a **project note** (`nexus-type: project`)
@@ -85,7 +118,7 @@ start-up; Obsidian rewrites their links, so nothing is lost.
 
 - **Type a line to make a task.** Write `- [ ] Pay the invoice` under `## Tasks`
   and it becomes a task note, inheriting the project's provider and account —
-  so a task typed into a Vikunja or CalDAV project gets pushed on the next sync.
+  so a task typed into a Vikunja project gets pushed on the next sync.
   The line you are still typing is left alone until the cursor moves away.
 - **Ticking works everywhere** — project note, agenda block, tasks page — and
   always writes to the task note and back to the checklist. A repeating task
@@ -137,8 +170,9 @@ dead end. `Insert an agenda block` in the command palette writes the skeleton.
 
 ## Kanban
 
-Two boards, one idea: a column is a state, a card is a thing, dragging one
-changes the other.
+One board, one idea: a column is a state, a card is a thing, dragging one
+changes the other. What differs is only where the cards come from — the block
+itself, a folder of notes, or your task list.
 
 ### A board in a note
 
@@ -177,11 +211,13 @@ notes: Projects/Roadmap
 * A card can **get** a note: *Create a note* writes it into the `notes:` folder
   (or next to the board), links it and opens it. *Link a note* points the card
   at one you already have.
-* Anything the parser doesn't understand is written back untouched — a rewrite
-  can't eat a line you typed.
+* Anything the parser doesn't understand is kept and written back — a rewrite
+  can't eat a line you typed. (It is written back with the other config lines,
+  so its position can move; blank lines inside the fence are not kept.)
 
 | Key | Values | Default |
 |---|---|---|
+| `source` | `block` (the cards are in the fence) or `folder` | `block` |
 | `title` | board title | the note's name |
 | `notes` | folder for notes created from cards | the board note's folder |
 | `template` | note used as the body for new cards' notes | — |
@@ -190,6 +226,86 @@ notes: Projects/Roadmap
 
 `New kanban board (note)` and `Insert a kanban board` are in the command
 palette; the default columns come from Settings → Kanban.
+
+### A folder as the board
+
+`source: folder` keeps the same columns and the same cards, and changes the one
+thing that matters: the cards are now **every note of a folder**, and a column
+is what a note's own frontmatter says. It never filters — a hand-built board
+shows what you remembered to put on it, this shows the folder, so nothing goes
+quietly missing.
+
+````md
+```nexus-kanban
+source: folder
+folder: SCHOOL/Biology
+title: Biologie
+status: status
+props: due
+## Offen
+## In Arbeit @2
+## Ausbessern
+## Erledigt
+```
+````
+
+* The headings are the columns, exactly as on a block board — `@2` is still a
+  WIP limit.
+* **The first column means "nothing set".** Dropping a note there deletes the
+  property instead of writing `status: Offen` into every note you own.
+* Dragging a card (or clicking its dot, or its ⋮ menu) writes the column's name
+  into the note. A value nobody configured still gets a column of its own at the
+  right — a note can never fall off the board.
+* A card shows the note's first sentence, up to three tags, the properties named
+  in `props:`, and how many notes of this folder it links to. Hovering one lights
+  up its web; a note nothing links to gets a dashed edge.
+* The filter field narrows the board without changing it, and the gear writes
+  every setting back into the fence.
+
+| Key | Values | Default |
+|---|---|---|
+| `folder` | the folder whose notes are the cards | the note's own folder |
+| `status` | frontmatter property holding the column | `status` |
+| `sort` / `dir` | `name` · `modified` · `created` · `state` / `asc` · `desc` | `name` / `asc` |
+| `size` | `small` · `medium` · `large` | `medium` |
+| `props` | comma-separated frontmatter keys, shown as badges | — |
+| `excerpt` / `tags` / `links` / `orphans` / `state` | `false` hides that part of a card | on |
+
+`Insert a folder board` writes the skeleton with the folder you are in already
+filled in.
+
+**The older ```` ```nexus-board ```` block still works.** It is the same board
+with `source: folder` pre-set, and its own spellings (`states:`,
+`statusproperty:`, `columns:`, `direction:`, `show:`) are read as the keys
+above — **and written back as themselves**. A fence keeps the shape you typed
+it in: `states: A, B, C` stays one line instead of becoming three headings, and
+a fence that never needed a `source:` line never grows one. The only forced
+change is a WIP limit, which has no spelling in a `states:` line and moves the
+columns to headings.
+
+### The same notes without columns
+
+A ```` ```nexus-graph ```` block is the other half of that block: the same
+folder, arranged by what the notes are instead of where they stand.
+
+````md
+```nexus-graph
+folder: SCHOOL/Biology
+view: graph
+height: 260
+```
+````
+
+* `view: grid` — every note once, as a sorted wall of the same cards.
+* `view: graph` — the notes as dots and the links between them as lines,
+  coloured by state, sized by how connected they are. Hovering a dot lights its
+  neighbours; clicking one opens the note.
+* `view: board` hands the block back to the columns above, and the three view
+  buttons in its head switch between all three and write the choice into the
+  fence — the line appears the moment you pick a view, not before.
+
+`Insert a folder graph` is in the command palette. An older ```` ```nexus-board ````
+with `mode: grid` or `show: graph` renders here on its own — nothing to change.
 
 ### Your tasks as a board
 
@@ -208,6 +324,80 @@ straight back to the server; the `bucket:` line in the note is the offline copy,
 so the board still reads correctly on the tablet, where no sync runs. Without a
 credential on the device (or without a kanban view on the server) it falls back
 to your own columns and says so.
+
+## The capture hub
+
+Everything you caught rather than wrote — scans, drawings, spoken notes — under
+one toolbar, on three tabs. It opens as a full tab or as a sidebar panel, and it
+is laid out for ~280 px first.
+
+The toolbar is written once and every tab gets it: search, sort, select mode,
+and then **Tag**, **Move** and **Delete** over the selection. A tab may bring
+verbs of its own; the Ink tab brings two.
+
+### A capture is a set of files, never one
+
+A scan is a note, the scan itself and — for a PDF — a cached render of its first
+page. Delete and Move both act on that whole list, so neither can strand a
+picture in a folder nothing points at any more. Move uses Obsidian's own
+`renameFile`, which rewrites the note's `![[…]]` embed; a name already taken at
+the destination blocks *that* capture by name and the rest still travel.
+
+### Split it — a capture with pages
+
+A capture can hold several pages. **Pages** on a scan's tile opens the list:
+reorder with the arrows, drop one with the bin, or add one from a file. Adding
+copies the file in straight away — a PDF has to be rendered before it can show
+a thumbnail — but everything else waits for Save, and Cancel takes those copies
+back out. Dropping a page trashes its file and removes its embed from the note.
+
+Two or more scans selected, then **Merge**, makes them one capture: the first in
+the shown order survives, the rest hand over their pages and their files move
+into its folder. This is deliberately an explicit act — the folder watcher
+cannot tell three photos of one letter from three unrelated scans that landed in
+the same second, and un-merging is far harder than merging.
+
+The frontmatter keeps its old shape and grows one key:
+
+```yaml
+ink-file:  "Inbox/Paper/Lease/ink-m4x8k1.pdf"        # always page one
+ink-thumb: "Inbox/Paper/Lease/ink-m4x8k1.thumb.png"  # page one's cached render
+ink-pages:                                            # only once there are two
+  - file: "Inbox/Paper/Lease/ink-m4x8k1.pdf"
+    thumb: "Inbox/Paper/Lease/ink-m4x8k1.thumb.png"
+  - file: "Inbox/Paper/Lease/ink-m4x8k2.png"
+```
+
+A capture written before this has no `ink-pages` and simply reads as one page —
+its frontmatter is never rewritten for being looked at. A capture written after
+it still names page one in `ink-file`, so an older copy of the plugin shows the
+first page rather than nothing. Back down to one page, `ink-pages` is removed
+again and the capture is exactly the old shape.
+
+The tile shows page one and, above two, how many there are.
+
+### Mark it — annotate a scan
+
+**Annotate** on a scan's tile opens it in the Quick Sketch canvas with the scan
+as the bottom layer, sized to the page and **locked**: it is not selectable, so
+no tap picks it up and no lasso catches it. Drawing on top is then just drawing.
+
+The capture *gains* the sketch, it does not spawn a sibling note: the sketch id
+goes into the capture's own `ink-sketch` frontmatter and a ```` ```quicksketch ````
+block into its body, and the pad opens knowing the note it came from, so its
+"show the note" button leads back. Annotating again reopens the same sketch.
+
+A PDF has no image except that cached first page, so that is what goes on the
+canvas — and it says so rather than annotating page one silently.
+
+### Read it
+
+**Read** runs the handwriting recogniser (Settings → Quick Sketch) over the
+selected scans and writes what it finds into each note's body, fenced by
+`%% nexus:ocr %%` markers so a second reading replaces the first and never
+touches what you wrote yourself. Every page is read, in order. Desktop only —
+the recogniser is a program on the machine — and the button is absent where it
+cannot run.
 
 ## Quick Sketch
 
@@ -323,6 +513,37 @@ through months or weeks and write the new position back. Each cell has a small
 button that opens that day's daily note, using the core plugin's own format, so
 the planner never invents a second naming scheme.
 
+### The calendar reads the same plan
+
+The full-page calendar's **month view shows that line under the day number**,
+and you can type one straight into the cell — one line, clipped, so no cell
+changes height because of what was typed. (On a phone the month cell is about
+50px wide and only shows lines that exist; writing one there is the block's job
+or the calendar on a wider screen.) It sits *above* the event chips: the
+line says what the day is for, the chips say what is in it, and a cell clips
+from the bottom, so below them a busy day would hide exactly the sentence worth
+reading. The sidebar mini calendar only *marks* a day that has a line — a
+sidebar column is too narrow for a sentence.
+
+Both surfaces read and write the same block, so they cannot disagree. A month
+resolves to one note by two settings on the **Calendar** tab:
+
+| Setting | Default | |
+|---|---|---|
+| Planner folder | `Planner` | Empty means the vault root. |
+| File name | `YYYY-MM` | `YYYY`, `YY`, `MM`, `MMM`, `MMMM`. A slash makes a subfolder, so `YYYY/YYYY-MM` files each year separately. |
+
+So September 2026 is `Planner/2026-09.md`, holding one `nexus-planner` block.
+Nothing is guessed and nothing is written until you type:
+
+- a month with no note shows nothing and **creates no file** — the first line
+  you type creates the note *with* the block;
+- a note that already exists but holds no `nexus-planner` block is treated as an
+  empty month, and a first line is **appended** to it rather than replacing
+  anything;
+- if a note holds more than one `nexus-planner` block, the **first** one is the
+  month's plan and the rest are left alone.
+
 ## A note as a task
 
 `nexus-task: true` in the frontmatter of **any** note puts it in the tasks view
@@ -334,6 +555,22 @@ else that should be picked up later. Taking it out of the note it belongs to
 would take the context with it, which is why a checklist line somewhere else is
 not good enough. Such a task shows a small note icon in the list, and clicking
 it opens the whole thing rather than a stub.
+
+## The dashboard on startup
+
+*Settings → Dashboard → On startup* has three answers, not a switch:
+
+| | |
+|---|---|
+| **Nothing** | Obsidian opens the way it closed. |
+| **Open it in a tab of its own** | The dashboard comes up **without ever replacing a note you left open**. Already open somewhere — the pinned tab included — and that one is brought forward; an empty tab is taken over, because an empty tab is not a note; otherwise it gets a tab of its own. |
+| **Close every tab, then open it** | The main area is cleared first and the dashboard is what is left. Sidebars stay, and so do the pinned Nexus pages — the pin watchdog would only reopen them a moment later. |
+
+*Open when the last tab closes* (off by default) brings the dashboard up instead
+of leaving an empty pane behind when you close the final tab in the main area.
+
+The old *Open on startup* toggle is migrated on the first load: on became *a tab
+of its own*, off became *Nothing*.
 
 ## Vault sync
 
@@ -350,6 +587,8 @@ itself excluded from the sync.
 | | |
 |---|---|
 | **Credentials** | localStorage, per device. Never in `data.json` — that is a file in the vault, and the vault is what gets uploaded. |
+| **Connections** | A connection is an **entry in a list**, not a row of text fields: you declare it once in a modal and afterwards only *Test* or *Remove* it. Half-editing one — a new URL against the old password — produces something whose first news of being wrong is a failed sync. To change one, remove it and add it again; removing it takes its stored credential with it. The Vikunja accounts under *Tasks & Calendar* are the same list, because they are the same idea. |
+| **Per device** | The server, its user name, this device's name and the schedule (*Sync on start*, *Every*) belong to **this machine** and are stored under its own key in `data.json`, so a sync carries them nowhere. Every device connects itself — as do the Vikunja accounts. Shared policy is not per device: the exclude list, *Carry the settings too*, the conflict rule, *Shared vault* and the backup count are one answer for the whole vault. |
 | **Conflicts** | Keep both by default: the server version keeps the file name, yours is saved beside it with the device name and time in it. Newer-wins, this-device-wins and server-wins are offered and are described as what they are, which is a choice to discard something. |
 | **Deletions** | Go through Obsidian's trash, not `unlink`. A sync that deletes the wrong file has to be recoverable. |
 | **Settings** | With *Carry the settings too* on, `.obsidian` travels — **except** `workspace.json`, `workspace-mobile.json`, `graph.json` and the sync's own state. Those describe this machine; carrying them would rearrange panes you deliberately arranged. |
@@ -367,9 +606,16 @@ files and answers requests, and no arrangement of file uploads adds up to
 character-level merging. The honest version of that feature is a short sync
 interval plus a warning that someone else is in here.
 
-## Quick Note
+## Chatter
 
-Command *Quick Note (speak it)* opens a recorder. Say the thing, press stop, and
+Named for what it is: the note you say before you have decided whether it is any
+good. The stored settings key is still `quicknote` and so is the command id — a
+key lives in a file you already have, and an id is what a hotkey is bound
+against, so renaming either would cost something and buy nothing a display name
+does not already give.
+
+
+Command *Chatter (speak a note)* opens a recorder. Say the thing, press stop, and
 it becomes a note — the first eight words become the file name, because that is
 what you will be scanning for later, and the exact time goes in the frontmatter
 where it does not have to be short.
@@ -409,11 +655,18 @@ npm run build      # one production build (minified, no sourcemap) — the resti
 
 `test/run.sh` bundles the plugin against a stub of the Obsidian API and drives
 it in headless Chromium against a real DOM. It needs `chromium` and `python3` on
-PATH. Thirteen pages, ~590 checks: the toolbar and its options row, selection and
+PATH. Eighteen pages, ~1220 checks: the toolbar and its options row, selection and
 transforms, the canvas and the spacing tool, objects and the ruler, pen gestures,
 export (the PDF is checked byte by byte), sketch search and the OCR command line,
 the kanban board writing itself back, notes as tasks, the planner, the sync
-decision table with the ZIP writer, and Quick Note.
+decision table with the ZIP writer, Chatter, the capture hub, and the galaxy.
+
+Two of those pages are the capture hub, on purpose. `capture.html` proves the
+pure layer — what an item is, search, sort, select, a capture's page list and
+the migration off the single-attachment shape. `inkvault.html` drives the same
+code against a fake vault (a plain map of path → text) and reads back what
+ended up on disk, because a delete that strands an attachment or a move that
+leaves the frontmatter pointing at nowhere cannot show up in a pure test.
 
 Some of it is verified outside the harness as well, because a structural check is
 not proof a file opens: the exported PDF passes `qpdf --check` and renders with
@@ -440,20 +693,28 @@ src/
   lib/
     helpers.js       renderMd, daily-note, ink zoom/pan, pdf page, colour conversion
     inputs.js        reusable settings inputs (autocomplete, multi-row, property rules, icon field)
-    caldav.js        CalDAV client (RFC 4791) over requestUrl — DESKTOP ONLY
-    ical.js          dependency-free iCalendar (RFC 5545) parser/serializer for VEVENT/VTODO
+    ical.js          dependency-free iCalendar (RFC 5545) parser for VEVENT/VTODO
     recur.js         RRULE expansion, always bounded to the visible range
-    calstore.js      event cache + local calendars as vault JSON, so mobile renders offline
+    calstore.js      local calendars as vault JSON, so mobile renders offline
     tasks.js         projects & tasks as Markdown — the .md files are the source of truth
     agenda.js        the ```nexus-agenda``` block: one day (events + tasks + backlinks) in a note
-    kanban.js        the ```nexus-kanban``` block: the board IS the block's text (columns + cards)
+    kanban.js        the ```nexus-kanban``` block: head, column strip, card and drag — shared by both sources
+    kanbanblock.js   how a board is written down: the parser and the writer of the block's own text
+    kanbanedit.js    source “block”: the fence IS the board — its card menu, card editor and write-back
+    board.js         source “folder”: the notes of a folder are the cards, the column is their frontmatter
+    graph.js         the ```nexus-graph``` block: the same notes as a grid or as a force-directed web
     taskboard.js     the board mode of the tasks page; Vikunja projects use their server buckets
+    devicesettings.js settings that belong to ONE machine, keyed by device id inside data.json
+    capture.js       the hub's pure layer: what an item is, search, sort, select, the move plan
+    inkpages.js      a capture's pages — the list, its order, the migration, the annotated sketch
+    inkactions.js    the writes: annotate a scan, add a page, save a page list, merge captures
   views/
     calendar.js      NexusCalendarView (sidebar)
     calendarpage.js  full-page calendar (month/week/day), renders from the cache
     taskspage.js     full-page tasks: project tree + the selected project's tasks, as list or board
     timers.js        timer sidebar view + done/config modals
-    ink.js           ink-capture gallery view + tag modal
+    ink.js           the capture hub's Ink tab: its adapter, its verbs and its card actions
+    capturehub.js    the capture hub itself — one toolbar over a small per-tab adapter
     sketch.js        Quick Sketch — vector drawing engine + SVG (de)serialization
     homepage.js      NexusHomepageView (the hub)
   modals/
@@ -466,17 +727,37 @@ src/
     search.js        fuzzy search suggest modal
     banner.js        top-banner modal
     workspace.js     workspace switcher
-    account.js       CalDAV account add/edit + calendar discovery
+    account.js       add a connection (Vikunja account or the WebDAV server) + test it
     event.js         create/edit a VEVENT in a local calendar
     task.js          quick-add a task to a local project
+    capture.js       where a set of captures moves to, and what pages one capture is made of
   styles/
     index.css        @imports the parts below, IN ORDER (cascade-preserving) → styles.css
-    01-core.css … 18-tasks-page.css
+    00-tokens.css … 24-galaxy.css
 ```
 
-**Secrets:** CalDAV credentials live in `localStorage` (device-local, never
-synced, never in `data.json`). Use an app-specific password. `data.json` holds
-only non-secret account config — and is gitignored regardless.
+**Styling rule:** every radius, border, surface, control height and spacing step
+comes from `styles/00-tokens.css`. A literal `border-radius`, a written-out
+`1px solid` or a bare `opacity:` that means "a lifted surface" is a defect — the
+contract is `.claude/token-spec.md` in the vault root. New UI uses the shared
+`.nx-btn` / `.nx-input` / `.nx-row` / `.nx-card` classes; a button that has to
+look different gets a modifier, not a new class. The `.nx-*-btn` classes that
+still exist are legacy aliases waiting on a JS rename —
+[`docs/token-migration.md`](docs/token-migration.md) is the checklist.
+
+**Secrets:** the WebDAV password and the Vikunja API token live in
+`localStorage` (device-local, never synced, never in `data.json`). Use an
+app-specific password and an API token, never the primary one. `data.json`
+holds only non-secret account config — and is gitignored regardless.
+
+**Per-device settings:** everything that describes one machine rather than the
+vault — the sync server it talks to, the schedule it keeps, the accounts it is
+signed in to — lives in `data.json` under `devices[<device id>]`
+(`lib/devicesettings.js`, reached through `plugin.deviceSetting()` /
+`plugin.setDeviceSetting()`). In the file, so it is synced and backed up; keyed,
+so no device can overwrite another's entry. That is the same arrangement
+`homepage.profiles` uses, and it is why the vault sync can keep carrying
+`data.json` without flattening the other device.
 
 Every module is CommonJS (`require` / `module.exports`); esbuild resolves the
 local graph. The dependency graph is a DAG (nothing requires `main`), so there

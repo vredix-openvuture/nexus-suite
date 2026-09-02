@@ -5,7 +5,7 @@
  *  Running-timer sidebar dashboard + done/config modals.
  * ========================================================================== */
 
-const { ItemView, Modal, Setting } = require('obsidian');
+const { ItemView, Modal, Setting, setIcon } = require('obsidian');
 const { TIMER_VIEW } = require('../constants.js');
 const { NexusInkTagModal } = require('./ink.js');
 
@@ -21,23 +21,54 @@ class NexusTimerSidebarView extends ItemView {
     this.registerInterval(window.setInterval(() => (this._liveEls || []).forEach(fn => { try { fn(); } catch (e) {} }), 1000));
   }
 
+  /* The panel's own timers first, then any dashboard timer that is actually
+     running — so a timer you started on the dashboard is still reachable when
+     the dashboard is not the tab you are looking at, without the panel becoming
+     a second copy of the dashboard. */
+  _rows() {
+    const timers = this.plugin._timers || {};
+    const mine = this.plugin.timerPanelList().map(t => ({ ...t, own: true }));
+    const running = (this.plugin.hp().widgets || [])
+      .filter(w => w.type === 'timer')
+      .filter(w => { const t = timers[w.uid]; return t && (t.running || t.done); })
+      .map(w => ({ uid: w.uid, minutes: w.minutes, caption: w.caption || w.label, own: false, widget: w }));
+    return mine.concat(running);
+  }
+
   render() {
     const root = this.contentEl;
     root.empty();
     root.addClass('nx-timers-view');
     this._liveEls = [];
     const inner = root.createDiv('nx-timers-inner');
-    const timers = this.plugin._timers || {};
-    const widgets = (this.plugin.hp().widgets || []).filter(w => w.type === 'timer');
-    const active = widgets.filter(w => { const t = timers[w.uid]; return t && (t.running || t.done); });
-    if (!active.length) { inner.createDiv({ cls: 'nx-timers-empty', text: 'No running timers' }); return; }
-    active.forEach(w => {
+    const rows = this._rows();
+
+    if (!rows.length) {
+      inner.createDiv({ cls: 'nx-timers-empty', text: 'No timers here yet.' });
+    }
+    rows.forEach(row => {
       const item = inner.createDiv('nx-timers-item');
-      const cap = w.caption || w.label;
-      if (cap) item.createDiv({ cls: 'nx-timers-cap', text: cap });
-      const paint = this.plugin.buildTimer(item, w.uid, { minutes: w.minutes }, async (n) => { w.minutes = n; await this.plugin.saveSettings(); });
+      if (row.caption) item.createDiv({ cls: 'nx-timers-cap', text: row.caption });
+      const paint = this.plugin.buildTimer(item, row.uid, { minutes: row.minutes }, async (n) => {
+        if (row.own) {
+          const list = this.plugin.timerPanelList().map(t => (t.uid === row.uid ? { ...t, minutes: n } : t));
+          await this.plugin.setDeviceSetting('timerPanel', list);
+        } else {
+          row.widget.minutes = n;
+          await this.plugin.saveSettings();
+        }
+      });
       this._liveEls.push(paint);
+      // A dashboard timer is only visiting; it is removed where it lives.
+      if (!row.own) { item.addClass('is-mirrored'); return; }
+      const drop = item.createEl('button', { cls: 'nx-btn is-sm is-icon is-quiet is-danger nx-timers-del' });
+      setIcon(drop, 'x');
+      drop.setAttribute('aria-label', 'Remove this timer');
+      drop.onclick = () => this.plugin.removePanelTimer(row.uid);
     });
+
+    const add = inner.createEl('button', { cls: 'nx-btn nx-list-add', text: 'Add a timer' });
+    add.onclick = () => this.plugin.addPanelTimer(5);
   }
 }
 

@@ -57,20 +57,40 @@
   background-origin: border-box, border-box;
 }
 
-/* Icon button to set/change the banner (top-right of the note) */
+/* ── THE THREE NOTE-CORNER BUTTONS ────────────────────────────────────────────
+   Set the banner · set the note background · flip the note to slate. Three
+   classes because the JS names them separately; ONE look, because they sit in
+   one row in the same corner. Their rule lives here — 06-note-decor.css and
+   12-sketch.css only add the offset that puts each one in its own slot.
+
+   Legacy aliases of .nx-btn.is-icon (00-tokens.css): the geometry below is that
+   rule, and every value is a token, so the whole plugin still changes in one
+   place. The markup moves to `nx-btn is-icon` in a later pass — the full fold
+   list is docs/token-migration.md. */
 .view-content:has(> .nx-banner-btn),
 .view-content:has(> .nx-bg-btn) { position: relative; }
-.nx-banner-btn {
-  position: absolute; top: 10px; right: 16px; z-index: 20;
-  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-s, 6px); cursor: pointer; opacity: .5;
-  color: var(--text-muted);
+.nx-banner-btn,
+.nx-bg-btn,
+.nx-slate-btn {
+  position: absolute; top: 10px; z-index: 20;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--nx-ctl-h); height: var(--nx-ctl-h); padding: 0;
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  cursor: pointer; box-shadow: none; opacity: .5;
+  color: var(--nx-fg-muted, var(--text-muted));
+  /* Over a note, not over chrome: a scrim instead of the flat surface token, so
+     the icon survives whatever the note's own background is. */
   background: color-mix(in srgb, var(--background-primary) 65%, transparent);
   backdrop-filter: blur(4px);
   transition: opacity .12s ease, color .12s ease, background .12s ease;
 }
-.nx-banner-btn:hover { opacity: 1; color: var(--text-normal); background: var(--background-modifier-hover); }
-.nx-banner-btn .svg-icon { width: 16px; height: 16px; }
+.nx-banner-btn { right: 16px; }
+.nx-banner-btn:hover,
+.nx-bg-btn:hover,
+.nx-slate-btn:hover { opacity: 1; color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-3); }
+.nx-banner-btn .svg-icon,
+.nx-bg-btn .svg-icon,
+.nx-slate-btn .svg-icon { width: 16px; height: 16px; }
 
 /* ── The three corner buttons ON TOP OF an image ──────────────────────────────
    Over the note's own background a muted, half-transparent pill reads fine. Over
@@ -131,7 +151,7 @@
   margin: 1.1em 0;
   cursor: pointer;
 }
-.nx-sep.is-round { border-radius: calc(var(--nx-radius, 12px) / 2); }
+.nx-sep.is-round { border-radius: var(--nx-r-tile); }
 /* Fades into the page on both ends instead of stopping at a hard edge. */
 .nx-sep.is-fade {
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
@@ -139,29 +159,34 @@
 }
 .nx-sep-missing {
   padding: 6px 10px; margin: 1em 0;
-  border: 1px dashed var(--nx-border, var(--background-modifier-border));
-  border-radius: var(--nx-radius, 10px);
+  border: var(--nx-bw) dashed var(--nx-border, var(--background-modifier-border));
+  border-radius: var(--nx-radius);
   color: var(--text-faint); font-size: .84em; font-style: italic;
 }
 
 /* picker */
 .nx-sep-modal .nx-sep-preview {
   padding: 10px 2px 4px;
-  border-bottom: 1px solid var(--nx-border, var(--background-modifier-border));
+  border-bottom: var(--nx-hairline);
   margin-bottom: 10px;
 }
-.nx-sep-modal .nx-sep { cursor: default; margin: 0; background-color: var(--background-modifier-hover); }
+.nx-sep-modal .nx-sep { cursor: default; margin: 0; background-color: var(--nx-sf-1); }
 .nx-sep-preview-hint { padding: 6px 2px; color: var(--text-faint); font-size: .84em; font-style: italic; }
-.nx-sep-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.nx-sep-controls { display: flex; flex-direction: column; gap: var(--nx-sp-2); margin-bottom: var(--nx-sp-3); }
 .nx-sep-row { display: flex; flex-direction: column; gap: 2px; }
 .nx-sep-row-head { display: flex; justify-content: space-between; font-size: .82em; color: var(--text-muted); }
 .nx-sep-val { color: var(--text-faint); font-family: var(--font-monospace); }
 .nx-sep-row input[type="range"] { width: 100%; }
-.nx-sep-toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+.nx-sep-toggles { display: flex; gap: var(--nx-sp-2); flex-wrap: wrap; }
+/* Legacy alias of .nx-btn.is-sm — a toggle in the separator picker. */
 .nx-sep-toggle {
-  padding: 3px 10px; border-radius: 999px; cursor: pointer; font-size: .8em;
-  border: 1px solid var(--nx-border, var(--background-modifier-border));
-  color: var(--text-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  height: var(--nx-ctl-h-sm); padding: 0 var(--nx-sp-2);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1); color: var(--nx-fg-muted, var(--text-muted));
+  font-size: .8em; line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .nx-sep-toggle.is-on {
   color: var(--nx-accent, var(--interactive-accent));

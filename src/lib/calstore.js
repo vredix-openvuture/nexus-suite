@@ -2,12 +2,11 @@
 
 /* ============================================================================
  *  NEXUS SUITE · lib · calendar store
- *  Reads/writes the event cache + local calendars as vault JSON (so Syncthing
- *  carries them to the tablet, which renders WITHOUT any network). Aggregates
- *  events for a visible range by running each cached event through recur.expand.
+ *  Reads/writes the local calendars as vault JSON (so Syncthing carries them to
+ *  the tablet, which renders WITHOUT any network). Aggregates events for a
+ *  visible range by running each stored event through recur.expand.
  *
  *  Layout under the data dir:
- *    calendar/remote/<accountId>/<calendarId>.json   server mirror (desktop-owned)
  *    calendar/local/<calendarId>.json                local calendars (offline)
  *
  *  The data dir defaults to .nexus-calendar INSIDE the plugin folder: it sticks
@@ -30,7 +29,6 @@ function dataDir(plugin) {
   if ((tc.dataLocation || 'plugin') === 'plugin') return pluginDir(plugin) + '/.nexus-calendar';
   return (tc.dataFolder || '_nexus').replace(/\/+$/, '');
 }
-function remoteDir(plugin, accId) { return dataDir(plugin) + '/calendar/remote/' + accId; }
 function localDir(plugin) { return dataDir(plugin) + '/calendar/local'; }
 function calId(s) { return String(s).replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'cal'; }
 
@@ -54,58 +52,9 @@ async function writeJSON(plugin, path, obj) {
   await ad.write(path, JSON.stringify(obj, null, 0));
 }
 
-/* ── Remote sync (DESKTOP): pull enabled VEVENT calendars into the cache ── */
-async function syncAccount(plugin, account, client) {
-  const rangeStart = moment().subtract(60, 'day');
-  const rangeEnd = moment().add(400, 'day');
-  const results = [];
-  for (const cal of (account.calendars || [])) {
-    if (!cal.enabled || cal.component !== 'VEVENT') continue;
-    const path = remoteDir(plugin, account.id) + '/' + calId(cal.id || cal.href) + '.json';
-    // cheap gate: skip if ctag unchanged
-    const prev = await readJSON(plugin, path);
-    let ctag = cal.ctag;
-    try { const g = await client.getCtag(cal.href); ctag = g.ctag || g.syncToken || ctag; } catch (e) {}
-    if (prev && ctag && prev.ctag === ctag) { results.push({ id: cal.id, skipped: true }); continue; }
-
-    let events = [];
-    try {
-      const resources = await client.listComponents(cal.href, 'VEVENT', rangeStart, rangeEnd);
-      for (const r of resources) {
-        const parsed = ical.parseResource(r.ics || '');
-        for (const ev of parsed.vevents) { ev.href = r.href; ev.etag = r.etag; events.push(ev); }
-      }
-    } catch (e) { results.push({ id: cal.id, error: String(e && e.message || e) }); continue; }
-
-    await writeJSON(plugin, path, {
-      schema: 1, kind: 'remote', accountId: account.id, calendarId: calId(cal.id || cal.href),
-      href: cal.href, display: cal.display, color: cal.color || account.color || '',
-      component: 'VEVENT', readOnly: true, ctag, events,
-    });
-    results.push({ id: cal.id, count: events.length });
-  }
-  return results;
-}
-
-/* ── Load every calendar (remote mirrors + local) for rendering ── */
+/* ── Load every local calendar for rendering ── */
 async function loadCalendars(plugin) {
-  const ad = plugin.app.vault.adapter;
   const cals = [];
-  // remote mirrors
-  for (const acc of (plugin.settings.tasksCalendar.accounts || [])) {
-    const dir = remoteDir(plugin, acc.id);
-    try {
-      if (await ad.exists(dir)) {
-        const listing = await ad.list(dir);
-        for (const f of (listing.files || [])) {
-          if (!f.endsWith('.json')) continue;
-          const c = await readJSON(plugin, f);
-          if (c) cals.push(c);
-        }
-      }
-    } catch (e) {}
-  }
-  // local calendars
   for (const lc of (plugin.settings.tasksCalendar.localCalendars || [])) {
     const path = localDir(plugin) + '/' + calId(lc.id) + '.json';
     let c = await readJSON(plugin, path);
@@ -141,34 +90,6 @@ async function deleteLocalEvent(plugin, localCalId, uid) {
   if (!c) return;
   c.events = c.events.filter(e => e.uid !== uid);
   await writeJSON(plugin, path, c);
-}
-
-/* ── Remote event write-through (DESKTOP): PUT/DELETE + update the cache ──
-     Immediate, ETag-guarded write. If-Match on update → 412 means the server
-     moved under us (conflict) → caller re-pulls. New events use If-None-Match:*. */
-async function writeRemoteEvent(plugin, cal, ev, client) {
-  if (!ev.uid) ev.uid = 'nx-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const ics = ical.serializeEvent(ev, moment);
-  const isNew = !ev.href;
-  const url = ev.href || (cal.href.replace(/\/$/, '') + '/' + encodeURIComponent(ev.uid) + '.ics');
-  const res = await client.putResource(url, ics, isNew ? null : (ev.etag || ''));
-  if (res.status === 412) return { conflict: true };
-  if (res.status < 200 || res.status >= 300) return { error: 'HTTP ' + res.status };
-  ev.href = url; if (res.etag) ev.etag = res.etag;
-  const path = remoteDir(plugin, cal.accountId) + '/' + calId(cal.calendarId) + '.json';
-  const c = await readJSON(plugin, path);
-  if (c) {
-    const i = c.events.findIndex(e => e.uid === ev.uid);
-    if (i >= 0) c.events[i] = ev; else c.events.push(ev);
-    await writeJSON(plugin, path, c);
-  }
-  return { ok: true, etag: ev.etag };
-}
-async function deleteRemoteEvent(plugin, cal, ev, client) {
-  if (ev.href) { try { await client.deleteResource(ev.href, ev.etag || ''); } catch (e) {} }
-  const path = remoteDir(plugin, cal.accountId) + '/' + calId(cal.calendarId) + '.json';
-  const c = await readJSON(plugin, path);
-  if (c) { c.events = c.events.filter(e => e.uid !== ev.uid); await writeJSON(plugin, path, c); }
 }
 
 /* ── Aggregate occurrences in [rangeStart, rangeEnd) across all calendars ── */
@@ -228,9 +149,7 @@ async function migrate(plugin, fromRoot) {
 }
 
 module.exports = {
-  dataDir, pluginDir, remoteDir, localDir, calId, migrate,
-  syncAccount, loadCalendars,
+  dataDir, pluginDir, localDir, calId, migrate, loadCalendars,
   createLocalCalendar, saveLocalEvent, deleteLocalEvent,
-  writeRemoteEvent, deleteRemoteEvent,
   expandRange, readJSON, writeJSON,
 };

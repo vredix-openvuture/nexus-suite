@@ -1,7 +1,7 @@
 'use strict';
 
 /* ============================================================================
- *  NEXUS SUITE · modals · QuickNote
+ *  NEXUS SUITE · modals · Chatter (spoken notes)
  *  Record, transcribe, write a note. One button, because the whole point is to
  *  catch a thought before deciding anything about it.
  * ========================================================================== */
@@ -28,7 +28,7 @@ class NexusQuickNoteModal extends Modal {
     const { contentEl, modalEl } = this;
     modalEl.addClass('nx-qn-modal');
     contentEl.empty();
-    contentEl.createEl('h3', { text: 'Quick Note' });
+    contentEl.createEl('h3', { text: 'Chatter' });
     this.status = contentEl.createDiv({ cls: 'nx-qn-status', text: 'Ready.' });
 
     /* Whether this device can do what the settings ask, asked BEFORE anything
@@ -72,10 +72,10 @@ class NexusQuickNoteModal extends Modal {
       return speechApi() ? '' : 'This device has no browser recogniser. Use the local engine on a desktop, or a device whose browser has one.';
     }
     if (!this.plugin.ocrAvailable()) {
-      return 'The local recogniser runs a program on the machine, and a phone or tablet has no shell for it. Settings → Quick Note → Recogniser → the browser\'s own.';
+      return 'The local recogniser runs a program on the machine, and a phone or tablet has no shell for it. Settings → Chatter → Recogniser → the browser\'s own.';
     }
     if (!String(this.s.command || '').trim()) {
-      return 'No command is set. Settings → Quick Note → Command, e.g. whisper-cli -f {in} -otxt -of {out} -l auto.';
+      return 'No command is set. Settings → Chatter → Command, e.g. whisper-cli -f {in} -otxt -of {out} -l auto.';
     }
     return '';
   }

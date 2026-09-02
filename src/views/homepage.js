@@ -5,10 +5,13 @@
  *  The rendered hub view (hero, cards, stats).
  * ========================================================================== */
 
-const { ItemView, Menu, Notice, moment, setIcon } = require('obsidian');
-const { NexusActionConfigModal, NexusCalendarCardConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, NexusListConfigModal, NexusOrphanConfigModal, NexusQuicknoteConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusTaskCardConfigModal } = require('../modals/cards.js');
+const { ItemView, Menu, Notice, TFile, moment, setIcon } = require('obsidian');
+const { NexusActionConfigModal, NexusCalendarCardConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusTaskCardConfigModal } = require('../modals/cards.js');
 const { NexusAgenda, parsePriority } = require('../lib/agenda.js');
 const calstore = require('../lib/calstore.js');
+const capture = require('../lib/capture.js');
+const planner = require('../lib/planner.js');
+const scratch = require('../lib/scratch.js');
 const { CARD_DEFS, HOME_VIEW, NX_DEFAULT_ACTIONS, NX_GREETINGS, NX_MODULES, WMO, WMO_ICON } = require('../constants.js');
 const { getDailyNoteSettings, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxWeekdayLabels, openDailyNote, renderMd } = require('../lib/helpers.js');
 const { NexusImageAdjustModal, NexusImageConfigModal } = require('../modals/image.js');
@@ -220,13 +223,14 @@ class NexusHomepageView extends ItemView {
     else if (item.type === 'timer') this._wTimer(card, item);
     else if (item.type === 'weather') this._wWeather(card, item);
     else if (item.type === 'list') this._wList(card, item);
-    else if (item.type === 'quicknote') this._wQuicknote(card, item);
+    else if (item.type === 'scratch') this._wScratch(card, item);
     else if (item.type === 'habit') this._wHabit(card, item);
     else if (item.type === 'orphans') this._wOrphans(card, item);
     else if (item.type === 'calendar') this._wCalendar(card, item);
     else if (item.type === 'tasks') this._wTasks(card, item);
     else if (item.type === 'random') this._wRandom(card, item);
     else if (item.type === 'sketches') this._wSketches(card, item);
+    else if (item.type === 'captures') this._wCaptures(card, item);
     // Headless widgets get a gear in the corner in edit mode (settings)
     if (this._editing && ['image', 'clock', 'timer', 'weather'].includes(item.type)) {
       const gear = card.createDiv('nx-home-card-gear nx-home-gear-corner');
@@ -543,53 +547,36 @@ class NexusHomepageView extends ItemView {
     menu.showAtMouseEvent(evt);
   }
 
-  /* Quicknote: just start writing → Save creates a note with a timestamp name. */
-  _wQuicknote(card, item) {
+  /* Scratch: just start writing → Save creates a note with a timestamp name.
+     It used to be called Quicknote and shared that word with the module you
+     speak into, which had nothing to do with it. This is a pad; that is a
+     microphone. */
+  _wScratch(card, item) {
     const head = card.createDiv('nx-home-card-head');
     setIcon(head.createSpan('nx-home-card-icon'), 'pencil-line');
-    head.createSpan({ cls: 'nx-home-card-title', text: item.title || 'Quicknote' });
+    head.createSpan({ cls: 'nx-home-card-title', text: item.title || 'Scratch' });
     if (this._editing) {
       const gear = head.createSpan('nx-home-card-gear');
       setIcon(gear, 'settings-2');
-      gear.onclick = (e) => { e.stopPropagation(); new NexusQuicknoteConfigModal(this.plugin, this, item).open(); };
+      gear.onclick = (e) => { e.stopPropagation(); new NexusScratchConfigModal(this.plugin, this, item).open(); };
     }
-    const body = card.createDiv('nx-home-card-body nx-qn-body');
-    const ta = body.createEl('textarea', { cls: 'nx-qn-input' });
+    const body = card.createDiv('nx-home-card-body nx-scratch-body');
+    const ta = body.createEl('textarea', { cls: 'nx-scratch-input' });
     ta.placeholder = 'Start writing …';
     ta.value = this._qnDraft[item.uid] || '';
     ta.oninput = () => { this._qnDraft[item.uid] = ta.value; };
-    const bar = body.createDiv('nx-qn-bar');
-    const btn = bar.createEl('button', { cls: 'nx-qn-save', text: 'Save' });
+    const bar = body.createDiv('nx-scratch-bar');
+    const btn = bar.createEl('button', { cls: 'nx-scratch-save', text: 'Save' });
     btn.onclick = async () => {
       const text = ta.value.trim();
-      if (!text) { new Notice('Nexus: quicknote is empty.'); return; }
-      await this._saveQuicknote(item, text);
+      if (!text) { new Notice('Nexus: nothing to save yet.'); return; }
+      await this._saveScratch(item, text);
       this._qnDraft[item.uid] = ''; ta.value = '';
     };
   }
-  async _saveQuicknote(item, text) {
-    const now = moment();
-    const stamp = now.format('YYYY-MM-DD_HH-mm');
-    const folder = String(item.folder || '').trim().replace(/^\/|\/$/g, '');
-    if (folder && !this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch (e) {} }
-    let path = (folder ? folder + '/' : '') + stamp + '.md';
-    if (this.app.vault.getAbstractFileByPath(path)) path = (folder ? folder + '/' : '') + stamp + '-' + now.format('ss') + '.md';
-    // Read template (simple tokens: {{content}} {{date}} {{time}} {{title}})
-    let body = text;
-    const tpl = String(item.template || '').trim();
-    if (tpl) {
-      const tp = tpl.endsWith('.md') ? tpl : tpl + '.md';
-      const tf = this.app.vault.getAbstractFileByPath(tp);
-      if (tf) {
-        let c = await this.app.vault.read(tf);
-        c = c.replace(/\{\{\s*date\s*\}\}/gi, now.format('YYYY-MM-DD'))
-             .replace(/\{\{\s*time\s*\}\}/gi, now.format('HH:mm'))
-             .replace(/\{\{\s*title\s*\}\}/gi, stamp);
-        body = /\{\{\s*content\s*\}\}/i.test(c) ? c.replace(/\{\{\s*content\s*\}\}/gi, text) : (c.replace(/\s*$/, '') + '\n\n' + text);
-      } else { new Notice('Nexus: template "' + tpl + '" not found.'); }
-    }
-    const file = await this.app.vault.create(path, body);
-    new Notice('Quicknote saved: ' + file.basename);
+  async _saveScratch(item, text) {
+    const file = await scratch.saveScratch(this.app, item, text);
+    new Notice('Scratch saved: ' + file.basename);
   }
   _wImage(card, item) {
     card.addClass('nx-home-imgcard');
@@ -623,7 +610,7 @@ class NexusHomepageView extends ItemView {
       card.onclick = null;
     }
   }
-  /* ---- Calendar & tasks cards (CalDAV + local calendars + task notes) ------
+  /* ---- Calendar & tasks cards (local calendars + task notes) --------------
      Both read through the agenda module: it already knows how to expand
      recurrences, bucket a task by its due date and write a tick back to both
      the task note and the project checklist. Reusing it means a dashboard card
@@ -687,6 +674,7 @@ class NexusHomepageView extends ItemView {
       const occs = calstore.expandRange(cals, from, end);
       body.empty();
       if (mode === 'month') this._calMonth(body, occs, start, cals);
+      else if (mode === 'week') this._calWeek(body, occs, start, days, cals, item);
       else this._calAgenda(body, occs, start, days, cals, item);
       count.setText(String(occs.filter(o => o.end.isAfter(moment())).length || occs.length));
     }).catch(() => { if (body.isConnected) { body.empty(); this._empty(body, 'Calendar could not be read.'); } });
@@ -717,6 +705,49 @@ class NexusHomepageView extends ItemView {
       ag.eventRow(body, o, o.start.clone().startOf('day'), cals, () => this.render());
     });
   }
+  /* One row per day, whether or not anything is on it — the paper-calendar
+     shape. The agenda mode answers "what is next"; this answers "what does this
+     week look like", and an empty Thursday is part of that answer, so a day
+     with nothing still gets its line.
+
+     The planner's line for the day is the text; the events become a dot, not a
+     list. A card that lists everything is the full calendar with less room. */
+  _calWeek(body, occs, start, days, cals, item) {
+    const span = Math.max(1, Math.min(14, parseInt(item.days, 10) || 7));
+    const first = (item.fromToday === false) ? start.clone().startOf('week') : start.clone();
+    const byDay = {};
+    occs.forEach(o => {
+      const s = o.start.clone().startOf('day'), e = o.end.clone().subtract(1, 'ms').startOf('day');
+      for (let d = s.clone(); d.isSameOrBefore(e); d.add(1, 'day')) {
+        const k = d.format('YYYY-MM-DD');
+        (byDay[k] || (byDay[k] = [])).push(o);
+      }
+    });
+    const rows = [];
+    const grid = body.createDiv('nx-home-week');
+    for (let i = 0; i < span; i++) {
+      const d = first.clone().add(i, 'day');
+      const key = d.format('YYYY-MM-DD');
+      const row = grid.createDiv('nx-home-week-row' + (d.isSame(start, 'day') ? ' is-today' : ''));
+      row.createSpan({ cls: 'nx-home-week-wd', text: d.format('ddd') });
+      row.createSpan({ cls: 'nx-home-week-n', text: d.format('D') });
+      const line = row.createSpan({ cls: 'nx-home-week-line', text: '' });
+      const n = (byDay[key] || []).length;
+      if (n) row.createSpan({ cls: 'nx-home-week-dot', text: n > 1 ? String(n) : '' });
+      row.onclick = () => this.plugin.openCalendarPage(d, 'day');
+      rows.push({ key, line });
+    }
+    /* The plan is read after the grid is drawn: it is a file read per month and
+       the week should not wait on it to appear. */
+    const store = (this.plugin.settings.tasksCalendar || {}).planner || {};
+    const months = planner.monthsInRange(first.format('YYYY-MM-DD'),
+      first.clone().add(span - 1, 'day').format('YYYY-MM-DD'));
+    planner.readMonthPlans(this.app, TFile, store, months).then(lines => {
+      if (!body.isConnected) return;
+      rows.forEach(r => { if (lines[r.key]) r.line.setText(lines[r.key]); });
+    }).catch(err => console.error('[Nexus] the week card could not read the plan:', err));
+  }
+
   /* Compact month grid with a dot per day that has events. */
   _calMonth(body, occs, today, cals) {
     const grid = body.createDiv('nx-home-cal-month');
@@ -909,6 +940,73 @@ class NexusHomepageView extends ItemView {
       else this._open(f);
     }).catch(() => this._open(f));
   }
+  /* Ink, Quick Sketch and Chatter as three cards you place separately — a
+     vault that only scans and never speaks should not carry two thirds of an
+     empty card. One renderer, because they answer the same question; three
+     entries in the add menu, because they are three decisions.
+
+     A summary and a door, never a gallery: how many there are, what the newest
+     one is, and a way through to the hub. The dashboard is the control room,
+     not the archive. */
+  _captureSummary(kind) {
+    const app = this.app;
+    if (kind === 'sketch') {
+      // The same lister the sketches card uses, with no per-card folders: the
+      // summary counts the sketch folder, which is what "how many sketches do
+      // I have" means.
+      const files = this._sketchFiles({});
+      return { count: files.length, newest: files[0] || null,
+               title: files[0] ? files[0].basename : '', thumb: files[0] || null };
+    }
+    const want = kind === 'ink' ? capture.isInkCapture : capture.isChatter;
+    const showEx = kind === 'ink' && !!(this.plugin.settings.inkCapture.excalidraw || {}).enabled;
+    const hits = [];
+    for (const f of app.vault.getMarkdownFiles()) {
+      const fm = (app.metadataCache.getFileCache(f) || {}).frontmatter;
+      if (!want(fm, showEx)) continue;
+      hits.push({ file: f, fm: fm || {} });
+    }
+    hits.sort((a, b) => (b.file.stat.mtime || 0) - (a.file.stat.mtime || 0));
+    const top = hits[0];
+    return {
+      count: hits.length,
+      newest: top ? top.file : null,
+      title: top ? top.file.basename : '',
+      thumb: top && top.fm['ink-thumb'] ? app.vault.getAbstractFileByPath(top.fm['ink-thumb'])
+           : (top && top.fm['ink-file'] ? app.vault.getAbstractFileByPath(top.fm['ink-file']) : null),
+    };
+  }
+
+  _wCaptures(card, item) {
+    const kind = item.kind || 'ink';
+    const meta = { ink:     { icon: 'camera',      title: 'Ink Capture',  one: 'capture', many: 'captures' },
+                   sketch:  { icon: 'pencil-line', title: 'Quick Sketch', one: 'sketch',  many: 'sketches' },
+                   chatter: { icon: 'mic',         title: 'Chatter',      one: 'note',    many: 'notes' } }[kind];
+    card.addClass('nx-home-captures');
+    const head = card.createDiv('nx-home-card-head');
+    setIcon(head.createSpan('nx-home-card-icon'), item.icon || meta.icon);
+    head.createSpan({ cls: 'nx-home-card-title', text: item.title || meta.title });
+
+    const sum = this._captureSummary(kind);
+    const body = card.createDiv('nx-home-card-body nx-cap-sum');
+    const n = body.createDiv('nx-cap-sum-n');
+    n.createSpan({ cls: 'nx-cap-sum-count', text: String(sum.count) });
+    n.createSpan({ cls: 'nx-cap-sum-unit', text: sum.count === 1 ? meta.one : meta.many });
+    if (sum.newest) {
+      const last = body.createDiv('nx-cap-sum-last');
+      if (sum.thumb) {
+        const th = last.createDiv('nx-cap-sum-thumb');
+        th.style.backgroundImage = 'url("' + this.app.vault.getResourcePath(sum.thumb).replace(/"/g, '\\"') + '")';
+      }
+      const txt = last.createDiv('nx-cap-sum-txt');
+      txt.createDiv({ cls: 'nx-cap-sum-title', text: sum.title });
+      txt.createDiv({ cls: 'nx-cap-sum-when', text: moment(sum.newest.stat.mtime).fromNow() });
+    } else {
+      this._empty(body, 'Nothing yet.');
+    }
+    card.onclick = () => this.plugin.openCaptureHub(kind);
+  }
+
   _wSketches(card, item) {
     card.addClass('nx-home-sketches');
     const head = card.createDiv('nx-home-card-head');
@@ -1081,7 +1179,13 @@ class NexusHomepageView extends ItemView {
     const add = async (w) => { w.uid = this._uid(); this._widgets().push(w); await this.plugin.saveSettings(); this.render(); };
     menu.addItem(i => i.setTitle('List / query …').setIcon('list').onClick(() => this._addList()));
     menu.addItem(i => i.setTitle('Random note …').setIcon('shuffle').onClick(() => this._addRandom()));
-    menu.addItem(i => i.setTitle('Quicknote …').setIcon('pencil-line').onClick(() => this._addQuicknote()));
+    menu.addItem(i => i.setTitle('Scratch …').setIcon('pencil-line').onClick(() => this._addScratch()));
+    // Three entries, one renderer: they are three decisions, not one card with
+    // a dropdown, because a vault that never speaks should not have to carry a
+    // third of an empty card.
+    [['ink', 'Ink Capture', 'camera'], ['sketch', 'Quick Sketch', 'pencil-line'], ['chatter', 'Chatter', 'mic']]
+      .forEach(([kind, label, icon]) => menu.addItem(i => i.setTitle(label + ' …').setIcon(icon)
+        .onClick(() => this._addCaptures(kind, label, icon))));
     menu.addItem(i => i.setTitle('Habit tracker …').setIcon('flame').onClick(() => this._addHabit()));
     menu.addItem(i => i.setTitle('Orphan finder …').setIcon('unlink').onClick(() => this._addOrphans()));
     menu.addSeparator();
@@ -1113,11 +1217,17 @@ class NexusHomepageView extends ItemView {
     await this.plugin.saveSettings(); this.render();
     new NexusListConfigModal(this.plugin, this, item).open();
   }
-  async _addQuicknote() {
-    const item = { type: 'quicknote', uid: this._uid(), w: 6, h: 6, title: 'Quicknote', folder: '', template: '' };
+  async _addCaptures(kind, label, icon) {
+    const item = { type: 'captures', kind, uid: this._uid(), w: 4, h: 5, title: label, icon };
+    this.hp().widgets.push(item);
+    await this.plugin.saveSettings();
+    this.render();
+  }
+  async _addScratch() {
+    const item = { type: 'scratch', uid: this._uid(), w: 6, h: 6, title: 'Scratch', folder: '', template: '' };
     this._widgets().push(item);
     await this.plugin.saveSettings(); this.render();
-    new NexusQuicknoteConfigModal(this.plugin, this, item).open();
+    new NexusScratchConfigModal(this.plugin, this, item).open();
   }
   async _addHabit() {
     const item = { type: 'habit', uid: this._uid(), w: 6, h: 6, title: 'Habit', icon: 'flame',
@@ -1406,7 +1516,7 @@ class NexusHomepageView extends ItemView {
     if (item.type === 'timer') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusTimerConfigModal(this.plugin, this, item).open()));
     if (item.type === 'weather') menu.addItem(i => i.setTitle('Location …').setIcon('map-pin').onClick(() => this._changeWeather(item)));
     if (item.type === 'list') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusListConfigModal(this.plugin, this, item).open()));
-    if (item.type === 'quicknote') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusQuicknoteConfigModal(this.plugin, this, item).open()));
+    if (item.type === 'scratch') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusScratchConfigModal(this.plugin, this, item).open()));
     if (item.type === 'habit') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusHabitConfigModal(this.plugin, this, item).open()));
     if (item.type === 'orphans') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusOrphanConfigModal(this.plugin, this, item).open()));
     if (item.type === 'calendar') menu.addItem(i => i.setTitle('Configure …').setIcon('settings-2').onClick(() => new NexusCalendarCardConfigModal(this.plugin, this, item).open()));
@@ -1853,7 +1963,7 @@ class NexusHomepageView extends ItemView {
     } else {
       grid.style.minHeight = '';
     }
-    // ── All cards are widgets (generic list, quicknote, image, clock, …) ──
+    // ── All cards are widgets (generic list, scratch, image, clock, …) ──
     this._widgets().forEach((item, idx) => this._widgetCard(grid, item, idx));
   }
 }

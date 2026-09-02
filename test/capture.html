@@ -1,0 +1,454 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>capture harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+try {
+const C = window.captureLib;
+
+// ── what counts as a capture ───────────────────────────────────────────────
+{
+  ok('ink · a sidecar is one because it names its source', C.isInkCapture({ 'ink-source': 'paper' }));
+  ok('ink · a plain note is not', !C.isInkCapture({ tags: ['scribble'] }));
+  ok('ink · an excalidraw drawing only when it was asked for',
+     !C.isInkCapture({ 'excalidraw-plugin': 'parsed' }) && C.isInkCapture({ 'excalidraw-plugin': 'parsed' }, true));
+  ok('ink · nothing at all does not throw', !C.isInkCapture(null));
+  ok('chatter · a spoken note says so in its type', C.isChatter({ 'nexus-type': 'quicknote' }));
+  ok('chatter · a task note is not one', !C.isChatter({ 'nexus-type': 'task' }));
+}
+
+// ── the underscore stamp Date.parse cannot read ────────────────────────────
+{
+  eq('stamp · the sidecar format is understood', C.parseStamp('2026-08-29_10:14'), Date.parse('2026-08-29T10:14'));
+  eq('stamp · so is a plain ISO one', C.parseStamp('2026-08-29T10:14'), Date.parse('2026-08-29T10:14'));
+  eq('stamp · and junk is null rather than NaN', C.parseStamp('whenever'), null);
+  eq('stamp · as is nothing', C.parseStamp(''), null);
+}
+
+// ── an item out of each kind ───────────────────────────────────────────────
+const inkSrc = { path: 'Inbox/Scans/Antenna.md', basename: 'Antenna sketch', ctime: 1,
+  frontmatter: { 'ink-source': 'paper', 'ink-file': 'Inbox/Scans/a.png', 'ink-thumb': 'Inbox/Scans/a.thumb.png',
+                 created: '2026-08-29_10:14', tags: ['scribble', 'pcb'], note: 'the second try' } };
+const sketchDoc = { path: 'Inbox/Quicksketch/s1.svg', display: 'Firmware notes', hasOcr: true,
+  fields: { sections: ['Boot', 'IRQ', 'Notes'], notes: ['check the pull-ups'], ocr: ['reset line'] } };
+const chatSrc = { path: 'Inbox/Quicknote/Buy the flux.md', basename: 'Buy the flux', ctime: 5,
+  frontmatter: { 'nexus-type': 'quicknote', recorded: '2026-08-31_09:02', seconds: 107, engine: 'local', tags: ['errand'] },
+  body: '---\nnexus-type: quicknote\n---\n\nbuy the flux and a finer tip\nsecond line' };
+
+{
+  const it = C.inkItem(inkSrc);
+  eq('ink · the source badge', it.source, 'paper');
+  eq('ink · the tags', it.tags, ['scribble', 'pcb']);
+  eq('ink · the stamp comes from `created`, not the file', it.stamp, Date.parse('2026-08-29T10:14'));
+  ok('ink · the note is searchable', it.search.indexOf('the second try') >= 0);
+
+  const ex = C.inkItem({ path: 'Draw/x.md', basename: 'x', frontmatter: { 'excalidraw-plugin': 'parsed' } });
+  eq('ink · an excalidraw drawing names itself as one', ex.source, 'excalidraw');
+  ok('ink · and is marked', ex.excalidraw === true);
+}
+{
+  const it = C.sketchItem(sketchDoc, { mtime: 9 });
+  eq('sketch · the title is the display name', it.title, 'Firmware notes');
+  eq('sketch · how far along it is', it.sections, 3);
+  ok('sketch · whether it can be searched inside yet', it.hasOcr === true);
+  eq('sketch · the stamp is the file, since a drawing has no frontmatter', it.stamp, 9);
+  ok('sketch · a section is searchable', C.matchesQuery(it, 'irq'));
+  ok('sketch · and so is read handwriting', C.matchesQuery(it, 'reset'));
+}
+{
+  const it = C.chatterItem(chatSrc);
+  eq('chatter · the preview is the first line of the body, not the frontmatter',
+     it.preview, 'buy the flux and a finer tip');
+  eq('chatter · the duration reads as a duration', it.duration, '1:47');
+  eq('chatter · the stamp comes from `recorded`', it.stamp, Date.parse('2026-08-31T09:02'));
+  const noStamp = C.chatterItem({ path: 'a.md', basename: 'a', ctime: 42, frontmatter: { 'nexus-type': 'quicknote' }, body: 'x' });
+  eq('chatter · without one it falls back to the file', noStamp.stamp, 42);
+  eq('chatter · and a note of no length shows no duration', noStamp.duration, '');
+}
+
+// ── search and sort must behave identically on all three ───────────────────
+{
+  const kinds = {
+    ink:     [C.inkItem(inkSrc)],
+    sketch:  [C.sketchItem(sketchDoc, { mtime: 9 })],
+    chatter: [C.chatterItem(chatSrc)],
+  };
+  for (const [name, items] of Object.entries(kinds)) {
+    ok('search · ' + name + ' · an empty query keeps everything', C.filterItems(items, '').length === items.length);
+    ok('search · ' + name + ' · the title matches', C.matchesQuery(items[0], items[0].title.split(' ')[0].toLowerCase()));
+    ok('search · ' + name + ' · a term that hits nothing filters it out', C.filterItems(items, 'zzzz').length === 0);
+    ok('search · ' + name + ' · two terms narrow, they do not widen',
+       C.filterItems(items, items[0].title.split(' ')[0] + ' zzzz').length === 0);
+    ok('search · ' + name + ' · case does not matter', C.matchesQuery(items[0], items[0].title.toUpperCase()));
+  }
+
+  // The haystack is one string, so the separator between two fields is what
+  // stops a term from matching across the seam. It also has to be PRINTABLE:
+  // a NUL in here made grep treat lib/capture.js as a binary file and answer
+  // "no match" to every search of it.
+  {
+    const seam = { path: 's.md', title: 'x', search: ['alpha', 'beta'] };
+    ok('search · each field on its own still matches', C.matchesQuery(seam, 'alpha') && C.matchesQuery(seam, 'beta'));
+    ok('search · but a term straddling two fields does not', !C.matchesQuery(seam, 'alphabeta'));
+    ok('search · and neither does one that spans the separator', !C.matchesQuery(seam, 'phabet'));
+  }
+
+  const mixed = [
+    { path: 'b.md', title: 'Beta',  stamp: 200 },
+    { path: 'a.md', title: 'alpha', stamp: 300 },
+    { path: 'c.md', title: 'Gamma', stamp: 100 },
+  ];
+  eq('sort · newest first', C.sortItems(mixed, 'new').map(i => i.path), ['a.md', 'b.md', 'c.md']);
+  eq('sort · oldest first', C.sortItems(mixed, 'old').map(i => i.path), ['c.md', 'b.md', 'a.md']);
+  eq('sort · by title, ignoring case', C.sortItems(mixed, 'title').map(i => i.title), ['alpha', 'Beta', 'Gamma']);
+  const tied = [{ path: 'z.md', title: 't', stamp: 1 }, { path: 'a.md', title: 't', stamp: 1 }];
+  eq('sort · a tie is broken by path, so two runs never disagree',
+     C.sortItems(tied, 'new').map(i => i.path), ['a.md', 'z.md']);
+  ok('sort · the input is not reordered in place', mixed[0].path === 'b.md');
+}
+
+// ── select mode ────────────────────────────────────────────────────────────
+{
+  const items = [{ path: 'a' }, { path: 'b' }, { path: 'c' }];
+  const sel = new C.CaptureSelection('ink');
+  sel.enter();
+  sel.toggle('a'); sel.toggle('b');
+  eq('select · it counts what was picked', sel.count(), 2);
+  sel.toggle('a');
+  eq('select · picking twice unpicks', sel.count(), 1);
+  eq('select · and reports them in order', sel.selected(items).map(i => i.path), ['b']);
+
+  // The one mistake this must not be able to make.
+  sel.toggle('c');
+  eq('select · a bulk action only sees what is still on screen',
+     sel.selected([{ path: 'b' }]).map(i => i.path), ['b']);
+
+  ok('select · changing tab clears the selection', sel.setTab('sketch') && sel.count() === 0);
+  ok('select · and leaves select mode with it', sel.mode === false);
+  ok('select · setting the same tab again is not a change', sel.setTab('sketch') === false);
+  sel.enter(); sel.all(items);
+  eq('select · all takes everything shown', sel.count(), 3);
+  sel.exit();
+  eq('select · leaving clears', sel.count(), 0);
+}
+
+// ── delete has to name every file an item is made of ───────────────────────
+{
+  const it = C.inkItem(inkSrc);
+  const files = [it.path, it.file, it.thumb].filter(Boolean);
+  eq('delete · an ink capture is the note, the scan AND the cached page',
+     files, ['Inbox/Scans/Antenna.md', 'Inbox/Scans/a.png', 'Inbox/Scans/a.thumb.png']);
+  const bare = C.inkItem({ path: 'x.md', basename: 'x', frontmatter: { 'ink-source': 'paper' } });
+  eq('delete · a capture with no attachment names only itself',
+     [bare.path, bare.file, bare.thumb].filter(Boolean), ['x.md']);
+}
+
+// ── reading a scan into its note ───────────────────────────────────────────
+// The text goes into the BODY so Obsidian's own search finds it too, fenced by
+// markers so a second reading replaces the first and never touches what you
+// wrote yourself.
+{
+  const note = '---\nink-source: paper\n---\n\n![[a.png]]\n\nmy own note underneath\n';
+  const once = C.withOcrSection(note, ['first line', 'second line']);
+  ok('ocr · the text lands in the body', once.indexOf('first line') > 0);
+  ok('ocr · fenced, so it can be found again',
+     once.indexOf(C.OCR_BEGIN) > 0 && once.indexOf(C.OCR_END) > once.indexOf(C.OCR_BEGIN));
+  ok('ocr · and what the user wrote is still there', once.indexOf('my own note underneath') > 0);
+  ok('ocr · the frontmatter is untouched', once.indexOf('---\nink-source: paper\n---') === 0);
+
+  eq('ocr · reading the same thing twice changes nothing',
+     C.withOcrSection(once, ['first line', 'second line']), null);
+
+  const redone = C.withOcrSection(once, ['a better reading']);
+  ok('ocr · a new reading replaces the old one instead of stacking',
+     redone.indexOf('a better reading') > 0 && redone.indexOf('first line') < 0);
+  eq('ocr · exactly one section, always',
+     redone.split(C.OCR_BEGIN).length - 1, 1);
+  ok('ocr · and the user\'s own text survives that too', redone.indexOf('my own note underneath') > 0);
+
+  eq('ocr · it reads back what it wrote', C.readOcrSection(redone), ['a better reading']);
+  eq('ocr · a note with no section reads back nothing', C.readOcrSection(note), []);
+
+  const cleared = C.withOcrSection(once, []);
+  ok('ocr · nothing legible removes the section rather than leaving an empty one',
+     cleared.indexOf(C.OCR_BEGIN) < 0 && cleared.indexOf('my own note underneath') > 0);
+  eq('ocr · and a note that never had one is left alone', C.withOcrSection(note, []), null);
+
+  // A capture whose note is only frontmatter is the common case right after a scan.
+  const bare = C.withOcrSection('---\nink-source: paper\n---\n', ['x']);
+  ok('ocr · a note that is only frontmatter still gets its section', bare.indexOf('x') > 0);
+}
+
+
+// ── a capture is a LIST of pages now ───────────────────────────────────────
+// The whole migration lives here rather than in a vault: the shape of the
+// frontmatter is the contract with every older capture and every older copy of
+// the plugin, and neither of those can be checked out.
+const P = window.inkPagesLib;
+{
+  const single = { 'ink-source': 'paper', 'ink-file': 'Cap/a.png', 'ink-thumb': 'Cap/a.thumb.png' };
+  eq('pages · a single-attachment capture reads as ONE page',
+     P.readPages(single), [{ file: 'Cap/a.png', thumb: 'Cap/a.thumb.png' }]);
+  eq('pages · with no cached render the thumb is empty, not missing',
+     P.readPages({ 'ink-file': 'Cap/a.png' }), [{ file: 'Cap/a.png', thumb: '' }]);
+  eq('pages · a capture with no attachment at all has no pages', P.readPages({ 'ink-source': 'paper' }), []);
+  eq('pages · and nothing at all does not throw', P.readPages(null), []);
+
+  // The one that matters: looking at an old capture must not rewrite it.
+  const before = JSON.stringify(single);
+  P.readPages(single);
+  eq('pages · reading an old capture leaves its frontmatter exactly as it was', JSON.stringify(single), before);
+  ok('pages · specifically, no ink-pages key appears', !('ink-pages' in single));
+
+  const item = C.inkItem({ path: 'Cap/Cap.md', basename: 'Cap', frontmatter: single });
+  eq('pages · so an old capture is a one-page capture', item.pageCount, 1);
+  eq('pages · whose page one is still what the tile shows', [item.file, item.thumb], ['Cap/a.png', 'Cap/a.thumb.png']);
+}
+
+// ── add, reorder, drop — each one a lossless round trip ────────────────────
+{
+  const one = [P.page('Cap/a.png', 'Cap/a.thumb.png')];
+  const trip = (pages) => P.readPages(P.writePages({ 'ink-source': 'paper' }, pages));
+  const two = P.addPages(one, [P.page('Cap/b.pdf', 'Cap/b.thumb.png')]);
+  const three = P.addPages(two, [P.page('Cap/c.jpg')]);
+
+  eq('pages · adding a page appends it', three.map(p => p.file), ['Cap/a.png', 'Cap/b.pdf', 'Cap/c.jpg']);
+  eq('pages · adding the same file twice does not double it',
+     P.addPages(three, [P.page('Cap/b.pdf')]).length, 3);
+  eq('pages · three pages survive the frontmatter unchanged', trip(three), three);
+
+  const moved = P.movePage(three, 2, 0);
+  eq('pages · a page can be pulled to the front', moved.map(p => p.file), ['Cap/c.jpg', 'Cap/a.png', 'Cap/b.pdf']);
+  eq('pages · and that order survives the round trip', trip(moved), moved);
+  eq('pages · moving down works the same way',
+     P.movePage(three, 0, 2).map(p => p.file), ['Cap/b.pdf', 'Cap/c.jpg', 'Cap/a.png']);
+  eq('pages · a move off either end is a no-op, not an exception', P.movePage(three, 0, -1), three);
+  eq('pages · and so is moving a page onto itself', P.movePage(three, 1, 1), three);
+  ok('pages · the input list is never reordered in place', three[0].file === 'Cap/a.png');
+
+  const dropped = P.dropPage(three, 1);
+  eq('pages · dropping takes exactly that page', dropped.map(p => p.file), ['Cap/a.png', 'Cap/c.jpg']);
+  eq('pages · its thumb goes with it', trip(dropped), dropped);
+  eq('pages · dropping an index nobody has changes nothing', P.dropPage(three, 9), three);
+
+  // Two pages down to one has to look like a capture that never had a list —
+  // otherwise every consumer needs a special case for a one-element list.
+  const backToOne = P.dropPage(two, 1);
+  const fm = P.writePages({ 'ink-source': 'paper' }, backToOne);
+  ok('pages · back down to one page, ink-pages is GONE rather than a list of one', !('ink-pages' in fm));
+  eq('pages · and the capture is exactly the old shape again',
+     fm, { 'ink-source': 'paper', 'ink-file': 'Cap/a.png', 'ink-thumb': 'Cap/a.thumb.png' });
+
+  // Dropping the LAST page: a capture with no attachment is a note, which is a
+  // thing this already understood — not a half-written capture.
+  const empty = P.dropPage(one, 0);
+  eq('pages · dropping the last page leaves no pages', empty, []);
+  const emptyFm = P.writePages({ 'ink-source': 'paper', 'ink-file': 'Cap/a.png', 'ink-thumb': 'Cap/a.thumb.png' }, empty);
+  eq('pages · and clears every page key rather than leaving a dangling path',
+     emptyFm, { 'ink-source': 'paper' });
+  eq('pages · which still reads as a coherent capture', P.readPages(emptyFm), []);
+  ok('pages · one that is still an ink capture', C.isInkCapture(emptyFm));
+}
+
+// ── how an old plugin version sees a new capture ───────────────────────────
+{
+  const pages = [P.page('Cap/a.png', 'Cap/a.thumb.png'), P.page('Cap/b.pdf', 'Cap/b.thumb.png')];
+  const fm = P.writePages({}, pages);
+  eq('pages · ink-file still names page one, so an older plugin shows the first page',
+     fm['ink-file'], 'Cap/a.png');
+  eq('pages · and ink-thumb still names page one’s cached render', fm['ink-thumb'], 'Cap/a.thumb.png');
+  eq('pages · the rest of the list is the only new key', fm['ink-pages'].length, 2);
+  eq('pages · reordering rewrites ink-file too, so the two never disagree',
+     P.writePages({}, P.movePage(pages, 1, 0))['ink-file'], 'Cap/b.pdf');
+  // The invariant the whole shape rests on, asserted over every order there is.
+  for (let i = 0; i < pages.length; i++) {
+    const fmi = P.writePages({}, P.movePage(pages, i, 0));
+    const headi = P.readPages(fmi)[0];
+    ok('pages · ink-file and ink-thumb ARE page one, whichever page that is (' + i + ')',
+       fmi['ink-file'] === headi.file && (fmi['ink-thumb'] || '') === headi.thumb);
+  }
+  // A hand-edited list is the normal case in a plain-text vault.
+  eq('pages · a page written as a bare path is understood',
+     P.readPages({ 'ink-pages': ['Cap/x.png', { file: 'Cap/y.png', thumb: 'Cap/y.thumb.png' }] }),
+     [{ file: 'Cap/x.png', thumb: '' }, { file: 'Cap/y.png', thumb: 'Cap/y.thumb.png' }]);
+  eq('pages · and an empty entry in it is skipped rather than kept as a ghost',
+     P.readPages({ 'ink-pages': ['', null, 'Cap/x.png'] }), [{ file: 'Cap/x.png', thumb: '' }]);
+}
+
+// ── what a delete has to take ──────────────────────────────────────────────
+{
+  const three = [P.page('Cap/a.png', 'Cap/a.thumb.png'), P.page('Cap/b.pdf', 'Cap/b.thumb.png'), P.page('Cap/c.jpg')];
+  const item = C.inkItem({ path: 'Cap/Cap.md', basename: 'Cap', frontmatter: P.writePages({ 'ink-source': 'paper' }, three) });
+  // captureFiles IS what the Ink adapter's remove() returns — asserting a list
+  // built beside it would prove only that this test can concatenate.
+  const files = P.captureFiles(item);
+  eq('delete · every page and every cached render, in page order',
+     files, ['Cap/Cap.md', 'Cap/a.png', 'Cap/a.thumb.png', 'Cap/b.pdf', 'Cap/b.thumb.png', 'Cap/c.jpg']);
+  ok('delete · no empties in that list', files.every(Boolean));
+  eq('delete · and no duplicates', new Set(files).size, files.length);
+  const shared = C.inkItem({ path: 'Cap/Cap.md', basename: 'Cap',
+    frontmatter: P.writePages({}, [P.page('Cap/a.png', 'Cap/t.png'), P.page('Cap/b.png', 'Cap/t.png')]) });
+  eq('delete · a render two pages happen to share is named once',
+     shared.files, ['Cap/a.png', 'Cap/t.png', 'Cap/b.png']);
+  eq('delete · a capture with no attachment names only its note',
+     P.captureFiles(C.inkItem({ path: 'x.md', basename: 'x', frontmatter: { 'ink-source': 'paper' } })), ['x.md']);
+  eq('delete · and nothing at all does not throw', P.captureFiles(null), []);
+  eq('delete · the tile still shows page one whatever the order was',
+     [shared.file, shared.thumb], ['Cap/a.png', 'Cap/t.png']);
+}
+
+// ── after a move the stored paths have to follow ───────────────────────────
+{
+  const pages = [P.page('Old/a.png', 'Old/a.thumb.png'), P.page('Old/b.png')];
+  const map = { 'Old/a.png': 'New/a.png', 'Old/a.thumb.png': 'New/a.thumb.png' };
+  eq('pages · remap rewrites what moved and leaves what did not',
+     P.remapPages(pages, map),
+     [{ file: 'New/a.png', thumb: 'New/a.thumb.png' }, { file: 'Old/b.png', thumb: '' }]);
+}
+
+// ── moving a set of captures ───────────────────────────────────────────────
+{
+  const mk = (path, files) => ({ path, title: path.split('/').pop().replace(/\.md$/, ''), _files: files });
+  const filesOf = (it) => [it.path].concat(it._files);
+  const nothing = () => false;
+
+  eq('move · a folder resolves the same with slashes around it as without',
+     [C.normalizeFolder('/Archive/Scans/'), C.normalizeFolder('Archive/Scans'), C.normalizeFolder('Archive//Scans')],
+     ['Archive/Scans', 'Archive/Scans', 'Archive/Scans']);
+  eq('move · an empty folder is the vault root, not a slash', C.normalizeFolder('  '), '');
+  eq('move · a target keeps the file name and only changes the folder',
+     C.moveTarget('/Archive/', 'Inbox/Paper/Cap/a.png'), 'Archive/a.png');
+  eq('move · and at the root it is just the name', C.moveTarget('', 'Inbox/Cap/a.png'), 'a.png');
+
+  const one = mk('Inbox/Cap/Cap.md', ['Inbox/Cap/a.png', 'Inbox/Cap/a.thumb.png']);
+  const plan = C.movePlan([one], 'Archive', { files: filesOf, exists: nothing });
+  eq('move · the file list is exactly what remove() names',
+     plan.moves.map(m => m.from), filesOf(one));
+  eq('move · every one of them lands in the target folder',
+     plan.moves.map(m => m.to), ['Archive/Cap.md', 'Archive/a.png', 'Archive/a.thumb.png']);
+  ok('move · with no duplicates and no empties',
+     new Set(plan.moves.map(m => m.to)).size === 3 && plan.moves.every(m => m.to && m.from));
+  eq('move · and nothing blocked', plan.blocked.length, 0);
+
+  eq('move · a capture already in the target folder is not moved onto itself',
+     C.movePlan([mk('Archive/Cap.md', ['Archive/a.png'])], 'Archive', { files: filesOf, exists: nothing }).moves.length, 0);
+
+  // The rule that matters: a name that is taken is refused, never clobbered.
+  const clash = C.movePlan([one], 'Archive', { files: filesOf, exists: (p) => p === 'Archive/a.png' });
+  eq('move · a capture whose file name is taken is refused whole', clash.moves.length, 0);
+  eq('move · and reported by name', clash.blocked.map(b => b.title), ['Cap']);
+  ok('move · saying which file was in the way', clash.blocked[0].reason.indexOf('a.png') > 0);
+
+  const two = mk('Inbox/Two/Two.md', ['Inbox/Two/b.png']);
+  const mixed = C.movePlan([one, two], 'Archive', { files: filesOf, exists: (p) => p === 'Archive/Cap.md' });
+  eq('move · one blocked capture does not stop the others', mixed.moves.map(m => m.from), filesOf(two));
+  eq('move · the blocked one stays where it is', mixed.blocked.length, 1);
+
+  // Two captures in different folders with the same attachment name would
+  // otherwise silently land on each other.
+  const twin = mk('Inbox/Twin/Cap.md', ['Inbox/Twin/a.png']);
+  const collide = C.movePlan([one, twin], 'Archive', { files: filesOf, exists: nothing });
+  eq('move · a collision between two captures IN the same move is caught too', collide.blocked.length, 1);
+  eq('move · and the first one still travels', collide.moves.length, 3);
+
+  eq('move · the picker opens on the folder they share',
+     C.commonFolder(['Inbox/Cap/Cap.md', 'Inbox/Cap/a.png']), 'Inbox/Cap');
+  eq('move · and on nothing when they disagree',
+     C.commonFolder(['Inbox/A/a.md', 'Inbox/B/b.md']), '');
+}
+
+// ── mark it: the scan as a locked layer on a sketch page ───────────────────
+{
+  const svg = P.scanSketchSVG({ href: 'data:image/png;base64,AAA', naturalW: 2000, naturalH: 3000, maxW: 1000, title: 'Antenna' });
+  ok('mark · the sidecar is a standalone svg', svg.indexOf('<svg') === 0 && svg.indexOf('</svg>') > 0);
+  ok('mark · with the scan in it as an image', svg.indexOf('<image') > 0 && svg.indexOf('data:image/png;base64,AAA') > 0);
+  const parsed = window.parseSketchSVG(svg);
+  ok('mark · which the sketch engine reads back', !!parsed);
+  eq('mark · the page is the scan’s own shape, capped at maxW', [parsed.w, parsed.h], [1000, 1500]);
+  eq('mark · the scan is the first object and fills the page',
+     [parsed.objects[0].kind, parsed.objects[0].x, parsed.objects[0].y, parsed.objects[0].w, parsed.objects[0].h],
+     ['image', 0, 0, 1000, 1500]);
+  ok('mark · and it is locked', parsed.objects[0].locked === true);
+  eq('mark · nothing is drawn on it yet', parsed.strokes.length, 0);
+  eq('mark · the title is the capture’s, so the sketch tab finds it by name', parsed.title, 'Antenna');
+  eq('mark · a scan smaller than the cap is not blown up',
+     P.scanPage(400, 600, 1000), { w: 400, h: 600 });
+
+  // The lock IS "not selectable": a tap cannot pick the scan up, and a lasso
+  // cannot catch it, so nothing downstream can move or delete it.
+  const O = window.sketchObjects;
+  const locked = [{ kind: 'image', x: 0, y: 0, w: 100, h: 100, locked: true }];
+  eq('mark · a tap inside a locked object hits nothing', O.objectAt(locked, 50, 50), -1);
+  eq('mark · an unlocked one in the same place is picked up',
+     O.objectAt([{ kind: 'image', x: 0, y: 0, w: 100, h: 100 }], 50, 50), 0);
+  eq('mark · a note on top of a locked scan is still reachable',
+     O.objectAt(locked.concat([{ kind: 'note', x: 10, y: 10, w: 40, h: 40 }]), 20, 20), 1);
+  ok('mark · and the lock is a plain flag anything can read', O.isLocked(locked[0]) === true && O.isLocked({}) === false);
+}
+
+// ── mark it: the way back from the capture ─────────────────────────────────
+{
+  const note = '---\nink-source: paper\n---\n\n![[a.png]]\n\nmy own note underneath\n';
+  const once = P.withSketchBlock(note, 'sk-1');
+  ok('mark · the pad lands in the capture’s own note', once.indexOf('```quicksketch') > 0);
+  eq('mark · which is how the note finds the sketch again', P.readSketchBlock(once), 'sk-1');
+  ok('mark · and what the user wrote is still there', once.indexOf('my own note underneath') > 0);
+  const again = P.withSketchBlock(once, 'sk-1');
+  eq('mark · marking twice changes nothing', again, null);
+  const swapped = P.withSketchBlock(once, 'sk-2');
+  eq('mark · a different sketch replaces the block instead of stacking a second pad',
+     swapped.split('```quicksketch').length - 1, 1);
+  eq('mark · and the note points at the new one', P.readSketchBlock(swapped), 'sk-2');
+  eq('mark · a note with no pad points at nothing', P.readSketchBlock(note), '');
+  const item = C.inkItem({ path: 'Cap/Cap.md', basename: 'Cap',
+    frontmatter: { 'ink-source': 'paper', 'ink-file': 'Cap/a.png', 'ink-sketch': 'sk-1' } });
+  eq('mark · and the capture carries the id in its frontmatter too', item.sketch, 'sk-1');
+}
+
+// ── the body follows the page list, both ways ──────────────────────────────
+{
+  const note = '---\nink-source: paper\n---\n\n![[a.png]]\n';
+  const grown = P.withPageEmbeds(note, ['a.png', 'b.png'], []);
+  eq('pages · only the missing embed is appended', grown.split('![[').length - 1, 2);
+  ok('pages · and it is the new one', grown.indexOf('![[b.png]]') > 0);
+  eq('pages · a body that already has them all is left alone', P.withPageEmbeds(grown, ['a.png', 'b.png'], []), null);
+
+  // A dropped page's FILE is trashed, so leaving its embed puts a broken
+  // image in the middle of the note.
+  const shrunk = P.withPageEmbeds(grown, ['a.png'], ['b.png']);
+  ok('pages · a dropped page loses its embed too', shrunk.indexOf('b.png') < 0);
+  ok('pages · while the page that stayed keeps its own', shrunk.indexOf('![[a.png]]') > 0);
+  ok('pages · and the frontmatter is not touched', shrunk.indexOf('---\nink-source: paper\n---') === 0);
+
+  // Obsidian rewrites a link when the file it points at moves, so matching on
+  // the exact text we once wrote would miss it and append a duplicate.
+  const afterMove = '---\nx\n---\n\n![[Archive/a.png]]\n![[Archive/b.png|the second page]]\n';
+  eq('pages · an embed rewritten to a full path still counts as present',
+     P.withPageEmbeds(afterMove, ['a.png', 'b.png'], []), null);
+  eq('pages · which is how the names read back', P.embedNames(afterMove), ['a.png', 'b.png']);
+  const cut = P.withPageEmbeds(afterMove, ['a.png'], ['b.png']);
+  ok('pages · and a rewritten embed can still be dropped', cut.indexOf('b.png') < 0 && cut.indexOf('Archive/a.png') > 0);
+
+  // Someone else's embed of an unrelated picture is not ours to touch.
+  const mine = '---\nx\n---\n\n![[a.png]]\n\nSee also ![[diagram.png]]\n';
+  const kept = P.withPageEmbeds(mine, ['a.png', 'b.png'], []);
+  ok('pages · an embed the user added themselves is left alone', kept.indexOf('![[diagram.png]]') > 0);
+  ok('pages · a name that merely CONTAINS a page name is not dropped',
+     P.withPageEmbeds('![[xa.png]]\n![[a.png]]\n', [], ['a.png']).indexOf('![[xa.png]]') === 0);
+}
+
+} catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
+if (window.__err.length) { fail++; out.push('FAIL  window error: ' + window.__err.join('\n')); }
+out.push('');
+out.push(fail ? (fail + ' FAILED, ' + pass + ' passed') : ('ALL GREEN — ' + pass + ' checks'));
+document.getElementById('out').textContent = out.join('\n');
+</script></body></html>

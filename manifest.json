@@ -3,7 +3,7 @@
   "name": "Nexus Suite",
   "version": "0.26.1",
   "minAppVersion": "1.6.0",
-  "description": "One plugin instead of a dozen: dashboard, theme, explorer, folder notes, icons, interface hiding, banners, callouts, columns, typography, properties, tags, quick sketch, ink capture, calendar, CalDAV, search and workspaces — each module switchable on its own.",
+  "description": "One plugin instead of a dozen: dashboard, theme, explorer, folder notes, icons, interface hiding, banners, callouts, columns, typography, properties, tags, quick sketch, ink capture, calendar, search and workspaces — each module switchable on its own.",
   "author": "vredix",
   "authorUrl": "https://github.com/vredix-openvuture",
   "isDesktopOnly": false

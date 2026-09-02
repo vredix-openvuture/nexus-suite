@@ -32,6 +32,13 @@ const SIDE_TASKS_VIEW = 'nx-side-tasks';
 
 const TIMER_VIEW = 'nx-timers';   // running timers move here when the dashboard is left
 
+/* The capture hub (scans, sketches, spoken notes). INK_VIEW is the gallery it
+   grew out of and stays registered against the same view as an alias, so a
+   workspace saved before the hub existed still opens — on the Ink tab. */
+const CAPTURE_VIEW = 'nx-captures';
+const GALAXY_VIEW = 'nx-galaxy';
+const SCRATCH_VIEW = 'nx-scratch';
+const SIDE_CAPTURE_VIEW = 'nx-captures-side';
 const INK_VIEW = 'nx-ink-gallery';
 
 /* Columns of the task board when nothing else says otherwise. Also the
@@ -52,7 +59,10 @@ const DEFAULT_SETTINGS = {
                 titlebar: false, vaultname: false, tabbar: false, instructions: false,
                 ribbon: false, explorerButtons: false },
   columns:    { enabled: true,  gap: '1.5rem', delimiter: '===' },
-  homepage:   { enabled: false, name: '', hero: '', widgets: [], layout: {}, stats: [{ kind: 'total' }, { kind: 'streak' }], ribbon: true, openOnStartup: true,
+  /* `startup` replaced the openOnStartup toggle: 'off' | 'tab' (never replaces
+     an open note) | 'closeAll' (clear the main area first). */
+  homepage:   { enabled: false, name: '', hero: '', widgets: [], layout: {}, stats: [{ kind: 'total' }, { kind: 'streak' }], ribbon: true,
+                startup: 'tab', openWhenEmpty: false,
                 perDevice: false, profiles: {}, profileNames: {} },
   /* fields = which parts of a note the search looks at; the weights that rank
      them live in modals/search.js (FIELDS). */
@@ -62,16 +72,29 @@ const DEFAULT_SETTINGS = {
   tasksCalendar: { enabled: false, ribbon: true, dataLocation: 'plugin', dataFolder: '_nexus',
     defaultView: 'month', weekStart: 'locale',
     syncOnStartup: true, syncIntervalMin: 15, conflictPolicy: 'server',   // 'server' | 'ask'
-    accounts: [],        // {id,kind,label,serverUrl,username,principalHref,homeSet,calendars:[{id,href,display,color,component,enabled,ctag,syncToken}]} — NO secrets (localStorage)
+    // accounts moved into the per-device store (devices[id].taskAccounts) —
+    // every device signs itself in. The name still works as a live alias, see
+    // loadSettings.
+
     localCalendars: [],  // {id,name,color}
     hiddenCalendars: [], // per-calendar visibility toggle (calKey strings that are HIDDEN)
+    /* Where a month's planner note lives. The calendar month view reads and
+       writes the ```nexus-planner``` block in this note, so the block and the
+       calendar are two views of one file — see lib/planner.js. */
+    planner: { folder: 'Planner', pattern: 'YYYY-MM' },
     tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local', buckets: TASK_BUCKETS.slice() } },
   propertyHider: { enabled: true, hidden: [], reveal: false },
   callouts:   { enabled: true, migrated: false, items: [] },
   workspaces: { enabled: true, selectMode: 'release' },
   /* NB: tasksCalendar.dataLocation ('plugin' | 'vault') decides where the
      calendar cache + local calendars live — see calstore.dataDir(). */
-  explorer:   { enabled: true,  folderBg: true, intensity: 22 },
+  /* The galaxy: the vault's links laid out in three dimensions and drawn on an
+     ordinary canvas. `drift` is the slow idle turn — the thing that makes it
+     feel alive rather than parked — and it is the first setting anyone will
+     want off, so it is a switch and not a slider. */
+  galaxy:     { enabled: true, ribbon: true, drift: true, linkDistance: 60, showOrphans: true },
+  explorer:   { enabled: true,  folderBg: true, intensity: 22,
+                hideAttachments: false, attachmentFolder: '' },
   /* Folder notes — defaults mirror the folder-notes plugin's own so an
      existing vault of "{{folder_name}}" notes keeps working unchanged. */
   folderNotes: { enabled: true, noteName: '{{folder_name}}', fileType: 'md', storage: 'inside',
@@ -82,43 +105,39 @@ const DEFAULT_SETTINGS = {
     syncRename: true, syncDelete: false, confirmDelete: true, confirmRename: true,
     excludeFolders: [], supportedTypes: ['md', 'canvas', 'base'] },
   icons:      { enabled: true, map: {} },
-  board:      { enabled: true, statusProperty: 'status' },
-  /* Kanban: the standalone ```nexus-kanban``` boards. The task board on the
-     tasks page has no switch of its own — it is a way of looking at the tasks
-     module and lives and dies with it. */
+  /* Kanban: the standalone ```nexus-kanban``` boards, both sources — the cards
+     inside the block and the notes of a folder — plus ```nexus-graph```. The
+     task board on the tasks page has no switch of its own: it is a way of
+     looking at the tasks module and lives and dies with it. */
   kanban:     { enabled: true, buckets: ['Backlog', 'In progress', 'Done'],
-                notesFolder: '', boardsFolder: '', compact: false },
+                notesFolder: '', boardsFolder: '', compact: false, statusProperty: 'status' },
   /* The paper planner: a month on one screen with ONE line per day. Not the
      tasks module — that answers what is due, this answers what a month is for. */
   planner:    { enabled: true },
   /* Vault sync over WebDAV. Credentials are NOT here — they live in
      localStorage per device (plugin.getCredential), because data.json is a file
      in the vault and the vault is the thing being synced. */
-  /* QuickNote: a note you speak. Sister of Quick Sketch — catch the thought,
+  /* Chatter: a note you speak. Sister of Quick Sketch — catch the thought,
+     The stored key stays `quicknote`: it is a name inside a file people already
+     have, and a display name buys everything renaming it would. The dashboard's
+     scratch card is the one that HAD to be renamed — it shared this word while
+     having nothing to do with speech.
      decide about it later. `local` runs a program you installed and nothing
      leaves the machine; `browser` needs no install and works on a phone, but
      most builds send the audio to the browser vendor. */
   quicknote:  { enabled: true, folder: 'Inbox/Quicknote', engine: 'local',
     command: 'whisper-cli -f {in} -otxt -of {out} -l auto',
     language: 'en-US', asTask: false, openAfter: true },
-  vaultSync:  { enabled: false, url: '', deviceName: '',
-    intervalMin: 15,        // 0 = only on demand
-    onStart: true,
+  /* url, deviceName, onStart and intervalMin are NOT here: they describe one
+     machine and live in the per-device store (see lib/devicesettings.js).
+     What is left is shared policy — the same answer on every device. */
+  vaultSync:  { enabled: false,
     config: true,           // carry .obsidian too, minus the device-specific files
     backup: true, keepBackups: 30,
     conflict: 'keepBoth',   // keepBoth | newer | local | remote
     shared: false,          // announce this device, and say who else is in the vault
     exclude: [] },
   tagTools:   { enabled: true },
-  /* Writing aids. Each sub-feature has its own switch — the `enabled` flag
-     only gates them all at once. */
-  focus:      { enabled: false, dim: true, scope: 'line', dimOpacity: 45,
-                typewriter: false, typewriterOffset: 50,
-                sound: false, soundStyle: 'soft', soundVolume: 25, bell: false },
-  sprint:     { enabled: true, minutes: 15, words: 300, useTime: true, useWords: true,
-                statusBar: true, focusDuringSprint: false, doneMessage: '' },
-  editorial:  { enabled: true, margin: true, marginWidth: 200, pullquote: true,
-                dropcap: false, ornament: true, ornamentGlyph: '❦', taskStates: true },
   inkCapture: { enabled: true, ribbon: true, tagOnCapture: true,
     /* Only "paper" is fixed — that's the in-app camera capture. Every other
        source is whatever app the user exports from; they name it themselves. */
@@ -167,6 +186,11 @@ const DEFAULT_SETTINGS = {
      applyPinnedTabs): pinned in Obsidian's own sense, close button hidden,
      reopened by the watchdog if something detaches them anyway. */
   pinnedTabs: { home: false, calendar: false, tasks: false },
+  /* Settings that belong to ONE machine, keyed by plugin.deviceId(): the sync
+     connection, its schedule, the task accounts. In data.json so they are
+     synced and backed up, keyed so no device overwrites another's entry — the
+     same arrangement homepage.profiles already uses. See lib/devicesettings.js. */
+  devices:    {},
   /* `style` = the SHAPE of the interface (see THEME_STYLES), `palette` only its
      colours. Changing the style changes what the app looks like; changing the
      palette tints whatever the style built. */
@@ -212,6 +236,12 @@ const NX_DEFAULT_ACTIONS = [
 /* Obsidian's built-in callout types with their default lucide icons (for preview
    + recognition in the Callouts manager). id = canonical type; aliases share the
    same styling in Obsidian and are only needed to avoid listing them as "custom". */
+/* Four of Obsidian's callout types are written one way and stored under
+   another: its variables are --callout-default/-summary/-fail/-error. Without
+   the mapping those four read back empty and their swatch falls to grey, which
+   is what made the settings list look like one dot repeated. */
+const NX_CALLOUT_VARS = { note: 'default', abstract: 'summary', failure: 'fail', danger: 'error' };
+
 const NX_BUILTIN_CALLOUTS = [
   { id: 'note',     icon: 'pencil',          aliases: [] },
   { id: 'abstract', icon: 'clipboard-list',  aliases: ['summary', 'tldr'] },
@@ -344,7 +374,7 @@ const PALETTE_GROUPS = [
    hotkeys and everything already stored in data.json. */
 const NX_MODULES = {
   homepage:      { name: 'Dashboard',    sub: 'Rendered start page with cards, stats and quick actions' },
-  theme:         { name: 'Theme',        sub: 'Interface style, colour palette, spacing and corner radius' },
+  theme:         { name: 'Theme',        sub: 'Interface style and colour palette' },
   explorer:      { name: 'Explorer',     sub: 'Folder cards and the ribbon in the file tree' },
   folderNotes:   { name: 'Folder Notes', sub: 'A note that belongs to a folder, opened by clicking it' },
   icons:         { name: 'Icons',        sub: 'An icon for any folder or file in the explorer' },
@@ -357,30 +387,16 @@ const NX_MODULES = {
   tagTools:      { name: 'Tags',         sub: 'Rename, merge and remove tags across the vault' },
   quicksketch:   { name: 'Quick Sketch', sub: 'Draw in a note with pen, touch or mouse' },
   inkCapture:    { name: 'Ink Capture',  sub: 'Scans and handwriting from other apps' },
-  calendar:      { name: 'Calendar',     sub: 'Month view over your daily notes' },
-  tasksCalendar: { name: 'CalDAV',       sub: 'Server accounts, local calendars, events and tasks' },
+  calendar:      { name: 'Mini calendar', sub: 'Month grid over your daily notes, in the sidebar' },
+  tasksCalendar: { name: 'Calendar',     sub: 'Local calendars, events and tasks — the full-page view' },
   search:        { name: 'Search',       sub: 'Weighted search over title, tags, headings, properties, text' },
   workspaces:    { name: 'Workspaces',   sub: 'Save and switch pane layouts' },
-  focus:         { name: 'Focus',        sub: 'Dims everything but the line you are writing' },
-  sprint:        { name: 'Sprint',       sub: 'Timed writing against a word goal' },
-  editorial:     { name: 'Editorial',    sub: 'Margin notes, pull quotes, drop caps, ornaments' },
-  board:         { name: 'Board',        sub: 'Every note of a folder as cards inside a normal note' },
-  kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note — plus the board view of your tasks' },
+  kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note, or every note of a folder — plus the board view of your tasks' },
   planner:       { name: 'Planner',      sub: 'A month on one screen, one line per day — the paper-calendar view' },
   vaultSync:     { name: 'Vault sync',   sub: 'The whole vault to a WebDAV server, with daily backups and conflict copies' },
-  quicknote:     { name: 'Quick Note',   sub: 'A note you speak instead of type' },
+  quicknote:     { name: 'Chatter',      sub: 'A note you speak instead of type' },
+  galaxy:        { name: 'Galaxy',       sub: 'The vault as a turnable map of its links' },
 };
-
-/* Checklist states (see styles/19-task-states.css). The character is what goes
-   between the brackets; Obsidian puts it on the line as data-task and the CSS
-   turns it into an icon. Order = how they are offered in the command. */
-const TASK_STATES = [
-  [' ', 'Open'], ['x', 'Done'], ['/', 'In progress'], ['>', 'Forwarded'], ['<', 'Scheduled'],
-  ['!', 'Important'], ['?', 'Question'], ['-', 'Cancelled'], ['*', 'Star'], ['"', 'Quote'],
-  ['l', 'Location'], ['b', 'Bookmark'], ['i', 'Information'], ['I', 'Idea'],
-  ['p', 'Pro'], ['c', 'Con'], ['u', 'Up'], ['d', 'Down'],
-  ['f', 'Fire'], ['k', 'Key'], ['w', 'Win'], ['S', 'Amount'],
-];
 
 /* Pen ids in toolbar order — shared by the settings tab, the size-favourite
    migration and the sketch toolbar so they can never drift apart. */
@@ -452,4 +468,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, THEME_STYLES, PEN_LABELS, BAR_ITEMS, BAR_ITEM_IDS, BAR_DEFAULTS, BAR_MODES, SELECT_SHAPES, RULER_ANGLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, SCRATCH_VIEW, SIDE_CAPTURE_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, THEME_STYLES, PEN_LABELS, BAR_ITEMS, BAR_ITEM_IDS, BAR_DEFAULTS, BAR_MODES, SELECT_SHAPES, RULER_ANGLES, ST_SYMBOL_RULES, TASK_BUCKETS };

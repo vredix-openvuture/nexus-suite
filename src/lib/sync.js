@@ -15,9 +15,8 @@
  *  deleting the remote task — no destructive remote deletes from note absence.
  * ========================================================================== */
 
-const { moment, TFile } = require('obsidian');
+const { TFile } = require('obsidian');
 const tasks = require('./tasks.js');
-const ical = require('./ical.js');
 
 /* ── FNV-1a (32-bit) over a string → hex ── */
 function fnv1a(str) {
@@ -103,16 +102,16 @@ function findTaskNote(plugin, provider, account, remoteId) {
   return null;
 }
 
-/* ── write / overwrite a synced task note (provider-generic: vikunja | caldav) ──
+/* ── write / overwrite a synced task note ──
      The note is named after its TITLE and renamed when the title changes on the
      server; the id lives in the frontmatter. Identity therefore never depends
      on the file name — callers hand over the known file, and the lookups below
      only catch the leftovers (crash mid-sync, notes from the id-named era). */
-function taskKey(provider, id) { return (provider === 'caldav' ? 'cd-' : 'vk-') + String(id).replace(/[^\w.-]+/g, '_'); }
+function taskKey(id) { return 'vk-' + String(id).replace(/[^\w.-]+/g, '_'); }
 async function writeTaskNote(plugin, remote, projectName, existing) {
   const app = plugin.app;
   const provider = remote.provider || 'vikunja';
-  const key = taskKey(provider, remote.remoteId);
+  const key = taskKey(remote.remoteId);
   const lines = ['---', 'nexus-type: task', 'nexus-provider: ' + provider,
     'nexus-account: ' + (remote.account || ''),
     'nexus-id: ' + JSON.stringify(String(remote.remoteId)),
@@ -350,15 +349,8 @@ async function applyResolution(plugin, account, client, rec, choice) {
     await writeTaskNote(plugin, rec.remote, rec.projectName, rec.local && rec.local.file);
     base[rec.id] = { localHash: localHash(rec.remote), remoteTag: rec.remote.updated };
   } else if (choice === 'mine' && rec.local) {
-    let m;
-    if (account.kind === 'caldav') {
-      const ics = ical.serializeTodo(Object.assign({ uid: rec.id }, rec.local), moment);
-      const put = await client.putResource(rec.local.href || '', ics, '');   // force overwrite (keep mine)
-      m = { provider: 'caldav', account: account.id, remoteId: rec.id, href: rec.local.href, updated: put.etag || '', title: rec.local.title, description: rec.local.description, due: rec.local.due, priority: rec.local.priority, done: rec.local.done, repeat: rec.local.repeat };
-    } else {
-      const updated = await client.updateTask(rec.id, vik.mapTaskToApi(rec.local));
-      m = vik.mapTaskFromApi(updated); m.account = account.id;
-    }
+    const updated = await client.updateTask(rec.id, vik.mapTaskToApi(rec.local));
+    const m = vik.mapTaskFromApi(updated); m.account = account.id;
     await writeTaskNote(plugin, m, rec.projectName, rec.local && rec.local.file);
     base[rec.id] = { localHash: localHash(m), remoteTag: m.updated };
   }
@@ -366,88 +358,10 @@ async function applyResolution(plugin, account, client, rec, choice) {
   await rebuildChecklistFor(plugin, rec.projectName, account.id, base);
 }
 
-/* ── Full two-way CalDAV VTODO sync (Nextcloud Tasks / generic). Each enabled
-     VTODO calendar = a project note; tasks = task notes. Same reconcile core +
-     conflict handling as Vikunja. ETag is the remote tag. ── */
-function vtodoDue(vt) { return vt.due ? (vt.due.d || (vt.due.dt ? vt.due.dt.slice(0, 10) : '')) : ''; }
-async function syncCaldavTodos(plugin, account, ical, client) {
-  const app = plugin.app;
-  const base = await loadBase(plugin, account.id);
-  const stats = { pulled: 0, pushed: 0, created: 0, deleted: 0, conflicts: 0, skipped: 0 };
-  const conflicts = [];
-  const cals = (account.calendars || []).filter(c => c.enabled && c.component === 'VTODO');
-  const touched = new Set();
-
-  for (const cal of cals) {
-    const projectName = await tasks.upsertProject(plugin, { title: cal.display, provider: 'caldav', remoteId: cal.href, account: account.id });
-    touched.add(projectName);   // rebuild this project's checklist even if no task changed (repairs empty ones)
-    let resources; try { resources = await client.listComponents(cal.href, 'VTODO'); } catch (e) { continue; }
-    const remoteTasks = {};
-    for (const r of resources) {
-      const parsed = ical.parseResource(r.ics || '');
-      for (const vt of parsed.vtodos) {
-        remoteTasks[vt.uid] = {
-          provider: 'caldav', account: account.id, remoteId: vt.uid, href: r.href, updated: r.etag || '',
-          title: vt.summary, description: vt.description || '', due: vtodoDue(vt),
-          priority: vt.priority || 0, done: !!vt.completed, repeat: vt.rrule || '', projectName,
-        };
-      }
-    }
-    const localByRemote = {}, localNew = [];
-    for (const f of app.vault.getMarkdownFiles()) {
-      if (!f.path.startsWith(tasks.itemsFolder(plugin) + '/')) continue;
-      const n = readTaskNote(plugin, f);
-      if (n.provider !== 'caldav' || (n.account && n.account !== account.id)) continue;
-      if (parseLink(n.projectLink) !== projectName) continue;
-      n.description = stripFrontmatter(await app.vault.read(f)).trim();
-      if (n.remoteId) localByRemote[n.remoteId] = n; else localNew.push(n);
-    }
-
-    const ids = new Set(Object.keys(remoteTasks).concat(Object.keys(localByRemote)));
-    for (const id of ids) {
-      const remote = remoteTasks[id] || null, local = localByRemote[id] || null, b = base[id] || null;
-      const dec = reconcile(local, remote, b);
-      if (dec.action === 'pull' || dec.action === 'create-local') {
-        await writeTaskNote(plugin, remote, projectName, local && local.file);
-        base[id] = { localHash: localHash(remote), remoteTag: remote.updated };
-        touched.add(projectName); stats[dec.action === 'pull' ? 'pulled' : 'created']++;
-      } else if (dec.action === 'push') {
-        const ics = ical.serializeTodo(Object.assign({ uid: id }, local), moment);
-        const put = await client.putResource(local.href || (cal.href.replace(/\/$/, '') + '/' + encodeURIComponent(id) + '.ics'), ics, local.baseTag || '');
-        if (put.status === 412) { conflicts.push({ account: account.id, id, projectName, local, remote, reason: 'precondition', ical }); stats.conflicts++; }
-        else {
-          const m = { provider: 'caldav', account: account.id, remoteId: id, href: local.href, updated: put.etag || '', title: local.title, description: local.description, due: local.due, priority: local.priority, done: local.done, repeat: local.repeat, projectName };
-          await writeTaskNote(plugin, m, projectName, local.file);
-          base[id] = { localHash: localHash(m), remoteTag: m.updated }; touched.add(projectName); stats.pushed++;
-        }
-      } else if (dec.action === 'delete-local') {
-        if (local && local.file) { plugin._taskWriting = true; try { await app.vault.delete(local.file); } catch (e) {} finally { plugin._taskWriting = false; } }
-        delete base[id]; touched.add(projectName); stats.deleted++;
-      } else if (dec.action === 'conflict') { conflicts.push({ account: account.id, id, projectName, local, remote, reason: dec.reason, ical }); stats.conflicts++; }
-      else stats.skipped++;
-    }
-
-    for (const n of localNew) {
-      const uid = 'nx-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      const ics = ical.serializeTodo(Object.assign({ uid }, n), moment);
-      const url = cal.href.replace(/\/$/, '') + '/' + uid + '.ics';
-      try {
-        const put = await client.putResource(url, ics, null);
-        const m = { provider: 'caldav', account: account.id, remoteId: uid, href: url, updated: put.etag || '', title: n.title, description: n.description, due: n.due, priority: n.priority, done: n.done, repeat: n.repeat, projectName };
-        await writeTaskNote(plugin, m, projectName, n.file);
-        base[uid] = { localHash: localHash(m), remoteTag: m.updated }; touched.add(projectName); stats.created++;
-      } catch (e) { console.error('[Nexus] create remote VTODO failed:', e); }
-    }
-  }
-  await rebuildChecklists(plugin, Array.from(touched), account.id, base);
-  await saveBase(plugin, account.id, base);
-  return { stats, conflicts };
-}
-
 module.exports = {
   fnv1a, canonical, localHash, reconcile, stripFrontmatter, readTaskNote, writeTaskNote, taskKey,
   findTaskNote, isSynced,
   loadBase, saveBase, baseIndexPath, CANON_FIELDS,
-  syncVikunja, syncCaldavTodos, applyResolution, rebuildChecklistFor, rebuildChecklists,
+  syncVikunja, applyResolution, rebuildChecklistFor, rebuildChecklists,
   ensureProjectBanner,
 };

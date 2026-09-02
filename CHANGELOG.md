@@ -2,6 +2,201 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## Unreleased
+
+### Added
+
+- **The galaxy.** The vault's links laid out in three dimensions and drawn on an
+  ordinary canvas — drag to turn it, and a 2D/3D switch that animates rather
+  than cuts. Depth is size, draw order and fade, never glow. No library and
+  nothing added to the bundle; the layout is deterministic from a seed, so the
+  same vault opens the same way twice. Obsidian's own graph view is a closed
+  core plugin and cannot be given a toggle — this is a second view beside it.
+
+  Measured, whole unfold: 150 notes in 45 ms, 800 in 1.3 s, 1500 in 4.6 s. Only
+  the unfolding pays that. On a tablet the fifteen-hundred case is several times
+  slower, which is where it stops being pleasant; the numbers are in the header
+  of `lib/force3d.js` so nobody has to guess.
+- **Settings for the galaxy** — ribbon, the idle drift, whether unlinked notes
+  are shown, and how far apart linked notes settle. Four and no more: a graph
+  with a dozen sliders is one nobody ends up looking at.
+- **The capture hub.** Ink Capture's gallery grew into one view for everything
+  you catch rather than write: scans, drawings and spoken notes, in three tabs
+  that never mix. The old view id still opens it, on the Ink tab, so a saved
+  workspace is unaffected.
+
+  Ink and Quick Sketch are tile grids. **Chatter is a list** — a spoken note has
+  no picture, so the first line of the transcript takes the width a cover would
+  have wasted. That is why the three are not one layout.
+
+  One toolbar over all three: search, sort, and a select mode whose bulk actions
+  replace the search row rather than stacking under it, which keeps it one line
+  in a 280 px sidebar. Delete, filter, sort and multi-select — everything the
+  gallery never had — arrive for all three at once. A delete names every file
+  the thing is made of and asks first, by name.
+- **Ink Capture can read its scans.** The recogniser Quick Sketch already used,
+  pointed at captures, over as many as you select. The text goes into the note's
+  **body**, not its frontmatter, so Obsidian's own search finds it — fenced by
+  markers so a second reading replaces the first and never touches what you
+  wrote. A PDF is read from its cached first page and says so.
+- **A scan can be annotated in Quick Sketch.** The capture gains a sketch of its
+  own — its id in the frontmatter, a pad in its body — rather than a sibling
+  note that would be a second thing to find, tag and delete. The scan sits under
+  the ink as a locked layer: not selectable, so nothing can move what you are
+  drawing on. Deleting the capture takes the drawing with it.
+- **A capture can have pages.** Merge two or more scans, or add a page from the
+  pages dialog, and reorder or drop them there. `ink-pages` appears only once
+  there is a second page, so an existing capture reads as a one-page list and is
+  never rewritten, and `ink-file` keeps naming page one — an older version of
+  the plugin shows the first page rather than nothing.
+- **Move**, in the hub's bulk actions: the whole capture — sidecar, attachment,
+  cached page — through Obsidian's own rename, so the links inside the note
+  follow. A name collision is reported and left alone rather than overwritten.
+  Hidden on the Sketch tab, where a sketch is found by its folder and moving one
+  would quietly break it.
+- **Three capture cards for the dashboard**, placed separately: Ink Capture,
+  Quick Sketch and Chatter. Each is a count, the newest thing and a way into its
+  hub tab — a summary and a door, never a gallery. Three cards and not one,
+  because a vault that only scans and never speaks should not carry two thirds
+  of an empty card.
+- **A week mode for the calendar card**: one row per day, empty days included,
+  the planner's line as the text and the events as a dot. The agenda mode
+  answers "what is next"; this answers "what does this week look like", and a
+  free Thursday is part of that answer.
+- **The capture hub in the sidebar**, and a **Scratch panel** — an empty surface
+  that writes the note itself, keeping the draft until you save, so a closed
+  panel or a restart cannot eat a thought. Its folder and template are set from
+  a gear in the panel: they are per device, and that is the only place you are
+  when you care about them.
+- **Chatter** — the spoken-note module has a name of its own at last, beside Ink
+  Capture and Quick Sketch. Its settings key and command id are unchanged: a key
+  lives in a file you already have and an id is what a hotkey is stored against,
+  so renaming them would silently unbind a hotkey and buy nothing the display
+  name does not.
+- **The dashboard's writing pad is Scratch.** It shared the word "quicknote"
+  with the module you speak into while having nothing to do with speech — half
+  of why the name confused. Existing cards are migrated on load, every device
+  profile included, and a title you chose is left alone.
+- **The timer is an ordinary sidebar panel**, opened by *Open the timer panel*
+  and closed by you. It used to open itself whenever a timer started and detach
+  itself the moment none ran, which also tore away a panel you had deliberately
+  opened. It keeps its own timers now, per device; a *running* dashboard timer
+  is shown beside them, set back and without a remove button, because it is only
+  visiting.
+- **The calendar reads the planner.** A month resolves to one note holding a
+  `nexus-planner` block; its line for a day shows in the month cell and can be
+  typed there. Two surfaces, one store, and the plan stays plain text.
+- **Every code-block feature shows the block.** Kanban, columns, the folder
+  board and the folder overview each carry a real, copyable example on their own
+  settings page. One helper writes the fence, so no page can get it wrong.
+- **A long settings page folds into its sections.** Quick Sketch was eight
+  sections and three screens; its headings are handles now. Only pages with four
+  or more sections get it, and what you leave open stays open on that device.
+- **Hide the attachment folder** (Settings → Explorer). Defaults to whatever
+  Obsidian is set to use. The files do not move and links keep working.
+- **The settings tab has a phone layout at last.** The rail and the panel become
+  one drill-down column below 620 px, with a way back. The stylesheet had
+  carried that layout for a long time; nothing ever switched it on.
+
+### Changed
+
+- **The board and the kanban board are one block.** They looked alike and were
+  built on opposite ideas; now `nexus-kanban` has a `source:` key and everything
+  else — head, column strip, card, the drag with its edge auto-scroll and drop
+  marker, the column colours — is written once. `source: block` is what every
+  board written so far already is, unchanged. `source: folder` is the old
+  subject dashboard: cards are the notes of a folder, the column is the note's
+  own frontmatter, and dragging writes the value back into the note, with the
+  first column meaning "no value set".
+- **`nexus-board` keeps rendering, in the shape you wrote it.** It is the same
+  block with `source: folder` pre-set and it reads *and writes back* its own
+  spellings. A board is one hand-editable text, so a save must not reshape it:
+  `states: A, B, C` stays one line, `statusproperty:` stays itself, and a fence
+  that never needed a `source:` line never grows one. A WIP limit is the one
+  thing that forces the heading form, because a `states:` list has no room for
+  it.
+- **The grid and the link web moved into `nexus-graph`.** Neither has columns
+  and neither writes anything back, which is why they were never a kanban board.
+  `view: grid`, `view: graph`, `view: board`. An older `nexus-board` is
+  delegated there, so those notes keep rendering.
+- **The column-kind vocabulary is the union of both languages.** Board's red
+  `fix` kind is gone: `Ausbessern`, `Fix` and `Wiederholen` now read as orange
+  `wait`. That is a visible colour change for existing boards and for task-board
+  columns with those names.
+- **One file owns every shared number.** Radii, border width and colour, surface
+  lifts, control height, field width and spacing are declared once, in a block
+  identical in the theme and in the plugin. The two used to disagree, which is
+  most of why the same element looked different depending on where it was drawn.
+- **Two radii, 10 px and 6 px**, picked from four rendered variants. The theme
+  said 15/10, but its own tablet and narrow-window blocks already overrode the
+  container radius to 10 — so this makes every device draw the same corner and
+  deletes those overrides rather than adding a third.
+- **The Theme tab is style and palette, and nothing else.** The corner-radius
+  and card-gap sliders are gone: geometry comes from the token block now, and a
+  slider competing with it is how the same element ended up with a different
+  corner on every page. Values anyone set are still honoured. The dashboard's
+  grid sliders moved to Settings → Dashboard.
+- **The settings nav and panel scroll separately.** Both used to sit in
+  Obsidian's own scroller, so a long page scrolled the whole dialog.
+- **A property filter is a list, not a wall of cards**, and the typography page
+  dropped its arrows for two aligned columns — what you type, what you get.
+
+### Security
+
+- **Credentials are encrypted at rest where the operating system offers a
+  keyring** (Electron `safeStorage`), so a backup of `~/.config` or a stolen
+  disk cannot read them. It does **not** defend against anything running as you,
+  and the settings page says so instead of showing a padlock that means more
+  than it is: vault sync runs unattended, so whatever the plugin can open
+  without you, so can a process in your session.
+
+  Mobile has no keyring a plugin can reach; there a secret is stored as it was,
+  and the note on that device says which of the two it is. A value encrypted on
+  one machine is refused rather than misread on another.
+
+### Fixed
+
+- **Syncing no longer overwrites the other device's settings.** `data.json` is a
+  file in the vault, so vault sync uploads it and the second device downloads it
+  over its own settings, its device name included — which is why both machines
+  ended up calling themselves the same thing. The connection, its schedule and
+  the accounts now live under a per-device key; the file keeps syncing.
+- **The dashboard no longer eats a tab at startup.** It asked the workspace for
+  the current leaf and overwrote it. It now only *asks* whether that leaf is
+  empty, and otherwise opens a tab of its own. Three modes and an "open it when
+  the last tab closes" switch.
+- **Connections are list entries**: add and remove, never edit in place, and
+  removing one clears its credential — which vault sync did not do before.
+- **Code blocks looked like separate strips glued together.** In Live Preview
+  Obsidian puts `HyperMD-codeblock-bg` on every line of the block rather than on
+  a wrapper, so a radius on it rounded all ten lines of a ten-line block
+  individually. The first and last lines now carry the corners. Multi-line
+  quotes had the same bug and the same fix.
+- **The active file's background covered the explorer rail.**
+- **A long folder list ran out of colour.** The rail's sweep normalised over
+  seven positions, so from the eighth folder every rail was the same tone — and
+  that tone was the darkest in the palette. It walks ten stops and turns around
+  now, so no folder is ever colourless.
+- **Every callout showed the same coloured dot.** The swatch was filled only
+  when the colour had been overridden, which is almost never. An un-overridden
+  type takes Obsidian's own colour — including the four whose variable is named
+  differently from the callout.
+- **A folder board grew a `tags: false` line nobody wrote.** `tags` is a card
+  flag on a block board and a `show:` flag on a folder board; the serialiser
+  emitted it in both places.
+- **The plugin rendered with no borders under any theme but Nexus.** The
+  hairline token's fallback pointed at a variable Obsidian declares on `body`,
+  while the token itself is declared on `:root` — so the substitution failed
+  there and the empty result inherited past the point where the variable exists.
+
+### Removed
+
+- **Focus mode, writing sprints and editorial blocks.** Unused. What they were
+  and how to bring them back is in `docs/removed-features.md`, with the commit.
+- **The CalDAV half of the calendar** — the network client, remote accounts,
+  calendar mirroring and VTODO sync. Local calendars, the full-page view, both
+  sidebar views, the pinnable tab and Vikunja all stay.
+
 ## 0.26.1 — 2026-09-01
 
 ### Fixed

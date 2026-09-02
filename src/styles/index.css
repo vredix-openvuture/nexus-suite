@@ -1,4 +1,5 @@
 /* NEXUS SUITE styles — bundled by esbuild in this exact order (cascade-preserving). */
+@import "./00-tokens.css";
 @import "./01-core.css";
 @import "./02-banner.css";
 @import "./03-calendar.css";
@@ -13,13 +14,13 @@
 @import "./12-sketch.css";
 @import "./13-calendar-page.css";
 @import "./14-explorer-companions.css";
-@import "./15-writing.css";
 @import "./16-board.css";
 @import "./17-agenda.css";
 @import "./18-tasks-page.css";
-@import "./19-task-states.css";
 @import "./20-kanban.css";
 @import "./22-planner.css";
+@import "./23-capture.css";
+@import "./24-galaxy.css";
 @import "./21-style-plain.css";
 
 /* Cross-cutting touch rules — MUST stay last: they adjust the module rules

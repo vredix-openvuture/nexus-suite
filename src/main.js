@@ -17,26 +17,26 @@ const { NexusTaskModal } = require('./modals/task.js');
 const calstore = require('./lib/calstore.js');
 const tasks = require('./lib/tasks.js');
 const sync = require('./lib/sync.js');
-const ical = require('./lib/ical.js');
-const { CalDavClient } = require('./lib/caldav.js');
 const { VikunjaClient } = require('./lib/vikunja.js');
 const { NexusConflictModal } = require('./modals/conflict.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
-const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TASK_BUCKETS, TIMER_VIEW } = require('./constants.js');
+const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, SCRATCH_VIEW, SIDE_CAPTURE_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TASK_BUCKETS, TIMER_VIEW } = require('./constants.js');
 const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxHexToHsl, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusAgenda } = require('./lib/agenda.js');
-const { NexusBoard } = require('./lib/board.js');
 const { NexusPlanner } = require('./views/plannerblock.js');
 const { NexusVaultSync } = require('./lib/vaultsyncrun.js');
+const { WebDavClient } = require('./lib/webdav.js');
+const deviceSettings = require('./lib/devicesettings.js');
+const secrets = require('./lib/secrets.js');
 const { NexusKanban } = require('./lib/kanban.js');
-const { NexusEditorial } = require('./lib/editorial.js');
-const { NexusFocus } = require('./lib/focus.js');
 const { NexusFolderNotes } = require('./lib/foldernotes.js');
 const { NexusHomepageView } = require('./views/homepage.js');
 const { NexusIcons } = require('./lib/icons.js');
-const { NexusSprint } = require('./lib/sprint.js');
 const { NexusTagTools } = require('./lib/tagtools.js');
-const { NexusInkGalleryView, NexusInkTagModal } = require('./views/ink.js');
+const { NexusInkTagModal } = require('./views/ink.js');
+const { NexusCaptureHubView } = require('./views/capturehub.js');
+const { NexusGalaxyView } = require('./views/galaxy.js');
+const { NexusScratchView } = require('./views/scratch.js');
 const { NexusSketchSurface, parseSketchSVG, ratioWH, PEN_TYPES } = require('./views/sketch.js');
 const sketchObjects = require('./lib/sketchobjects.js');
 const penGestures = require('./lib/sketchgestures.js');
@@ -87,11 +87,8 @@ module.exports = class NexusSuite extends Plugin {
     this._guard('icons', () => { this.icons = new NexusIcons(this); this.icons.init(); });
     this._guard('tagtools', () => { this.tagTools = new NexusTagTools(this); this.tagTools.init(); });
 
-    // ── Writing aids: focus mode, sprints, editorial blocks ──
-    this._guard('focus', () => { this.focus = new NexusFocus(this); this.focus.init(); });
-    this._guard('sprint', () => { this.sprint = new NexusSprint(this); this.sprint.init(); });
-    this._guard('editorial', () => { this.editorial = new NexusEditorial(this); this.editorial.init(); });
-    this._guard('board', () => { this.board = new NexusBoard(this); this.board.init(); });
+    // One module, three fences: ```nexus-kanban```, the ```nexus-board``` alias
+    // it absorbed, and ```nexus-graph``` for the grid and the link web.
     this._guard('kanban', () => { this.kanban = new NexusKanban(this); this.kanban.init(); });
     this._guard('planner', () => { this.planner = new NexusPlanner(this); this.planner.init(); });
     this._guard('vaultSync', () => { this.vaultSync = new NexusVaultSync(this); this.vaultSync.init(); });
@@ -260,10 +257,10 @@ module.exports = class NexusSuite extends Plugin {
         const body = plannerTemplate(moment().format('YYYY-MM-DD'));
         editor.replaceSelection('```nexus-planner\n' + body + '\n```\n');
       } });
-    this.addCommand({ id: 'nexus-quicknote', name: 'Quick Note (speak it)',
+    this.addCommand({ id: 'nexus-quicknote', name: 'Chatter (speak a note)',
       callback: () => {
         if (!this.settings.quicknote || this.settings.quicknote.enabled === false) {
-          new Notice('Nexus: Quick Note is off — Settings → Quick Note.');
+          new Notice('Nexus: Chatter is off — Settings → Chatter.');
           return;
         }
         const { NexusQuickNoteModal } = require('./modals/quicknote.js');
@@ -300,7 +297,7 @@ module.exports = class NexusSuite extends Plugin {
       this.addRibbonIcon('calendar', NX_MODULES.calendar.name, () => this.activateCalendar());
     }
 
-    // ── Tasks & Calendar (full-page CalDAV + local calendars) ──
+    // ── Tasks & Calendar (full-page view over the local calendars) ──
     this.registerView(CAL_PAGE_VIEW, (leaf) => new NexusCalendarPageView(leaf, this));
     if (this.settings.tasksCalendar.enabled && this.settings.tasksCalendar.ribbon) {
       this.addRibbonIcon('calendar-check', NX_MODULES.tasksCalendar.name, () => this.openCalendarPage());
@@ -349,16 +346,37 @@ module.exports = class NexusSuite extends Plugin {
     // ── Homepage view ──
     this.registerView(HOME_VIEW, (leaf) => new NexusHomepageView(leaf, this));
     if (this.settings.homepage.enabled && this.settings.homepage.ribbon) {
-      this.addRibbonIcon('home', NX_MODULES.homepage.name, () => this.openHomepage(true));
+      this.addRibbonIcon('home', NX_MODULES.homepage.name, () => this.openHomepage());
     }
 
     // ── Ink Capture (inbox watcher + gallery view) ──
     this.app.workspace.onLayoutReady(() => this.ensureInkFolders());
     this.registerEvent(this.app.vault.on('create', (f) => this._onInkVaultCreate(f)));
-    this.registerView(INK_VIEW, (leaf) => new NexusInkGalleryView(leaf, this));
+    // The hub, registered twice: under its own id, and under the gallery's old
+    // one so a saved workspace restores instead of showing "no view of type".
+    // Each leaf keeps the id it was opened with (see NexusCaptureHubView.type).
+    this.registerView(CAPTURE_VIEW, (leaf) => new NexusCaptureHubView(leaf, this, { type: CAPTURE_VIEW }));
+    this.registerView(INK_VIEW, (leaf) => new NexusCaptureHubView(leaf, this, { type: INK_VIEW, tab: 'ink' }));
     if (this.settings.inkCapture.ribbon) {
       this.addRibbonIcon('camera', NX_MODULES.inkCapture.name, () => this.activateInkGallery());
     }
+    this.addCommand({ id: 'nexus-open-captures', name: 'Open the capture hub', callback: () => this.openCaptureHub() });
+
+    // ── Galaxy: the vault's links, turnable ──
+    this.registerView(GALAXY_VIEW, (leaf) => new NexusGalaxyView(leaf, this));
+    if (this.settings.galaxy.enabled && this.settings.galaxy.ribbon)
+      this.addRibbonIcon('orbit', NX_MODULES.galaxy.name, () => this.openGalaxy());
+    this.addCommand({ id: 'nexus-open-galaxy', name: 'Open the galaxy', callback: () => this.openGalaxy() });
+
+    /* The same hub in the sidebar. A second view id rather than a flag, because
+       Obsidian remembers a leaf by its type: one id would mean a hub in the
+       main area and a hub in the dock could not both be restored. */
+    this.registerView(SIDE_CAPTURE_VIEW, (leaf) => new NexusCaptureHubView(leaf, this, { type: SIDE_CAPTURE_VIEW }));
+    this.addCommand({ id: 'nexus-open-captures-sidebar', name: 'Open the capture hub in the sidebar',
+      callback: () => this.openInDock(SIDE_CAPTURE_VIEW) });
+    this.registerView(SCRATCH_VIEW, (leaf) => new NexusScratchView(leaf, this));
+    this.addCommand({ id: 'nexus-open-scratch', name: 'Open the scratch panel',
+      callback: () => this.openInDock(SCRATCH_VIEW) });
     this.addCommand({ id: 'nexus-capture-scan', name: 'Capture a scan', callback: () => {
       if (this.settings.inkCapture.enabled) this.captureScan();
       else new Notice(NX_MODULES.inkCapture.name + ' is switched off.');
@@ -412,9 +430,7 @@ module.exports = class NexusSuite extends Plugin {
     this.registerView(TIMER_VIEW, (leaf) => new NexusTimerSidebarView(leaf, this));
     this.registerInterval(window.setInterval(() => this._tickTimers(), 1000));
     // Leaving/entering the dashboard → mirror the timer into the sidebar or back.
-    this.registerEvent(this.app.workspace.on('active-leaf-change', () => this._syncTimerSidebar()));
-    // On startup, clean up a possibly restored (empty) timer sidebar.
-    this.app.workspace.onLayoutReady(() => this._syncTimerSidebar());
+    this.addCommand({ id: 'nexus-open-timers', name: 'Open the timer panel', callback: () => this.openTimerSidebar() });
 
     // ── Commands ──
     this.addCommand({ id: 'nexus-search', name: 'Open search', callback: () => {
@@ -434,11 +450,16 @@ module.exports = class NexusSuite extends Plugin {
     // Obsidian hotkeys only know keydown. (Opening/cycling runs through the
     // command or the modal scope, see NexusWorkspaceModal.)
     this.registerDomEvent(document, 'keyup', (e) => this.handleWsKeyup(e), { capture: true });
-    this.addCommand({ id: 'nexus-open-homepage', name: 'Open dashboard', callback: () => this.openHomepage(true) });
+    this.addCommand({ id: 'nexus-open-homepage', name: 'Open dashboard', callback: () => this.openHomepage() });
 
-    // ── Homepage on startup ──
+    // ── Homepage on startup, and when the last tab is closed ──
+    // The layout-change listener is only subscribed once the layout is READY:
+    // while Obsidian rebuilds the saved session the main area is transiently
+    // empty, and reacting to that opens a dashboard beside the very tabs it is
+    // still restoring.
     this.app.workspace.onLayoutReady(() => {
-      if (this.settings.homepage.enabled && this.settings.homepage.openOnStartup) this.openHomepage(false);
+      this._guard('homepage-startup', () => this.runHomepageStartup());
+      this.registerEvent(this.app.workspace.on('layout-change', () => this.maybeOpenHomepageWhenEmpty()));
     });
 
     // ── Pinned tabs ──
@@ -460,6 +481,7 @@ module.exports = class NexusSuite extends Plugin {
     // Before anything detaches: the pin watchdog must not reopen what we close.
     this._unloading = true;
     window.clearTimeout(this._pinT);
+    window.clearTimeout(this._homeEmptyTimer);
     ['nx-pin-home', 'nx-pin-cal', 'nx-pin-tasks'].forEach(c => document.body.removeClass(c));
     this.app.workspace.detachLeavesOfType(CAL_VIEW);
     this.app.workspace.detachLeavesOfType(CAL_PAGE_VIEW);
@@ -467,6 +489,10 @@ module.exports = class NexusSuite extends Plugin {
     this.app.workspace.detachLeavesOfType(HOME_VIEW);
     this.app.workspace.detachLeavesOfType(TIMER_VIEW);
     this.app.workspace.detachLeavesOfType(INK_VIEW);
+    this.app.workspace.detachLeavesOfType(CAPTURE_VIEW);
+    this.app.workspace.detachLeavesOfType(GALAXY_VIEW);
+    this.app.workspace.detachLeavesOfType(SIDE_CAPTURE_VIEW);
+    this.app.workspace.detachLeavesOfType(SCRATCH_VIEW);
     this.app.workspace.detachLeavesOfType(SIDE_CAL_VIEW);
     this.app.workspace.detachLeavesOfType(SIDE_TASKS_VIEW);
     this.app.workspace.detachLeavesOfType(SKETCH_VIEW);
@@ -477,6 +503,7 @@ module.exports = class NexusSuite extends Plugin {
     document.body.removeClass('nx-ribbon-hover');
     document.body.removeClass('nx-ribbon-hidden');
     { const rs = document.getElementById('nx-ribbon-style'); if (rs) rs.remove(); }
+    { const es = document.getElementById('nx-explorer-style'); if (es) es.remove(); }
     ['--nx-gap', '--nx-radius', '--nx-home-gap', '--nx-home-pad', '--nx-home-col', '--nx-home-row', '--nx-fld-intensity', '--nx-hand-size']
       .forEach(v => document.body.style.removeProperty(v));
     if (this._scrollRef && this._scrollRef.el) this._scrollRef.el.removeEventListener('scroll', this._scrollRef.fn);
@@ -485,9 +512,6 @@ module.exports = class NexusSuite extends Plugin {
     document.querySelectorAll('.nx-prop-toggle').forEach(e => e.remove());
     if (this.folderNotes) this.folderNotes.unload();
     if (this.icons) this.icons.unload();
-    if (this.focus) this.focus.unload();
-    if (this.sprint) this.sprint.unload();
-    if (this.editorial) this.editorial.unload();
   }
 
   /* ---- Settings ---- */
@@ -497,8 +521,23 @@ module.exports = class NexusSuite extends Plugin {
     // ensure deep defaults per module
     for (const k of Object.keys(DEFAULT_SETTINGS))
       this.settings[k] = Object.assign({}, DEFAULT_SETTINGS[k], (data && data[k]) || {});
+    /* Migration: the sync connection, its schedule and the task accounts were
+       vault-wide, so every device read the one the last sync happened to
+       deliver. They move into this device's bag; the vault-wide keys are left
+       untouched, because the OTHER device reads the same data.json and still
+       has to migrate its own copy. */
+    deviceSettings.migrateDeviceSettings(this.settings, this.deviceId());
+    this.migrateScratchCards();
     // Migration: old image cards (homepage.images) → widget system
     const hp = this.settings.homepage;
+    /* Migration: the startup toggle became a three-way choice. Read from the
+       SAVED data, not from hp — the default has already been merged in by now,
+       so hp.startup is never missing. */
+    const savedHome = (data && data.homepage) || {};
+    if (savedHome.startup === undefined && savedHome.openOnStartup !== undefined) {
+      hp.startup = savedHome.openOnStartup === false ? 'off' : 'tab';
+    }
+    delete hp.openOnStartup;
     if (hp.images && hp.images.length && (!hp.widgets || !hp.widgets.length)) {
       hp.widgets = hp.images.map(it => Object.assign({ type: 'image', uid: 'w' + Math.random().toString(36).slice(2, 9) }, it));
     }
@@ -561,11 +600,39 @@ module.exports = class NexusSuite extends Plugin {
       }
       this.settings.bucketsTranslated = true;
     }
+    /* The Board module became the folder source of the kanban board. Its one
+       setting moves along, so a vault that had chosen a status property keeps
+       it — the defaults are already merged in by now, so "untouched" is the
+       default value, not a missing key. The board key itself goes: nothing
+       reads it any more. */
+    if (this.settings.board) {
+      const kanban = this.settings.kanban;
+      const chosen = this.settings.board.statusProperty;
+      // Read from the SAVED data: kanban.statusProperty did not exist before
+      // this change, so a value there can only be one the user set afterwards
+      // — and only then does it outrank what the Board page held.
+      const already = ((data && data.kanban) || {}).statusProperty;
+      if (kanban && chosen && already === undefined) kanban.statusProperty = chosen;
+      delete this.settings.board;
+    }
     // Tasks & Calendar: backfill nested defaults (shallow per-key merge above
     // does not deep-merge saved partial objects).
     const tc = this.settings.tasksCalendar;
     if (tc) {
-      if (!Array.isArray(tc.accounts)) tc.accounts = [];
+      /* The accounts themselves live in the device bag now — but the tasks
+         module, the board and the settings page all reach for them under this
+         name, and one array in one place is the point. NOT enumerable: saving
+         it would write this device's list over the shared key, which is the
+         collision the whole change is about. The value it was migrated from is
+         parked under accountsBeforeDeviceStore, so a device that updates later
+         still finds it. */
+      const store = deviceSettings.deviceStore(this.settings, this.deviceId());
+      if (!Array.isArray(store.taskAccounts)) store.taskAccounts = [];
+      Object.defineProperty(tc, 'accounts', {
+        get: () => deviceSettings.deviceStore(this.settings, this.deviceId()).taskAccounts,
+        set: (v) => { deviceSettings.deviceStore(this.settings, this.deviceId()).taskAccounts = Array.isArray(v) ? v : []; },
+        enumerable: false, configurable: true,
+      });
       if (!Array.isArray(tc.localCalendars)) tc.localCalendars = [];
       if (!Array.isArray(tc.hiddenCalendars)) tc.hiddenCalendars = [];
       if (!tc.tasks || typeof tc.tasks !== 'object') tc.tasks = Object.assign({}, DEFAULT_SETTINGS.tasksCalendar.tasks);
@@ -599,6 +666,29 @@ module.exports = class NexusSuite extends Plugin {
        perDevice OFF → the shared top-level homepage (behavior as before);
        perDevice ON  → the device profile (cloned from the shared document on
                        first access). */
+  /* The dashboard's pad used to be called "quicknote" and shared that word with
+     the module you speak into. The card is now "scratch"; a stored card still
+     carrying the old type would simply not render, so it is renamed on load.
+     Every profile is walked, not just this device's — data.json travels. */
+  migrateScratchCards() {
+    const home = this.settings.homepage;
+    if (!home) return;
+    const rename = (list) => {
+      if (!Array.isArray(list)) return 0;
+      let n = 0;
+      for (const card of list) {
+        if (!card || card.type !== 'quicknote') continue;
+        card.type = 'scratch';
+        if (card.title === 'Quicknote') card.title = 'Scratch';
+        n++;
+      }
+      return n;
+    };
+    let moved = rename(home.widgets);
+    for (const profile of Object.values(home.profiles || {})) moved += rename(profile && profile.widgets);
+    if (moved) console.log('[Nexus] renamed ' + moved + ' quicknote card(s) to scratch');
+  }
+
   _hpDocFields() { return ['name', 'hero', 'heroPosY', 'heroHeight', 'greetStyle', 'heroStyle', 'btnStyle', 'widgets', 'layout', 'stats', 'cards', 'hidden', 'actions', 'bg']; }
   deviceId() {
     if (this._deviceId) return this._deviceId;
@@ -610,6 +700,22 @@ module.exports = class NexusSuite extends Plugin {
     }
     this._deviceId = id;
     return id;
+  }
+
+  /* ---- Per-device settings --------------------------------------------------
+     The one home for anything that describes THIS machine rather than the
+     vault: the sync connection, its schedule, the task accounts. Stored in
+     data.json under deviceId(), so the file still syncs and is still backed up
+     while no device can overwrite another's entry — lib/devicesettings.js says
+     why that is the shape. Anything shared (an exclude list, a conflict policy)
+     stays where it is, at module level. */
+  deviceSetting(key, fallback) {
+    const value = deviceSettings.deviceStore(this.settings, this.deviceId())[key];
+    return value === undefined ? fallback : value;
+  }
+  async setDeviceSetting(key, value) {
+    deviceSettings.deviceStore(this.settings, this.deviceId())[key] = value;
+    await this.saveSettings();
   }
 
   /* ---- Sketch toolbar layout ------------------------------------------------
@@ -2029,15 +2135,103 @@ module.exports = class NexusSuite extends Plugin {
     this.app.workspace.revealLeaf(leaf);
   }
 
-  /* ---- Homepage ---- */
-  async openHomepage(force) {
-    // Reuse an existing homepage tab, otherwise open in the active area.
-    let leaf = this.app.workspace.getLeavesOfType(HOME_VIEW)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getLeaf(false);
-      await leaf.setViewState({ type: HOME_VIEW, active: true });
+  /* ---- Homepage ----
+     Opening it never costs a note. The old version handed the ACTIVE leaf to
+     setViewState, which silently replaced whatever was open in it — on startup
+     that ate the tab you left behind. So: a dashboard that is already open is
+     brought forward (the pinned one included, since that is a leaf like any
+     other), an empty tab is taken over because an empty tab is not a note, and
+     anything else gets a tab of its own. */
+  async openHomepage() {
+    // Two things ask for the dashboard at the same 150 ms mark — the pin
+    // watchdog and the empty-main-area watcher. Without one promise to share,
+    // the second gets past the "is one open?" check while the first is still
+    // awaiting setViewState, and the vault ends up with two dashboards.
+    if (!this._homeOpening) {
+      this._homeOpening = this._openHomepageLeaf().then(
+        (leaf) => { this._homeOpening = null; return leaf; },
+        (err) => { this._homeOpening = null; throw err; });
     }
-    this.app.workspace.revealLeaf(leaf);
+    return this._homeOpening;
+  }
+  async _openHomepageLeaf() {
+    const workspace = this.app.workspace;
+    const open = workspace.getLeavesOfType(HOME_VIEW)[0];
+    if (open) { workspace.revealLeaf(open); return open; }
+    const current = workspace.getLeaf(false);
+    const leaf = this.leafType(current) === 'empty' ? current : workspace.getLeaf(true);
+    await leaf.setViewState({ type: HOME_VIEW, active: true });
+    workspace.revealLeaf(leaf);
+    return leaf;
+  }
+  leafType(leaf) { return (leaf && leaf.view && leaf.view.getViewType) ? leaf.view.getViewType() : ''; }
+
+  /* What happens to the dashboard when Obsidian starts: nothing, its own tab,
+     or a cleared main area followed by its own tab. */
+  async runHomepageStartup() {
+    const home = this.settings.homepage;
+    const mode = home.startup || 'off';
+    if (!home.enabled || mode === 'off') return;
+    if (mode === 'closeAll') this.closeMainAreaTabs();
+    await this.openHomepage();
+  }
+  /* Every tab in the main area. Sidebars are not root leaves, so they stay —
+     and a pinned Nexus page is left alone too: guardPinnedTabs would put it
+     back 150 ms later anyway, so closing it only buys a flicker. */
+  closeMainAreaTabs() {
+    const pinned = this.pinnableTabs().filter(p => this.isTabPinned(p.key) && p.on()).map(p => p.type);
+    const doomed = [];
+    this.app.workspace.iterateRootLeaves(leaf => {
+      const type = this.leafType(leaf);
+      if (pinned.indexOf(type) < 0) doomed.push({ leaf, type });
+    });
+    for (const entry of doomed) {
+      try { entry.leaf.detach(); }
+      catch (e) { console.error('[Nexus] a tab could not be closed ("' + entry.type + '"):', e); }
+    }
+  }
+  /* The last tab was closed → bring the dashboard up instead of an empty pane.
+     Obsidian leaves an 'empty' leaf behind rather than nothing, so emptiness is
+     counted rather than asked for. Guarded against re-entry, because opening the
+     dashboard fires layout-change again; skipped while unloading, so onunload's
+     detach is not undone the moment it happens. */
+  maybeOpenHomepageWhenEmpty() {
+    if (this._unloading || this._homeEmptyBusy) return;
+    const home = this.settings.homepage;
+    if (!home.enabled || !home.openWhenEmpty) return;
+    let occupied = 0;
+    this.app.workspace.iterateRootLeaves(leaf => {
+      const type = this.leafType(leaf);
+      if (type && type !== 'empty') occupied++;
+    });
+    if (occupied) return;
+    this._homeEmptyBusy = true;
+    this._homeEmptyTimer = window.setTimeout(async () => {
+      try { if (!this._unloading) await this.openHomepage(); }
+      catch (e) { console.error('[Nexus] the dashboard could not be opened:', e); }
+      finally { this._homeEmptyBusy = false; }
+    }, 150);
+  }
+
+  /* Ask a connection whether it is there and whether it knows this device.
+     Both kinds answer here, because to the person adding one they are the same
+     idea — and because the answer has to be a sentence, not a status code. */
+  async testConnection(kind, entry) {
+    const conn = entry || {};
+    if (kind === 'vaultsync') {
+      const url = conn.url || this.deviceSetting('vaultSyncUrl', '');
+      if (!url) throw new Error('fill in the URL first');
+      const cred = this.getCredential('vaultsync');
+      const client = new WebDavClient({ baseUrl: url,
+        username: conn.username !== undefined ? conn.username : (cred.username || ''),
+        password: conn.secret !== undefined ? conn.secret : (cred.secret || '') });
+      return (await client.check()).message;
+    }
+    const secret = conn.secret !== undefined ? conn.secret : (this.getCredential(conn.id).secret || '');
+    if (!conn.serverUrl || !secret) throw new Error('fill in the URL and the token first');
+    const client = new VikunjaClient({ base: conn.serverUrl, token: secret });
+    const projects = await client.listProjects();
+    return projects.length + ' projects visible';
   }
 
   /* ---- Tasks & Calendar ----
@@ -2046,12 +2240,30 @@ module.exports = class NexusSuite extends Plugin {
      config. Network sync runs on DESKTOP only (behind the fs-guard); the tablet
      renders from the vault cache Syncthing delivers. */
   credKey(id) { return 'nexus-suite-cred-' + id; }
-  getCredential(id) { try { return JSON.parse(window.localStorage.getItem(this.credKey(id)) || '{}') || {}; } catch (e) { return {}; } }
-  setCredential(id, obj) { try { window.localStorage.setItem(this.credKey(id), JSON.stringify(obj || {})); } catch (e) {} }
+  /* The secret is encrypted at rest where the OS offers a keyring, and stored
+     as it was where it does not — see lib/secrets.js for what that is and is
+     not worth. Reading tolerates both, so a store written before this, or on a
+     phone, still opens. */
+  getCredential(id) {
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(this.credKey(id)) || '{}') || {};
+      return Object.assign({}, raw, { secret: secrets.decrypt(raw.secret) });
+    } catch (e) { return {}; }
+  }
+  setCredential(id, obj) {
+    try {
+      const value = Object.assign({}, obj || {});
+      if (value.secret) value.secret = secrets.encrypt(value.secret);
+      window.localStorage.setItem(this.credKey(id), JSON.stringify(value));
+    } catch (e) { /* private mode, or a full store */ }
+  }
+  /* Whether THIS device can encrypt — the settings page says so per device
+     rather than showing one padlock for a vault used from three machines. */
+  secretsEncrypted() { return secrets.available(); }
 
   refreshCalendarViews() {
     // The sidebar month over the daily notes draws weeks too — a week-start
-    // change has to reach it, not just the CalDAV surfaces.
+    // change has to reach it, not just the full-page calendar.
     for (const leaf of this.app.workspace.getLeavesOfType(CAL_VIEW)) {
       const v = leaf.view; if (v && typeof v.render === 'function') v.render();
     }
@@ -2149,30 +2361,18 @@ module.exports = class NexusSuite extends Plugin {
     const lines = [], pending = [];
     try {
       for (const acc of s.accounts) {
+        // Accounts saved before CalDAV was dropped are still in data.json —
+        // their URL is not a Vikunja one, so say so instead of failing on it.
+        const name = acc.label || acc.serverUrl || acc.id;
+        if (acc.kind && acc.kind !== 'vikunja') { lines.push(name + ': ' + acc.kind + ' accounts are no longer supported — remove it in settings'); continue; }
         const cred = this.getCredential(acc.id);
-        if (!cred.secret) { lines.push(acc.label + ': no credential on this device'); continue; }
+        if (!cred.secret) { lines.push(name + ': no credential on this device'); continue; }
         try {
-          if (acc.kind === 'vikunja') {
-            const client = new VikunjaClient({ base: acc.serverUrl, token: cred.secret });
-            const { stats, conflicts } = await sync.syncVikunja(this, acc, client);
-            lines.push(acc.label + ': ' + stats.pulled + ' pulled · ' + stats.pushed + ' pushed · ' + stats.created + ' new · ' + conflicts.length + ' conflict(s)');
-            if (conflicts.length) pending.push({ acc, client, conflicts });
-          } else {
-            const client = new CalDavClient({ serverUrl: acc.serverUrl, username: acc.username || cred.username, password: cred.secret });
-            const results = await calstore.syncAccount(this, acc, client);
-            const nCal = (acc.calendars || []).filter(c => c.enabled && c.component === 'VEVENT').length;
-            const total = results.reduce((n, r) => n + (r.count || 0), 0);
-            const errs = results.filter(r => r.error);
-            let msg = acc.label + ': ' + total + ' events across ' + nCal + ' calendar(s)';
-            if ((acc.calendars || []).some(c => c.enabled && c.component === 'VTODO')) {
-              const { stats, conflicts } = await sync.syncCaldavTodos(this, acc, ical, client);
-              msg += ' · tasks ' + stats.pulled + '↓/' + stats.pushed + '↑/' + stats.created + '+' + (conflicts.length ? ' · ' + conflicts.length + ' conflict(s)' : '');
-              if (conflicts.length) pending.push({ acc, client, conflicts });
-            }
-            if (errs.length) msg += ' · errors: ' + errs.map(e => e.error).join('; ');
-            lines.push(msg);
-          }
-        } catch (e) { lines.push(acc.label + ': ERROR — ' + (e && e.message || e)); console.error('[Nexus] sync "' + acc.label + '" failed:', e); }
+          const client = new VikunjaClient({ base: acc.serverUrl, token: cred.secret });
+          const { stats, conflicts } = await sync.syncVikunja(this, acc, client);
+          lines.push(name + ': ' + stats.pulled + ' pulled · ' + stats.pushed + ' pushed · ' + stats.created + ' new · ' + conflicts.length + ' conflict(s)');
+          if (conflicts.length) pending.push({ acc, client, conflicts });
+        } catch (e) { lines.push(name + ': ERROR — ' + (e && e.message || e)); console.error('[Nexus] sync "' + name + '" failed:', e); }
       }
     } finally { this._syncing = false; }
     for (const p of pending) {
@@ -2308,7 +2508,7 @@ module.exports = class NexusSuite extends Plugin {
           // ENOENT is the common one and "spawn whisper-cli ENOENT" says nothing
           // to anybody: the program in the settings is simply not installed.
           if (err && err.code === 'ENOENT') {
-            reject(new Error('“' + argv.command + '” is not installed on this machine — install it, or change the command in Settings → Quick Note.'));
+            reject(new Error('“' + argv.command + '” is not installed on this machine — install it, or change the command in Settings → Chatter.'));
           } else if (err) {
             reject(new Error((argv.command + ' failed: ' + (stderr || err.message)).trim()));
           } else resolve(out);
@@ -2331,7 +2531,7 @@ module.exports = class NexusSuite extends Plugin {
     const folder = (cfg.folder || 'Inbox/Quicknote').replace(/\/+$/, '');
     await this.ensureFolderPath(folder);
     const stamp = moment().format('YYYY-MM-DD HHmm');
-    const title = quicknote.titleFrom(lines, 'Quick Note');
+    const title = quicknote.titleFrom(lines, 'Chatter');
     let path = quicknote.notePath(folder, title, '');
     if (this.app.vault.getAbstractFileByPath(path)) path = quicknote.notePath(folder, title, stamp);
     const body = quicknote.noteBody(lines, {
@@ -2368,15 +2568,23 @@ module.exports = class NexusSuite extends Plugin {
     catch (e) { return false; }
   }
   async runSketchOcr(surface) {
+    return this.runOcrOnImage(await this._sketchToPng(surface, 2), 'png');
+  }
+
+  /* The recogniser does not care where the picture came from: a sketch rendered
+     to a bitmap and a scan already on disk are the same job. Splitting it here
+     is what let Ink Capture reuse the engine Quick Sketch already had, instead
+     of growing a second one. */
+  async runOcrOnImage(bytes, ext) {
     const cfg = this.settings.quicksketch.ocr || {};
     if (!this.ocrAvailable()) throw new Error('handwriting recognition needs a desktop shell — it cannot run here');
-    const png = await this._sketchToPng(surface, 2);
+    const png = bytes;
     const cp = require('child_process');
     const fs = require('fs');
     const os = require('os');
     const path = require('path');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexus-ocr-'));
-    const inPath = path.join(dir, 'page.png');
+    const inPath = path.join(dir, 'page.' + (ext || 'png'));
     // Tesseract appends its own .txt; the template is handed the stem, and the
     // reader below accepts either spelling so other engines fit too.
     const outStem = path.join(dir, 'page');
@@ -2400,6 +2608,37 @@ module.exports = class NexusSuite extends Plugin {
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
     }
   }
+  /* Read a scan. The attachment is already a picture, so this is the same
+     engine with a different source — except for a PDF, where only the cached
+     page-1 render exists as an image and the rest of the document is out of
+     reach without a renderer we do not ship. That limit is said out loud rather
+     than silently reading one page and calling it done. */
+  async ocrInkCapture(item) {
+    const capture = require('./lib/capture.js');
+    const file = this.app.vault.getAbstractFileByPath(item.path);
+    if (!file) throw new Error('the note is gone');
+    // Every page, in order, into one section — a multi-page capture you can
+    // only search the first page of is not searchable.
+    const pages = (item.pages && item.pages.length) ? item.pages : [{ file: item.file, thumb: item.thumb }];
+    const lines = [];
+    let partial = false, read = 0;
+    for (const page of pages) {
+      const isPdf = /\.pdf$/i.test(page.file || '');
+      if (isPdf) partial = true;
+      const source = isPdf ? page.thumb : (page.file || page.thumb);
+      if (!source) continue;
+      const image = this.app.vault.getAbstractFileByPath(source);
+      if (!image) continue;
+      const bytes = await this.app.vault.readBinary(image);
+      lines.push.apply(lines, await this.runOcrOnImage(bytes, (image.extension || 'png').toLowerCase()));
+      read++;
+    }
+    if (!read) throw new Error('this capture has no image to read');
+    const after = capture.withOcrSection(await this.app.vault.read(file), lines);
+    if (after != null) await this.app.vault.modify(file, after);
+    return { lines: lines.length, partial };
+  }
+
   async ocrActiveSketch() {
     const surface = this._activeSketchSurface();
     if (!surface) { new Notice('Nexus: open a sketch first.'); return; }
@@ -4045,8 +4284,8 @@ module.exports = class NexusSuite extends Plugin {
      way, e.g. a manual export from Saber/Butterfly synced in. Only
      button-triggered captures (tracked in _inkPending) get the tag-dialog
      popup afterwards. Excalidraw drawings are NOT sidecar'd — they're already
-     native taggable .md files, just surfaced in the gallery (see
-     NexusInkGalleryView._captures). */
+     native taggable .md files, just surfaced in the hub (see
+     lib/capture.js · isInkCapture). */
   /* The configured sources, normalised. "paper" is guaranteed present (the
      in-app camera writes there); everything else the user added themselves. */
   inkSources() {
@@ -4073,13 +4312,53 @@ module.exports = class NexusSuite extends Plugin {
       if (dir && !this.app.vault.getAbstractFileByPath(dir)) { try { await this.app.vault.createFolder(dir); } catch (e) {} }
     }
   }
-  async activateInkGallery() {
-    let leaf = this.app.workspace.getLeavesOfType(INK_VIEW)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getLeaf(false);
-      await leaf.setViewState({ type: INK_VIEW, active: true });
+  /* The ribbon and the old command still say "ink gallery" and still work —
+     they land on the hub's Ink tab. An already-open hub under EITHER id is
+     reused, so the button never opens a second copy of the same thing. */
+  /* One galaxy, reused: the layout takes a moment to settle, so a second one
+     would be a second wait for the same picture. */
+  async openGalaxy() {
+    const ws = this.app.workspace;
+    const open = ws.getLeavesOfType(GALAXY_VIEW)[0];
+    if (open) { ws.revealLeaf(open); return open; }
+    const leaf = ws.getLeaf(true);
+    await leaf.setViewState({ type: GALAXY_VIEW, active: true });
+    ws.revealLeaf(leaf);
+    return leaf;
+  }
+
+  /* One right-dock opener for every panel we register, so a new one is a line
+     rather than another copy of the same six. */
+  async openInDock(type) {
+    const ws = this.app.workspace;
+    const open = ws.getLeavesOfType(type)[0];
+    if (open) { ws.revealLeaf(open); return open; }
+    const leaf = ws.getRightLeaf(false);
+    if (!leaf) return null;
+    await leaf.setViewState({ type, active: true });
+    ws.revealLeaf(leaf);
+    return leaf;
+  }
+
+  /* A setting changed under an open galaxy has to reach it — the layout is
+     cached, so the view has to be told rather than noticing. */
+  refreshGalaxy() {
+    for (const leaf of this.app.workspace.getLeavesOfType(GALAXY_VIEW)) {
+      const view = leaf.view;
+      if (view && typeof view.reload === 'function') view.reload();
     }
-    this.app.workspace.revealLeaf(leaf);
+  }
+
+  activateInkGallery() { return this.openCaptureHub('ink'); }
+  async openCaptureHub(tab) {
+    const ws = this.app.workspace;
+    let leaf = ws.getLeavesOfType(CAPTURE_VIEW)[0] || ws.getLeavesOfType(INK_VIEW)[0];
+    if (!leaf) {
+      leaf = ws.getLeaf(false);
+      await leaf.setViewState({ type: CAPTURE_VIEW, active: true });
+    }
+    if (tab && leaf.view && leaf.view.hub) await leaf.view.hub.setTab(tab);
+    ws.revealLeaf(leaf);
   }
   captureScan() {
     const input = document.createElement('input');
@@ -4417,7 +4696,13 @@ module.exports = class NexusSuite extends Plugin {
       const thumbPath = ext === 'pdf' ? await this._makeInkPdfThumb(existingAtt.path) : null;
       await this.app.fileManager.processFrontMatter(sidecar, (fr) => {
         fr.updated = moment().format('YYYY-MM-DD_HH:mm');
-        if (thumbPath) fr['ink-thumb'] = thumbPath;   // heals a capture whose thumb failed at capture time, too
+        if (!thumbPath) return;
+        fr['ink-thumb'] = thumbPath;   // heals a capture whose thumb failed at capture time, too
+        // ink-thumb IS page one's thumb, so on a multi-page capture the healed
+        // path has to reach the page list too or the two quietly disagree.
+        const inkpages = require('./lib/inkpages.js');
+        const pages = inkpages.readPages(fr);
+        if (pages.length > 1) { pages[0].thumb = thumbPath; inkpages.writePages(fr, pages); }
       });
       // Trash (not delete) — respects the user's "deleted files" setting and
       // keeps the drop recoverable in case the new export wasn't intended.
@@ -4579,29 +4864,49 @@ module.exports = class NexusSuite extends Plugin {
     return (!isNaN(m) && m > 0) ? m * 60 : 0;
   }
 
-  /* Sidebar control: a running/finished timer is mirrored into the sidebar as
-     soon as the dashboard is NOT the active tab; back into the dashboard
-     (sidebar closed) as soon as the homepage is opened again. */
+  /* The timer panel is an ordinary panel now: you open it, you close it, and it
+     stays where you put it. It used to open itself whenever a timer started and
+     call detachLeavesOfType the moment none was running — a panel that appears
+     and vanishes on its own is not a panel, and it also meant a panel you had
+     deliberately opened was torn away on the next leaf change. All that is left
+     of that machinery is the repaint. */
   _syncTimerSidebar() {
-    if (this._syncingTimer) return;
-    const anyActive = Object.keys(this._timers || {}).some(uid => { const t = this._timers[uid]; return t && (t.running || t.done); });
-    const homeActive = !!this.app.workspace.getActiveViewOfType(NexusHomepageView);
-    const want = anyActive && !homeActive;
-    const leaves = this.app.workspace.getLeavesOfType(TIMER_VIEW);
-    if (want && !leaves.length) {
-      this._syncingTimer = true;
-      this._openTimerSidebar().finally(() => { this._syncingTimer = false; });
-    } else if (!want && leaves.length) {
-      this.app.workspace.detachLeavesOfType(TIMER_VIEW);
-    } else if (want && leaves.length) {
-      const v = leaves[0].view; if (v && v.render) v.render();
+    for (const leaf of this.app.workspace.getLeavesOfType(TIMER_VIEW)) {
+      const view = leaf.view;
+      if (view && typeof view.render === 'function') view.render();
     }
   }
-  async _openTimerSidebar() {
+  async openTimerSidebar() {
+    const open = this.app.workspace.getLeavesOfType(TIMER_VIEW)[0];
+    if (open) { this.app.workspace.revealLeaf(open); return open; }
     const leaf = this.app.workspace.getRightLeaf(false);
-    if (!leaf) return;
-    await leaf.setViewState({ type: TIMER_VIEW, active: false });
+    if (!leaf) return null;
+    await leaf.setViewState({ type: TIMER_VIEW, active: true });
     this.app.workspace.revealLeaf(leaf);
+    return leaf;
+  }
+
+  /* The panel keeps its own timers rather than mirroring the dashboard's: a
+     dashboard card is part of a layout you arranged, a panel timer is the one
+     you reach for while working, and tying them together meant the panel could
+     only ever show what the dashboard already showed. Per device, because which
+     timers you want at hand is not a thing to sync. */
+  timerPanelList() {
+    const list = this.deviceSetting('timerPanel', null);
+    return Array.isArray(list) ? list : [];
+  }
+  async setTimerPanelList(list) {
+    await this.setDeviceSetting('timerPanel', Array.isArray(list) ? list : []);
+    this._syncTimerSidebar();
+  }
+  async addPanelTimer(minutes) {
+    const list = this.timerPanelList().slice();
+    list.push({ uid: 'panel-' + Date.now().toString(36), minutes: minutes || 5, caption: '' });
+    await this.setTimerPanelList(list);
+  }
+  async removePanelTimer(uid) {
+    await this.setTimerPanelList(this.timerPanelList().filter(t => t.uid !== uid));
+    delete (this._timers || {})[uid];
   }
 
   /* ---- Workspace quick switcher (Ctrl+Alt+Tab) ----
@@ -4714,6 +5019,39 @@ module.exports = class NexusSuite extends Plugin {
       document.body.style.setProperty('--nx-fld-intensity', s.intensity + '%');
     else
       document.body.style.removeProperty('--nx-fld-intensity');
+    this.applyHiddenFolders();
+  }
+
+  /* Obsidian's own answer for where attachments go. It can be a plain folder,
+     a path, "/" for the vault root, or "./" plus a name for a folder beside
+     each note — the last two cannot be hidden as one entry in the tree, so they
+     come back empty and the user names the folder themselves. */
+  defaultAttachmentFolder() {
+    const raw = (this.app.vault.getConfig && this.app.vault.getConfig('attachmentFolderPath')) || '';
+    const path = String(raw).trim();
+    if (!path || path === '/' || path.startsWith('./')) return '';
+    return path.replace(/^\/+|\/+$/g, '');
+  }
+
+  /* Hiding is a stylesheet, not a class on the body: the rule has to name the
+     folder, and the folder is a setting. One <style> element, rewritten in
+     place, so the rule and the setting can never disagree. */
+  applyHiddenFolders() {
+    const s = this.settings.explorer || {};
+    const id = 'nx-explorer-style';
+    document.getElementById(id)?.remove();
+    if (!s.enabled || !s.hideAttachments) return;
+    const folder = (s.attachmentFolder || this.defaultAttachmentFolder()).replace(/^\/+|\/+$/g, '');
+    if (!folder) return;
+    // A vault path may hold quotes and backslashes; CSS.escape is for
+    // identifiers, so the value is escaped as the string it is.
+    const value = folder.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const el = document.createElement('style');
+    el.id = id;
+    el.textContent =
+      '.nav-files-container .nav-folder:has(> .nav-folder-title[data-path="' + value + '"])' +
+      ' { display: none; }';
+    document.head.appendChild(el);
   }
 
   /* ---- Ribbon visibility (hover / always / hidden) ----
@@ -4773,7 +5111,7 @@ module.exports = class NexusSuite extends Plugin {
   pinnableTabs() {
     return [
       { key: 'home',     type: HOME_VIEW,     cls: 'nx-pin-home',  label: NX_MODULES.homepage.name,
-        on: () => this.settings.homepage.enabled,      open: () => this.openHomepage(false) },
+        on: () => this.settings.homepage.enabled,      open: () => this.openHomepage() },
       { key: 'calendar', type: CAL_PAGE_VIEW, cls: 'nx-pin-cal',   label: NX_MODULES.tasksCalendar.name,
         on: () => this.settings.tasksCalendar.enabled, open: () => this.openCalendarPage() },
       { key: 'tasks',    type: TASKS_VIEW,    cls: 'nx-pin-tasks', label: 'Tasks',

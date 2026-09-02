@@ -27,10 +27,10 @@
 /* ── head ── */
 .nx-ag-head {
   display: flex; align-items: center; gap: 10px;
-  padding-bottom: 8px; margin-bottom: 12px;
-  border-bottom: 1px solid var(--nx-ag-edge);
+  padding-bottom: var(--nx-sp-2); margin-bottom: var(--nx-sp-3);
+  border-bottom: var(--nx-bw) solid var(--nx-ag-edge);
 }
-.nx-ag-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.nx-ag-title { display: flex; align-items: baseline; gap: var(--nx-sp-2); min-width: 0; }
 .nx-ag-date {
   font-family: var(--font-text, inherit);
   font-weight: 600; font-size: 1.1em; color: var(--text-normal);
@@ -39,15 +39,23 @@
 .nx-ag-badge {
   flex: none;
   font-size: .66em; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  padding: 2px 7px; border-radius: 999px;
+  padding: 2px 7px; border-radius: var(--nx-r-pill);
   color: var(--text-on-accent); background: var(--interactive-accent);
 }
 .nx-ag-tools { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+/* Legacy alias of .nx-btn.is-icon.is-quiet (00-tokens.css). */
 .nx-ag-tool {
-  display: inline-flex; padding: 4px; border-radius: 6px;
-  color: var(--text-faint); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h); padding: 0;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
 }
-.nx-ag-tool:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-ag-tool:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
 .nx-ag-tool .svg-icon { width: 15px; height: 15px; }
 
 /* ── sections ── */
@@ -60,34 +68,37 @@
 }
 .nx-ag-count {
   font-size: .92em; font-weight: 600; letter-spacing: 0;
-  padding: 0 6px; border-radius: 999px;
-  color: var(--text-faint); background: var(--background-modifier-hover);
+  padding: 0 6px; border-radius: var(--nx-r-pill);
+  color: var(--text-faint); background: var(--nx-sf-1);
 }
 .nx-ag-empty { font-size: .88em; color: var(--text-faint); padding: 2px 0 4px; }
 .nx-ag-note {
   font-size: .85em; color: var(--text-muted);
-  padding: 8px 11px; border-radius: 6px;
-  background: var(--background-modifier-hover);
+  padding: 8px 11px; border-radius: var(--nx-radius);
+  background: var(--nx-sf-1);
 }
 
 /* ── rows ── */
+/* Legacy alias of .nx-row (00-tokens.css) — one event or task of the day. */
 .nx-ag-row {
-  display: flex; align-items: baseline; gap: 9px;
-  padding: 5px 7px; margin: 0 -7px;
-  border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  margin: 0 calc(-1 * var(--nx-sp-2));
+  border-radius: var(--nx-r-tile); cursor: pointer;
   transition: background 90ms ease;
 }
-.nx-ag-row:hover { background: var(--background-modifier-hover); }
+.nx-ag-row:hover { background: var(--nx-sf-1); }
 .nx-ag-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px; min-width: 0; flex: 1; }
 .nx-ag-text { color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; }
-.nx-ag-meta { display: flex; align-items: baseline; gap: 8px; font-size: .8em; color: var(--text-faint); }
+.nx-ag-meta { display: flex; align-items: baseline; gap: var(--nx-sp-2); font-size: .8em; color: var(--text-faint); }
 .nx-ag-chip {
   flex: none;
-  font-size: .74em; padding: 1px 8px; border-radius: 999px;
-  color: var(--text-muted); background: var(--background-modifier-hover);
+  font-size: .74em; padding: 1px 8px; border-radius: var(--nx-r-pill);
+  color: var(--text-muted); background: var(--nx-sf-1);
   max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.nx-ag-chip.is-project:hover { color: var(--text-normal); background: var(--background-modifier-border); }
+.nx-ag-chip.is-project:hover { color: var(--text-normal); background: var(--nx-sf-2); }
 
 /* events: fixed time column so the day reads as a timeline, not a list */
 .nx-ag-time {
@@ -96,7 +107,7 @@
   color: var(--text-muted); text-align: right;
 }
 .nx-ag-dot {
-  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  flex: none; width: 7px; height: 7px; border-radius: var(--nx-r-circle);
   background: var(--nx-ag-dot); align-self: center;
 }
 
@@ -116,12 +127,15 @@
 .nx-ag-prio.is-low { color: var(--text-faint); }
 
 /* linked notes */
+/* Legacy alias of .nx-row (00-tokens.css) — one note that links to the day. */
 .nx-ag-link {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 7px; margin: 0 -7px;
-  border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  margin: 0 calc(-1 * var(--nx-sp-2));
+  border-radius: var(--nx-r-tile); cursor: pointer;
 }
-.nx-ag-link:hover { background: var(--background-modifier-hover); }
+.nx-ag-link:hover { background: var(--nx-sf-1); }
 .nx-ag-link-ic { display: inline-flex; color: var(--text-faint); }
 .nx-ag-link-ic .svg-icon { width: 14px; height: 14px; }
 .nx-ag-link-name { color: var(--text-accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -140,19 +154,29 @@
 .nx-side { display: flex; flex-direction: column; height: 100%; padding: 0; }
 .nx-side-head {
   display: flex; align-items: center; gap: 6px;
-  padding: 8px 10px; border-bottom: 1px solid var(--nx-border, var(--background-modifier-border));
+  padding: 8px 10px; border-bottom: var(--nx-hairline);
   flex: 0 0 auto;
 }
 .nx-side-icon { display: inline-flex; color: var(--nx-accent, var(--interactive-accent)); }
 .nx-side-icon .svg-icon { width: 15px; height: 15px; }
 .nx-side-title { font-weight: 600; font-size: .92em; }
 .nx-side-count {
-  margin-right: auto; padding: 0 6px; border-radius: 999px;
-  font-size: .72em; color: var(--text-muted); background: var(--background-modifier-hover);
+  margin-right: auto; padding: 0 6px; border-radius: var(--nx-r-pill);
+  font-size: .72em; color: var(--text-muted); background: var(--nx-sf-1);
 }
 .nx-side-count:empty { display: none; }
-.nx-side-tool { display: inline-flex; padding: 3px; border-radius: 6px; cursor: pointer; color: var(--text-muted); }
-.nx-side-tool:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+/* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
+.nx-side-tool {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
+}
+.nx-side-tool:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 .nx-side-tool .svg-icon { width: 14px; height: 14px; }
 .nx-side-body { flex: 1; min-height: 0; overflow: auto; padding: 6px 8px 12px; }
 .nx-side-day {
@@ -164,6 +188,6 @@
 .nx-side-day:first-child { margin-top: 0; }
 .nx-side-day:hover { color: var(--nx-accent, var(--interactive-accent)); }
 /* A narrow dock has no room for the wide time column of the agenda block. */
-.nx-side .nx-ag-row { padding: 4px 2px; }
+.nx-side .nx-ag-row { min-height: 0; padding: var(--nx-sp-1) 2px; }
 .nx-side .nx-ag-time { min-width: 0; font-size: .72em; }
 .nx-side .nx-ag-chip { display: none; }

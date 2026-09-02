@@ -1,9 +1,18 @@
 /* ── SETTINGS: vertical tabs on the left ── */
-.nx-settings { display: flex; gap: 20px; align-items: flex-start; }
+/* The rail and the panel scroll independently. Before this both lived in
+   Obsidian's own .vertical-tab-content scroller, so a long panel scrolled the
+   whole page and a rail taller than the window scrolled away with it. The
+   height is the viewport minus the dialog's own chrome; the two children each
+   own their overflow. */
+.nx-settings {
+  display: flex; gap: var(--nx-sp-4); align-items: stretch;
+  height: min(72vh, 780px); min-height: 320px;
+}
 .nx-settings-nav {
   flex: 0 0 188px; display: flex; flex-direction: column; gap: 2px;
-  position: sticky; top: 0;
   min-width: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding-right: var(--nx-sp-1);
 }
 /* Section label above each block of tabs — the nav reads as ordered steps
    instead of one long undifferentiated list. */
@@ -14,7 +23,7 @@
 .nx-settings-navgroup:first-child { margin-top: 0; }
 .nx-settings-tab {
   display: flex; align-items: center; gap: 10px; padding: 8px 11px;
-  border-radius: var(--radius-m, 8px); cursor: pointer; color: var(--text-muted);
+  border-radius: var(--nx-r-tile); cursor: pointer; color: var(--text-muted);
   transition: background .1s, color .1s;
 }
 .nx-settings-tab:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
@@ -23,24 +32,45 @@
 .nx-settings-tab-icon { display: flex; }
 .nx-settings-tab-icon .svg-icon { width: 17px; height: 17px; }
 .nx-settings-tab-label { font-size: .92em; }
-/* Smart Typography: the actual input → output pairs under each toggle */
+/* Smart Typography: what you type beside what you get, in two aligned columns.
+   It used to be a wrapping row of pills, each with an arrow inside it — the
+   arrows are what made the page unreadable, and the negative top margin glued
+   the block to the bottom edge of the setting row above it. Two columns need
+   no arrow: the alignment says which side is which. */
 .nx-st-map {
-  display: flex; flex-wrap: wrap; gap: 6px 8px;
-  margin: -6px 0 16px; padding-left: 2px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 var(--nx-sp-3);
+  align-items: baseline;
+  max-width: calc(var(--nx-field-w) * 2);
+  margin: var(--nx-sp-2) 0 var(--nx-sp-4);
 }
 .nx-st-pair {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 3px 10px; border-radius: 999px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  font-size: .84em;
+  display: contents;
 }
-.nx-st-in { font-family: var(--font-monospace); color: var(--text-muted); }
-.nx-st-arrow { color: var(--text-faint); font-size: .9em; }
-.nx-st-out { color: var(--text-normal); font-weight: 600; }
-.nx-st-note { flex-basis: 100%; color: var(--text-faint); font-size: .8em; margin-top: 2px; }
+.nx-st-pair > span {
+  padding: var(--nx-sp-1) 0;
+  border-bottom: var(--nx-hairline);
+}
+.nx-st-pair:last-of-type > span { border-bottom: none; }
+.nx-st-pair.is-head > span {
+  color: var(--nx-fg-muted, var(--text-faint));
+  font-size: .78em;
+  border-bottom-color: var(--nx-border-strong);
+}
+.nx-st-in { font-family: var(--font-monospace); color: var(--nx-fg-muted, var(--text-muted)); }
+.nx-st-out { color: var(--nx-fg, var(--text-normal)); font-weight: 600; }
+.nx-st-note {
+  grid-column: 1 / -1;
+  color: var(--nx-fg-muted, var(--text-faint)); font-size: .8em;
+  margin-top: var(--nx-sp-2);
+}
 
-.nx-settings-body { flex: 1; min-width: 0; }
+.nx-settings-body {
+  flex: 1; min-width: 0;
+  overflow-y: auto; overscroll-behavior: contain;
+  padding-right: var(--nx-sp-2);
+}
 .nx-settings-body > h3:first-child { margin-top: 0; margin-bottom: 6px; }
 /* Panel head: the module's own name, with a plain-language line under it so
    the name never has to be decoded. */
@@ -82,7 +112,7 @@
 /* Rows, not a rail: full width, thumb-sized, with a chevron that says "opens". */
 .nx-settings.is-narrow .nx-settings-tab {
   padding: 12px 12px; gap: 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--nx-hairline);
   border-radius: 0;
 }
 .nx-settings.is-narrow .nx-settings-tab.is-active { background: transparent; }
@@ -90,14 +120,14 @@
 .nx-settings.is-narrow .nx-settings-tab::after {
   content: ''; margin-left: auto; flex: 0 0 auto;
   width: 7px; height: 7px; opacity: .6;
-  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;  /* a drawn chevron, not a frame */
   transform: rotate(-45deg);
 }
 .nx-settings.is-narrow .nx-settings-navgroup { margin-top: 18px; padding-bottom: 4px; }
 .nx-settings.is-narrow .nx-settings-back {
   display: inline-flex; align-items: center; gap: 3px;
   margin: 0 0 12px; padding: 7px 14px 7px 9px;
-  border-radius: 999px; cursor: pointer;
+  border-radius: var(--nx-r-tile); cursor: pointer;
   font-size: .88em; color: var(--text-muted);
   background: var(--background-modifier-hover);
 }
@@ -132,27 +162,40 @@
 .nx-multirow-head { border-top: none !important; padding-bottom: 4px; }
 .nx-multirow { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; }
 .nx-multirow-row { display: flex; align-items: center; gap: 6px; }
-.nx-multirow-input {
+/* One field, one delete button — the multi-row and the property-row families
+   were identical rules under two names. Aliases of .nx-input / .nx-btn.is-icon
+   until the markup in lib/inputs.js catches up (docs/token-migration.md). */
+.nx-multirow-input,
+.nx-proprow-key,
+.nx-proprow-val {
   flex: 1; min-width: 0;
+  height: var(--nx-ctl-h);
   background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px; padding: 5px 9px;
-  color: var(--text-normal); font-size: .9em;
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
+  padding: 0 var(--nx-ctl-pad-x);
+  color: var(--nx-fg, var(--text-normal)); font-size: var(--font-ui-small, .85em);
 }
-.nx-multirow-input:focus { border-color: var(--interactive-accent); outline: none; }
-.nx-multirow-del {
+.nx-multirow-input:focus,
+.nx-proprow-key:focus,
+.nx-proprow-val:focus { border-color: var(--nx-accent, var(--interactive-accent)); outline: none; }
+.nx-multirow-del,
+.nx-proprow-del {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; flex: 0 0 auto;
-  border-radius: 6px; cursor: pointer; color: var(--text-faint);
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); flex: 0 0 auto;
+  border-radius: var(--nx-r-tile); cursor: pointer;
+  color: var(--nx-fg-muted, var(--text-faint));
 }
-.nx-multirow-del:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
-.nx-multirow-del .svg-icon { width: 15px; height: 15px; }
+.nx-multirow-del:hover,
+.nx-proprow-del:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
+.nx-multirow-del .svg-icon,
+.nx-proprow-del .svg-icon { width: 15px; height: 15px; }
 
 /* ── Icon field + picker popup ── */
 .nx-iconfield-btn {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 5px 10px; cursor: pointer;
-  border: 1px solid var(--background-modifier-border); border-radius: 6px;
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
   background: var(--background-modifier-form-field);
 }
 .nx-iconfield-btn:hover { border-color: var(--interactive-accent); }
@@ -162,7 +205,7 @@
 
 .nx-iconpicker-search {
   width: 100%; margin: 6px 0 12px; padding: 8px 12px;
-  border: 1px solid var(--background-modifier-border); border-radius: 8px;
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
   background: var(--background-modifier-form-field); color: var(--text-normal);
 }
 .nx-iconpicker-grid {
@@ -171,8 +214,8 @@
 }
 .nx-iconpicker-cell {
   display: flex; align-items: center; justify-content: center;
-  aspect-ratio: 1; border-radius: 8px; cursor: pointer;
-  color: var(--text-muted); border: 1px solid transparent;
+  aspect-ratio: 1; border-radius: var(--nx-r-tile); cursor: pointer;
+  color: var(--text-muted); border: var(--nx-bw) solid transparent;
 }
 .nx-iconpicker-cell:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
 .nx-iconpicker-cell.is-current { border-color: var(--interactive-accent); color: var(--text-normal); }
@@ -185,24 +228,17 @@
 /* ── Structured property filter (property | value | AND/OR) ── */
 .nx-proprows { display: flex; flex-direction: column; gap: 5px; margin: 0 0 12px; }
 .nx-proprow { display: flex; align-items: center; gap: 6px; }
-.nx-proprow-key, .nx-proprow-val {
-  background: var(--background-modifier-form-field);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px; padding: 5px 9px; color: var(--text-normal); font-size: .9em; min-width: 0;
-}
-.nx-proprow-key { flex: 0 0 38%; }
-.nx-proprow-val { flex: 1; }
-.nx-proprow-key:focus, .nx-proprow-val:focus { border-color: var(--interactive-accent); outline: none; }
-.nx-proprow-del {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; flex: 0 0 auto; border-radius: 6px; cursor: pointer; color: var(--text-faint);
-}
-.nx-proprow-del:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
-.nx-proprow-del .svg-icon { width: 15px; height: 15px; }
+/* Two equal halves. It used to be `flex: 0 0 38%` beside a `flex: 1` sibling,
+   which is the "one is x long and the next is y long" from the review; a fixed
+   width instead of the percentage only moved the problem to a phone, where the
+   key then outgrew the value. Equal shares are the one answer that holds at
+   every width. */
+.nx-proprow-key,
+.nx-proprow-val { flex: 1 1 0; min-width: 0; }
 .nx-propconn { display: flex; gap: 4px; padding: 1px 0 1px 4px; }
 .nx-propconn-btn {
-  font-size: .68em; letter-spacing: .04em; padding: 2px 12px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--background-modifier-border); background: transparent; color: var(--text-muted);
+  font-size: .68em; letter-spacing: .04em; padding: 2px 12px; border-radius: var(--nx-r-tile); cursor: pointer;
+  border: var(--nx-hairline); background: transparent; color: var(--text-muted);
 }
 .nx-propconn-btn.is-active {
   background: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
@@ -212,21 +248,20 @@
 /* ── Gruppierter Property-Filter ── */
 .nx-propgroups { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; }
 .nx-propgroup {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 10px; border-radius: 10px;
-  border: 1px solid var(--background-modifier-border);
-  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-secondary));
+  display: flex; flex-direction: column; gap: var(--nx-sp-1);
+  padding: var(--nx-sp-1) 0 var(--nx-sp-1) var(--nx-sp-3);
+  border-left: var(--nx-bw) solid var(--nx-border, var(--background-modifier-border));
 }
 .nx-propgroup-and { font-size: .68em; letter-spacing: .05em; color: var(--text-faint); padding-left: 4px; }
 .nx-propgroup-or {
   align-self: center; font-size: .7em; font-weight: 700; letter-spacing: .08em;
   color: var(--text-on-accent); background: var(--interactive-accent);
-  padding: 2px 14px; border-radius: 999px; margin: 2px 0;
+  padding: 2px 14px; border-radius: var(--nx-r-pill); margin: 2px 0;
 }
 .nx-propgroup-add {
   align-self: flex-start; margin-top: 4px; cursor: pointer;
-  font-size: .8em; padding: 5px 12px; border-radius: 8px;
-  border: 1px dashed var(--background-modifier-border); background: transparent; color: var(--text-muted);
+  font-size: .8em; padding: 5px 12px; border-radius: var(--nx-r-tile);
+  border: var(--nx-bw) dashed var(--nx-border, var(--background-modifier-border)); background: transparent; color: var(--text-muted);
 }
 .nx-propgroup-add:hover { border-color: var(--interactive-accent); color: var(--text-normal); }
 
@@ -235,11 +270,11 @@
   position: fixed; z-index: 999999;
   max-height: 240px; overflow-y: auto;
   background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px; box-shadow: 0 6px 22px rgba(0,0,0,.35);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius); box-shadow: 0 6px 22px rgba(0,0,0,.35);
   padding: 4px;
 }
-.nx-ac-item { padding: 5px 9px; border-radius: 6px; cursor: pointer; font-size: .88em; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nx-ac-item { padding: 5px 9px; border-radius: var(--nx-r-tile); cursor: pointer; font-size: .88em; color: var(--text-normal); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nx-ac-item:hover, .nx-ac-item.is-sel { background: color-mix(in srgb, var(--interactive-accent) 28%, transparent); }
 
 /* Add-stat tile: compact instead of full stat size */
@@ -247,7 +282,7 @@
   justify-self: start; align-self: center;
   padding: 7px 13px !important; gap: 7px;
   background: transparent !important;
-  border: 1px dashed var(--background-modifier-border) !important;
+  border: var(--nx-bw) dashed var(--nx-border, var(--background-modifier-border)) !important;
   color: var(--text-muted);
 }
 .nx-home-stat.nx-home-stat-add .nx-home-stat-icon .svg-icon { width: 15px; height: 15px; }
@@ -265,8 +300,8 @@
 .nx-stylepick-row {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 12px; cursor: pointer;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
   background: var(--background-primary);
 }
 .nx-stylepick-row:hover { border-color: var(--interactive-accent); }
@@ -286,23 +321,23 @@
   width: 74px; height: 34px; padding: 3px;
   background: var(--background-secondary);
 }
-.nx-stylepick-demo.is-mirobo { border-radius: 8px; gap: 4px; padding: 4px; }
+.nx-stylepick-demo.is-mirobo { border-radius: var(--nx-r-tile); gap: 4px; padding: 4px; }
 .nx-stylepick-demo.is-mirobo span {
-  flex: 1; border-radius: 5px;
+  flex: 1; border-radius: calc(var(--nx-r-tile) / 2);   /* a data mark: half the chip radius */
   background: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
-  border: 1px solid color-mix(in srgb, var(--interactive-accent) 35%, transparent);
+  border: var(--nx-bw) solid color-mix(in srgb, var(--interactive-accent) 35%, transparent);
 }
 /* The plain sketch is the point of the picker, so it has to be readable: one
    narrower "sidebar" pane in the panel tone, the rest the page tone, split by
    the same hairline the style uses. */
 .nx-stylepick-demo.is-plain {
-  border-radius: 3px; gap: 0; padding: 0;
-  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px; gap: 0; padding: 0;   /* nx-literal-ok: a picture of the plain style's own corner, not a corner */
+  border: var(--nx-hairline);
   background: var(--background-primary);
 }
 .nx-stylepick-demo.is-plain span {
   flex: 1; border-radius: 0; background: var(--background-primary);
-  border-right: 1px solid var(--background-modifier-border);
+  border-right: var(--nx-hairline);
 }
 .nx-stylepick-demo.is-plain span:first-child { flex: 0 0 22px; background: var(--background-secondary); }
 .nx-stylepick-demo.is-plain span:last-child { border-right: none; }
@@ -319,8 +354,8 @@
 .nx-palpick-tile {
   display: flex; align-items: center; gap: 8px;
   padding: 5px 12px 5px 6px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 999px;
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
   background: var(--background-primary);
   cursor: pointer;
   transition: border-color .1s ease, background .1s ease;
@@ -331,10 +366,10 @@
   background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
 }
 .nx-palpick-disc {
-  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  width: 20px; height: 20px; border-radius: var(--nx-r-circle); flex-shrink: 0;
   /* an inner hairline so a palette whose ground matches the settings background
      still reads as a disc */
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-normal) 22%, transparent);
+  box-shadow: inset 0 0 0 var(--nx-bw) color-mix(in srgb, var(--text-normal) 22%, transparent);
 }
 .nx-palpick-name { font-size: .86em; color: var(--text-normal); }
 .nx-palpick-tile.is-active .nx-palpick-name { font-weight: 600; }
@@ -348,7 +383,7 @@
 .nx-hint {
   display: inline-flex; align-items: center; justify-content: center;
   vertical-align: middle; margin-left: 6px;
-  width: 18px; height: 18px; border-radius: 4px;
+  width: 18px; height: 18px; border-radius: var(--nx-r-tile);
   color: var(--text-faint); cursor: help;
   transition: color .1s ease, background .1s ease;
 }
@@ -365,7 +400,7 @@
 p.setting-item-description.nx-folded.is-open {
   margin: 2px 0 10px;
   padding-left: 10px;
-  border-left: 2px solid var(--background-modifier-border);
+  border-left: var(--nx-bw) solid var(--nx-border, var(--background-modifier-border));
 }
 
 /* ── the vault sync's last run ── */
@@ -374,3 +409,31 @@ p.setting-item-description.nx-folded.is-open {
   font-size: var(--font-ui-smaller); color: var(--color-red, #e5544a);
   overflow-wrap: anywhere;
 }
+
+
+/* ── Folded settings sections ───────────────────────────────────────────────
+   A long page (Quick Sketch above all) turns its own headings into handles;
+   see lib/inputs.js · nxCollapseSections. Only pages past the threshold get
+   this, so a short tab still reads as one list. */
+.nx-cardcfg-sec.is-foldable {
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  cursor: pointer; user-select: none;
+  padding: var(--nx-sp-1) 0;
+  border-bottom: var(--nx-hairline);
+}
+.nx-cardcfg-sec.is-foldable:hover { color: var(--nx-fg, var(--text-normal)); }
+.nx-cardcfg-sec.is-foldable:focus-visible {
+  outline: var(--nx-bw) solid var(--nx-accent, var(--interactive-accent));
+  outline-offset: 2px;
+}
+/* The chevron is drawn, so it needs no icon font and cannot go missing. */
+.nx-cardcfg-sec.is-foldable::after {
+  content: ''; margin-left: auto; flex: 0 0 auto;
+  width: 6px; height: 6px; opacity: .7;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 120ms ease;
+}
+.nx-cardcfg-sec.is-foldable.is-open::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.nx-sec-body { display: none; }
+.nx-sec-body.is-open { display: block; }

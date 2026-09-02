@@ -1,15 +1,15 @@
 /* ── BANNER-MODAL ── */
 .modal.nx-banner-modal-el { width: min(720px, 94vw); max-width: 94vw; }
 .nx-banner-modal { width: 100%; }
-.nx-banner-actions { display: flex; gap: 8px; margin-bottom: 18px; }
+.nx-banner-actions { display: flex; gap: var(--nx-sp-2); margin-bottom: var(--nx-sp-4); }
 .nx-banner-action {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
-  padding: 12px 8px; border-radius: var(--radius-m, 8px); cursor: pointer;
+  padding: var(--nx-sp-3) var(--nx-sp-2); border-radius: var(--nx-r-tile); cursor: pointer;
   background: var(--background-secondary); color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border);
+  border: var(--nx-hairline);
   transition: background .1s, border-color .1s;
 }
-.nx-banner-action:hover { background: var(--background-modifier-hover); border-color: var(--interactive-accent); }
+.nx-banner-action:hover { background: var(--nx-sf-1); border-color: var(--interactive-accent); }
 .nx-banner-action.is-disabled { opacity: .4; pointer-events: none; }
 .nx-banner-action-icon { display: flex; }
 .nx-banner-action-icon .svg-icon { width: 20px; height: 20px; }
@@ -17,7 +17,7 @@
 
 .nx-banner-cards-label {
   font-size: .78em; text-transform: uppercase; letter-spacing: .06em;
-  color: var(--text-faint); margin-bottom: 8px;
+  color: var(--text-faint); margin-bottom: var(--nx-sp-2);
 }
 /* Groups = subfolders of the banner folder. ONE scroll container around all
    sections (not per grid) so collapsing a section actually frees screen. */
@@ -25,27 +25,27 @@
 .nx-banner-group + .nx-banner-group { margin-top: 14px; }
 .nx-banner-group-head {
   display: flex; align-items: center; gap: 7px; cursor: pointer;
-  padding: 5px 6px; border-radius: var(--radius-s, 6px);
+  padding: 5px 6px; border-radius: var(--nx-r-tile);
   color: var(--text-muted); user-select: none;
 }
-.nx-banner-group-head:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-banner-group-head:hover { background: var(--nx-sf-1); color: var(--text-normal); }
 .nx-banner-group-chev { display: flex; transition: transform .14s ease; }
 .nx-banner-group-chev .svg-icon { width: 15px; height: 15px; }
 .nx-banner-group.is-collapsed .nx-banner-group-chev { transform: rotate(-90deg); }
 .nx-banner-group-name { flex: 1; min-width: 0; font-size: .88em; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nx-banner-group-count {
-  font-size: .72em; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  font-size: .72em; font-weight: 700; padding: 1px 7px; border-radius: var(--nx-r-pill);
   color: var(--text-faint); background: color-mix(in srgb, var(--text-muted) 14%, transparent);
 }
 .nx-banner-group.is-collapsed .nx-banner-cards { display: none; }
 .nx-banner-cards {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px; padding: 8px 2px 2px;
+  gap: var(--nx-sp-3); padding: 8px 2px 2px;
 }
 .nx-banner-cards-empty { grid-column: 1 / -1; color: var(--text-muted); font-size: .88em; padding: 8px 0; }
 .nx-banner-card {
-  border-radius: var(--radius-m, 8px); overflow: hidden; cursor: pointer;
-  border: 1px solid var(--background-modifier-border); background: var(--background-secondary);
+  border-radius: var(--nx-radius); overflow: hidden; cursor: pointer;
+  border: var(--nx-hairline); background: var(--background-secondary);
   transition: transform .1s, border-color .1s;
 }
 .nx-banner-card:hover { transform: translateY(-2px); border-color: var(--interactive-accent); }
@@ -61,9 +61,20 @@
   font-size: .76em; text-transform: uppercase; letter-spacing: .06em;
   color: var(--text-faint); margin: 14px 0 5px;
 }
+/* Deliberately full-width (.nx-input.is-grow semantics): the file name is the
+   only thing on its line, so --nx-field-w would leave the row half empty. */
 .nx-banner-import-input { width: 100%; }
-.nx-banner-import-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.nx-banner-import-bar button { padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+.nx-banner-import-bar { display: flex; justify-content: flex-end; gap: var(--nx-sp-2); margin-top: var(--nx-sp-4); }
+/* Legacy alias of .nx-btn (00-tokens.css) — the import dialog's buttons. */
+.nx-banner-import-bar button {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
 
 /* Height handle at the bottom edge of the drag overlay */
 .nx-banner-resize {
@@ -73,7 +84,7 @@
 }
 .nx-banner-resize::after {
   content: ""; position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%);
-  width: 44px; height: 3px; border-radius: 3px; background: var(--interactive-accent);
+  width: 44px; height: 3px; border-radius: var(--nx-r-pill); background: var(--interactive-accent);
 }
 
 /* ── narrow / phone ────────────────────────────────────────────────────────
@@ -87,6 +98,5 @@
   .nx-banner-groups { max-height: 62vh; }
   .nx-banner-cards { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 9px; }
   .nx-banner-card img { height: 88px; }
-  .nx-banner-import-bar button { padding: 9px 16px; }
 }
 

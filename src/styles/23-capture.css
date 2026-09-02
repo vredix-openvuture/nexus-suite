@@ -1,0 +1,331 @@
+/* ============================================================================
+ *  CAPTURE HUB
+ *  Ink, Quick Sketch and Chatter under one toolbar. The tabs differ in what a
+ *  card IS, so the grid and the list are two layouts here; everything around
+ *  them — head, tabs, bar, bulk row — is written once.
+ *
+ *  Sized for ~280px FIRST. The hub is a sidebar panel as well as a full tab,
+ *  and a narrow panel inside a wide window is the normal case, so the
+ *  breakpoints hang on the CONTAINER and not on the viewport. Anything that
+ *  must survive without container queries is written as the narrow case and
+ *  widened, never the other way round.
+ * ==========================================================================*/
+
+.nx-cap { container-type: inline-size; height: 100%; overflow: auto; }
+.nx-cap-inner {
+  display: flex; flex-direction: column; gap: var(--nx-sp-2);
+  padding: var(--nx-sp-3);
+  min-height: 100%;
+}
+
+/* ── Head ──────────────────────────────────────────────────────────────────*/
+.nx-cap-head { display: flex; align-items: center; gap: var(--nx-sp-2); }
+.nx-cap-h { margin: 0; flex: 1; font-size: 1.15em; line-height: 1.2; }
+.nx-cap-action { flex: 0 0 auto; }
+.nx-cap-btn-ic { display: inline-flex; }
+.nx-cap-btn-ic .svg-icon { width: 15px; height: 15px; }
+
+/* ── Tabs ──────────────────────────────────────────────────────────────────
+   Three of them, so they share the width rather than wrapping. */
+.nx-cap-tabs { display: flex; gap: var(--nx-sp-1); }
+.nx-cap-tab { flex: 1 1 0; min-width: 0; gap: var(--nx-sp-1); }
+.nx-cap-tab.is-active {
+  background: var(--nx-sf-2);
+  border-color: var(--nx-accent, var(--interactive-accent));
+  color: var(--nx-fg, var(--text-normal));
+}
+.nx-cap-tab-ic { display: inline-flex; flex: 0 0 auto; }
+.nx-cap-tab-ic .svg-icon { width: 15px; height: 15px; }
+.nx-cap-tab-lbl { overflow: hidden; text-overflow: ellipsis; }
+
+/* ── The one toolbar row ───────────────────────────────────────────────────
+   Select mode REPLACES the search row instead of stacking under it. That is
+   what keeps this a single line at 280px, and it is also honest: while you are
+   picking things, searching is not what the row is for. */
+.nx-cap-bar,
+.nx-cap-bulk { display: flex; align-items: center; gap: var(--nx-ctl-gap); }
+.nx-cap-bulk { display: none; }
+.nx-cap.is-selecting .nx-cap-bar { display: none; }
+.nx-cap.is-selecting .nx-cap-bulk { display: flex; }
+/* `.nx-input` is written as `select.nx-input` / `input.nx-input` in the token
+   file, which is one element-selector more specific than a bare class here.
+   Both of these therefore have to be qualified as well, or the field width from
+   the tokens quietly wins and this whole row stops shrinking. */
+.nx-cap-bar .nx-cap-search { min-width: 0; width: auto; flex: 1 1 auto; }
+/* A <select> is as wide as its longest option unless told otherwise, and in a
+   280px panel that left the search box a sliver. The sort has a ceiling and
+   gives way first: you can always change the order, but you cannot type into a
+   field that is not there. */
+.nx-cap-bar .nx-cap-sort {
+  flex: 0 1 auto; width: auto; max-width: 8em; min-width: 0;
+  padding-right: var(--nx-sp-1);
+  text-overflow: ellipsis;
+}
+.nx-cap-pick.is-active {
+  background: var(--nx-sf-2);
+  border-color: var(--nx-accent, var(--interactive-accent));
+  color: var(--nx-fg, var(--text-normal));
+}
+.nx-cap-count {
+  flex: 1; min-width: 0;
+  font-size: .82em; color: var(--nx-fg-muted, var(--text-muted));
+  font-variant-numeric: tabular-nums;
+}
+.nx-cap-tally {
+  font-size: .78em; color: var(--nx-fg-muted, var(--text-faint));
+  font-variant-numeric: tabular-nums;
+}
+.nx-cap-body { flex: 1; min-height: 0; }
+.nx-cap-empty {
+  color: var(--nx-fg-muted, var(--text-muted));
+  padding: var(--nx-sp-5) var(--nx-sp-3);
+  text-align: center;
+}
+
+/* ── Grid (Ink, Sketch) ────────────────────────────────────────────────────
+   auto-fill with a floor, so one column at 280px and as many as fit later —
+   no breakpoint has to know the number. */
+.nx-cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: var(--nx-sp-3);
+}
+.nx-cap-card { position: relative; cursor: pointer; min-width: 0; }
+.nx-cap-grid .nx-cap-card { display: flex; flex-direction: column; gap: var(--nx-sp-1); }
+/* --img is set by the adapter: a background is the only way to cover-crop
+   something whose aspect ratio nobody knows in advance. */
+.nx-cap-cover {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
+  background-color: var(--nx-sf-1);
+  background-image: var(--img, none);
+  background-size: cover; background-position: center;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--nx-fg-muted, var(--text-faint));
+}
+.nx-cap-cover-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.nx-cap-cover .svg-icon { width: 22px; height: 22px; }
+.nx-cap-cover.is-missing::after {
+  content: '?'; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.5em; color: var(--nx-fg-muted, var(--text-faint));
+}
+.nx-cap-title {
+  font-size: .85em; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-cap-chips { display: flex; flex-wrap: wrap; gap: var(--nx-sp-1); }
+
+/* Badges sit ON the picture, so they carry their own scrim instead of the
+   theme's colours — a caption over a scan has no idea what is behind it. */
+.nx-cap-badge {
+  position: absolute; left: var(--nx-sp-1); bottom: var(--nx-sp-1);
+  max-width: calc(100% - var(--nx-sp-4));
+  padding: 1px var(--nx-sp-2);
+  border-radius: var(--nx-r-pill);
+  font-size: .68em; font-weight: 600; text-transform: capitalize;
+  background: rgba(0, 0, 0, .62); color: #fff;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The page count is the other corner and is NOT capitalised — it is a number
+   and a noun, not a label. It also has to stay readable at 124px wide, which
+   is why it does not shrink with the rest. */
+.nx-cap-badge.is-pages {
+  left: auto; right: var(--nx-sp-1);
+  text-transform: none; font-size: .72em;
+  font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 82%, #000);
+}
+/* Top LEFT, and the only badge up there: the card's own action buttons and the
+   select-mode tick both live in the top right corner, and a badge that hides
+   under whichever one is showing is a badge nobody ever sees. */
+.nx-cap-badge.is-marked {
+  top: var(--nx-sp-1); bottom: auto;
+  padding: 2px; display: inline-flex;
+}
+.nx-cap-badge.is-marked .svg-icon { width: 12px; height: 12px; }
+/* No picture to show — a PDF, an excalidraw drawing. The glyph gets a ground
+   of its own so the cover does not read as a failed image. */
+.nx-cap-cover.is-glyph {
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%, transparent),
+    color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 8%, transparent));
+}
+.nx-cap-cover-icon { display: flex; opacity: .75; }
+.nx-cap-cover-icon .svg-icon { width: 26px; height: 26px; }
+.nx-cap-meta {
+  font-size: .76em; color: var(--nx-fg-muted, var(--text-muted));
+  display: flex; gap: var(--nx-sp-1); flex-wrap: wrap; align-items: baseline;
+}
+
+/* ── List (Chatter) ────────────────────────────────────────────────────────
+   A spoken note has no picture, so the first line of the transcript takes the
+   width a cover would have wasted. This is the reason the three tabs are not
+   one layout. */
+.nx-cap-list { display: flex; flex-direction: column; gap: var(--nx-sp-1); }
+.nx-cap-list .nx-cap-card { align-items: flex-start; }
+.nx-cap-row-ic {
+  flex: 0 0 auto; display: inline-flex;
+  color: var(--nx-fg-muted, var(--text-faint));
+  padding-top: 2px;
+}
+.nx-cap-row-ic .svg-icon { width: 15px; height: 15px; }
+.nx-cap-row-main { flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; }
+/* The date and the duration sit to the right, so the title gives way to them
+   rather than running underneath — at 280px it otherwise printed over the
+   date. */
+.nx-cap-row-title {
+  font-weight: 500; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-cap-row-preview {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: normal;
+}
+.nx-cap-row-aside { flex-direction: column; align-items: flex-end; gap: 2px; flex: 0 0 auto; }
+.nx-cap-row-aside .nx-row-sub { white-space: nowrap; }
+
+/* ── Shared card furniture ─────────────────────────────────────────────────*/
+.nx-cap-chip {
+  font-size: .72em; padding: 1px var(--nx-sp-1);
+  border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-2);
+  color: var(--nx-fg-muted, var(--text-muted));
+  font-variant-numeric: tabular-nums;
+}
+.nx-cap-card.is-picked .nx-cap-cover,
+.nx-cap-list .nx-cap-card.is-picked { border-color: var(--nx-accent, var(--interactive-accent)); }
+
+.nx-cap-mark,
+.nx-cap-quicks {
+  position: absolute; top: var(--nx-sp-1); right: var(--nx-sp-1);
+}
+.nx-cap-mark,
+.nx-cap-quick {
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-3);
+  color: var(--nx-fg, var(--text-normal));
+}
+/* Three actions over a picture need their own scrim: --nx-sf-3 is translucent
+   and a white scan underneath turns the glyph invisible. */
+.nx-cap-grid .nx-cap-quick { background: rgba(0, 0, 0, .58); color: #fff; }
+.nx-cap-quicks { display: flex; gap: 2px; }
+.nx-cap-mark .svg-icon,
+.nx-cap-quick .svg-icon { width: 14px; height: 14px; }
+/* The card shortcuts are a hover affordance on a mouse and always there on a
+   touch device, where there is no hover to reveal them. */
+.nx-cap-quicks { opacity: 0; }
+.nx-cap-card:hover .nx-cap-quicks,
+.nx-cap-quicks:focus-within { opacity: 1; }
+body.is-mobile .nx-cap-quicks { opacity: 1; }
+
+/* ── Narrow: the labels go, the icons stay ─────────────────────────────────
+   Container query, not a media query: a 280px panel inside a 1900px window is
+   the normal case for this view, and a viewport breakpoint cannot see it.
+   Everything above is already the narrow layout, so a browser without
+   container queries loses the widening, not the usability. */
+@container (max-width: 340px) {
+  .nx-cap-inner { padding: var(--nx-sp-2); gap: var(--nx-sp-1); }
+  .nx-cap-tab-lbl,
+  .nx-cap-action .nx-cap-btn-lbl,
+  .nx-cap-bulk .nx-cap-btn-lbl { display: none; }
+  .nx-cap-tab { padding: 0 var(--nx-sp-1); }
+  .nx-cap-action { width: var(--nx-ctl-h); padding: 0; }
+  .nx-cap-bulk .nx-btn { width: var(--nx-ctl-h); padding: 0; }
+  .nx-cap-count { font-size: .76em; }
+  /* Down here the order matters less than the field does. */
+  .nx-cap-bar .nx-cap-sort { max-width: 5.5em; }
+  /* Select mode grew past what one 280px line holds — up to six actions plus
+     the tally. The tally takes its own line and the buttons get the full
+     width, which still beats a row that scrolls sideways. */
+  .nx-cap-bulk { flex-wrap: wrap; }
+  .nx-cap-bulk .nx-cap-count { flex: 1 0 100%; }
+}
+@container (min-width: 640px) {
+  .nx-cap-inner { padding: var(--nx-sp-4); gap: var(--nx-sp-3); }
+  .nx-cap-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .nx-cap-tabs { justify-content: flex-start; }
+  .nx-cap-tab { flex: 0 0 auto; padding: 0 var(--nx-ctl-pad-x); }
+}
+
+/* ── The dashboard summary cards ────────────────────────────────────────────
+   Three of them, placed separately. A summary and a door: the count, the
+   newest one, and a click through to the hub. Never a gallery — the dashboard
+   points at the archive, it is not the archive. */
+.nx-home-captures { cursor: pointer; }
+.nx-cap-sum {
+  display: flex; flex-direction: column; justify-content: space-between;
+  gap: var(--nx-sp-2); padding: var(--nx-sp-2);
+}
+.nx-cap-sum-n { display: flex; align-items: baseline; gap: var(--nx-sp-1); }
+.nx-cap-sum-count {
+  font-size: 2.1em; line-height: 1; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--nx-fg, var(--text-normal));
+}
+.nx-cap-sum-unit { font-size: .82em; color: var(--nx-fg-muted, var(--text-muted)); }
+.nx-cap-sum-last { display: flex; align-items: center; gap: var(--nx-sp-2); min-width: 0; }
+.nx-cap-sum-thumb {
+  width: 34px; height: 34px; flex: 0 0 auto;
+  border-radius: var(--nx-r-tile);
+  border: var(--nx-hairline);
+  background-size: cover; background-position: center;
+}
+.nx-cap-sum-txt { min-width: 0; }
+.nx-cap-sum-title {
+  font-size: .86em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-cap-sum-when { font-size: .76em; color: var(--nx-fg-muted, var(--text-faint)); }
+
+/* ── The two dialogs ────────────────────────────────────────────────────────
+   Where a set of captures moves to, and what one capture is made of. Both are
+   modals rather than panels: they are a decision you finish, not a surface you
+   live in, and a modal is the one place that is as wide on a tablet as on a
+   desktop. */
+.nx-cap-modal-bar {
+  display: flex; justify-content: flex-end; gap: var(--nx-ctl-gap);
+  margin-top: var(--nx-sp-3);
+}
+.nx-cap-move-hint {
+  margin: 0 0 var(--nx-sp-2);
+  font-size: .84em; color: var(--nx-fg-muted, var(--text-muted));
+}
+.nx-cap-move-field { width: 100%; }
+
+.nx-cap-pagelist { max-height: 46vh; overflow: auto; }
+.nx-cap-pagerow { gap: var(--nx-sp-2); }
+/* A page is recognised by its picture, not its id-based filename, so the
+   thumbnail is the widest thing in the row that is allowed to be. */
+.nx-cap-pagethumb {
+  flex: 0 0 auto; width: 34px; height: 44px;
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background-size: cover; background-position: center;
+  background-color: var(--nx-sf-1);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--nx-fg-muted, var(--text-faint));
+}
+.nx-cap-pagethumb .svg-icon { width: 16px; height: 16px; }
+.nx-cap-pagemain { flex-direction: column; align-items: flex-start; gap: 0; min-width: 0; }
+.nx-cap-pagemain .nx-row-sub {
+  font-size: .76em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+/* Reorder by BUTTON and not by drag: this dialog has to work in a 280px
+   sidebar with a stylus, where a drag is a scroll and a long press is a
+   context menu. Full control height and not the small one — these are the
+   whole point of the dialog, and a 24px target is a stylus-only target. */
+.nx-cap-pageacts { flex-direction: row; align-items: center; gap: var(--nx-sp-1); flex: 0 0 auto; }
+.nx-cap-pageacts .nx-btn { width: var(--nx-ctl-h); height: var(--nx-ctl-h); padding: 0; }
+.nx-cap-pageadd { width: 100%; justify-content: center; margin-top: var(--nx-sp-2); }
+
+@media (max-width: 620px) {
+  .nx-cap-pagelist { max-height: 52vh; }
+  .nx-cap-pagethumb { width: 28px; height: 36px; }
+  .nx-cap-pageacts { gap: 2px; }
+}

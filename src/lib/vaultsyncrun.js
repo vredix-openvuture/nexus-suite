@@ -7,8 +7,8 @@
  *  vaultsync.js, which is pure — this file only carries them out.
  *
  *  Credentials never go into the vault. They live in localStorage next to the
- *  CalDAV ones (plugin.getCredential), for the same reason: data.json is a file
- *  in the vault, and the vault is the thing being synced.
+ *  task-account ones (plugin.getCredential), for the same reason: data.json is
+ *  a file in the vault, and the vault is the thing being synced.
  * ========================================================================== */
 
 const { Notice, TFile, TFolder, moment } = require('obsidian');
@@ -30,6 +30,19 @@ class NexusVaultSync {
   }
   get s() { return this.plugin.settings.vaultSync || {}; }
 
+  /* The connection and the schedule belong to the DEVICE, not to the vault.
+     data.json is synced, so a URL or a device name kept in it is the other
+     machine's the moment a sync lands — which is exactly how two devices ended
+     up calling themselves the same thing. Everything else on `s` is shared
+     policy and stays there. */
+  get url() { return this.plugin.deviceSetting('vaultSyncUrl', ''); }
+  get deviceName() { return this.plugin.deviceSetting('vaultSyncDeviceName', ''); }
+  get onStart() { return this.plugin.deviceSetting('vaultSyncOnStart', true) !== false; }
+  get intervalMin() {
+    const minutes = parseInt(this.plugin.deviceSetting('vaultSyncIntervalMin', 15), 10);
+    return isFinite(minutes) && minutes > 0 ? minutes : 0;
+  }
+
   init() {
     const p = this.plugin;
     p.addCommand({ id: 'nexus-sync-now', name: 'Sync the vault now', callback: () => this.syncNow(true) });
@@ -37,7 +50,7 @@ class NexusVaultSync {
     this.schedule();
     // Syncing on start is what makes a second device useful at all: you open it
     // and it is already what you left.
-    if (this.s.enabled && this.s.onStart) {
+    if (this.s.enabled && this.onStart) {
       this.app.workspace.onLayoutReady(() => window.setTimeout(() => this.syncNow(false), 2500));
     }
   }
@@ -45,16 +58,16 @@ class NexusVaultSync {
 
   schedule() {
     if (this.timer) { window.clearInterval(this.timer); this.timer = null; }
-    const minutes = Math.max(1, parseInt(this.s.intervalMin, 10) || 0);
-    if (!this.s.enabled || !this.s.intervalMin) return;
+    const minutes = Math.max(1, this.intervalMin);
+    if (!this.s.enabled || !this.intervalMin) return;
     this.timer = window.setInterval(() => this.syncNow(false), minutes * 60 * 1000);
   }
 
   client() {
     const cred = this.plugin.getCredential('vaultsync') || {};
-    if (!this.s.url) throw new Error('no server URL is set — Settings → Vault sync');
+    if (!this.url) throw new Error('no server URL is set — Settings → Vault sync');
     if (!cred.secret && !cred.username) throw new Error('no credentials on this device — Settings → Vault sync');
-    return new WebDavClient({ baseUrl: this.s.url, username: cred.username || '', password: cred.secret || '' });
+    return new WebDavClient({ baseUrl: this.url, username: cred.username || '', password: cred.secret || '' });
   }
 
   /* ── State ────────────────────────────────────────────────────────────────
@@ -296,7 +309,7 @@ class NexusVaultSync {
     // keepBoth: this device's copy is set aside under a name that says where it
     // came from, then the server's version takes the original path.
     const stamp = moment().format('YYYY-MM-DD HHmm');
-    const label = this.s.deviceName || this.plugin.deviceId();
+    const label = this.deviceName || this.plugin.deviceId();
     const copy = sync.conflictCopyName(verdict.path, label, stamp);
     const adapter = this.app.vault.adapter;
     if (local[verdict.path] && await adapter.exists(verdict.path)) {
@@ -365,7 +378,7 @@ class NexusVaultSync {
   async announce(client) {
     if (!this.s.shared) return [];
     const id = this.plugin.deviceId();
-    const body = JSON.stringify({ device: this.s.deviceName || id, at: moment().format('YYYY-MM-DDTHH:mm:ss') });
+    const body = JSON.stringify({ device: this.deviceName || id, at: moment().format('YYYY-MM-DDTHH:mm:ss') });
     try {
       await client.ensureFolder(PRESENCE_FOLDER);
       await client.put(PRESENCE_FOLDER + '/' + id + '.json', body, 'application/json');

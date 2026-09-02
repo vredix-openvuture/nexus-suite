@@ -14,53 +14,64 @@
 /* ── side: project tree ── */
 .nx-tp-side {
   flex: none; width: 272px;
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: var(--nx-sp-1);
   padding: 14px 10px 18px;
   overflow-y: auto;
-  border-right: 1px solid var(--background-modifier-border);
+  border-right: var(--nx-hairline);
   background: var(--background-secondary);
 }
-.nx-tp-side-head { display: flex; align-items: center; gap: 8px; padding: 0 6px 8px; }
+.nx-tp-side-head { display: flex; align-items: center; gap: var(--nx-sp-2); padding: 0 6px 8px; }
 .nx-tp-side-title {
   font-size: .74rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
   color: var(--text-muted);
 }
+/* Legacy alias of .nx-btn.is-icon.is-quiet (00-tokens.css). */
 .nx-tp-icon {
-  display: inline-flex; padding: 4px; border-radius: 6px;
-  color: var(--text-faint); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h); padding: 0;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
 }
-.nx-tp-icon:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-tp-icon:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
 .nx-tp-icon .svg-icon { width: 15px; height: 15px; }
 .nx-tp-side-head .nx-tp-icon { margin-left: auto; }
 
+/* Legacy alias of .nx-row (00-tokens.css). */
 .nx-tp-all {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border-radius: 9px; cursor: pointer;
-  color: var(--text-normal);
+  display: flex; align-items: center; gap: var(--nx-ctl-gap);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  border-radius: var(--nx-r-tile); cursor: pointer;
+  color: var(--nx-fg, var(--text-normal));
 }
-.nx-tp-all:hover { background: var(--background-modifier-hover); }
-.nx-tp-all.is-active { background: var(--background-modifier-hover); font-weight: 600; }
+.nx-tp-all:hover { background: var(--nx-sf-1); }
+.nx-tp-all.is-active { background: var(--nx-sf-1); font-weight: 600; }
 .nx-tp-all-ic { display: inline-flex; color: var(--text-faint); }
 .nx-tp-all-ic .svg-icon { width: 15px; height: 15px; }
 .nx-tp-all-t { flex: 1; }
 .nx-tp-count {
   font-size: .74em; font-variant-numeric: tabular-nums;
-  padding: 1px 7px; border-radius: 999px;
-  color: var(--text-muted); background: var(--background-modifier-border);
+  padding: 1px 7px; border-radius: var(--nx-r-pill);
+  color: var(--text-muted); background: var(--nx-sf-2);
 }
 
 .nx-tp-tree { display: flex; flex-direction: column; gap: 6px; }
-.nx-tp-fam { display: flex; flex-direction: column; gap: 1px; border-radius: 14px; }
-.nx-tp-fam.is-open { padding-bottom: 6px; background: var(--background-modifier-hover); }
+.nx-tp-fam { display: flex; flex-direction: column; gap: 1px; border-radius: var(--nx-radius); }
+.nx-tp-fam.is-open { padding-bottom: 6px; background: var(--nx-sf-1); }
 
 /* root project card */
 .nx-tp-card {
   position: relative;
-  height: 74px; border-radius: 13px; overflow: hidden; cursor: pointer;
+  height: 74px; border-radius: var(--nx-radius); overflow: hidden; cursor: pointer;
   display: flex; flex-direction: column; justify-content: flex-end;
   padding: 9px 11px;
   background: color-mix(in srgb, var(--nx-tp-color) 16%, var(--background-primary));
-  border: 1px solid var(--background-modifier-border);
+  border: var(--nx-hairline);
 }
 .nx-tp-card.has-img::before {
   content: ''; position: absolute; inset: 0;
@@ -78,7 +89,7 @@
 .nx-tp-card.is-active { border-color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent); }
 .nx-tp-card-stripe {
   position: absolute; z-index: 1; left: 9px; top: 9px;
-  width: 4px; height: 22px; border-radius: 3px;
+  width: 4px; height: 22px; border-radius: var(--nx-r-pill);
   background: var(--nx-tp-color);
 }
 .nx-tp-card-title {
@@ -89,38 +100,50 @@
 .nx-tp-card-count {
   position: absolute; z-index: 1; right: 11px; top: 9px;
   font-size: .76em; font-variant-numeric: tabular-nums;
-  padding: 1px 8px; border-radius: 999px;
+  padding: 1px 8px; border-radius: var(--nx-r-pill);
   color: var(--text-muted); background: color-mix(in srgb, var(--background-primary) 70%, transparent);
 }
 .nx-tp-card.has-img .nx-tp-card-count { background: rgba(0, 0, 0, .45); }
+/* Legacy alias of .nx-btn.is-icon.is-sm — sits on a project image, so it keeps
+   a scrim instead of the flat surface token. */
 .nx-tp-chev {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
   position: absolute; z-index: 2; right: 8px; bottom: 7px;
-  display: inline-flex; padding: 3px; border-radius: 7px;
-  color: var(--text-muted); background: color-mix(in srgb, var(--background-primary) 70%, transparent);
+  border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
+  background: color-mix(in srgb, var(--background-primary) 70%, transparent);
 }
 .nx-tp-card.has-img .nx-tp-chev { color: #fff; background: rgba(0, 0, 0, .45); }
 .nx-tp-chev .svg-icon { width: 13px; height: 13px; }
 
 /* subproject row */
+/* Legacy alias of .nx-row (00-tokens.css) — a subproject, indented by depth. */
 .nx-tp-sub {
-  display: flex; align-items: center; gap: 6px;
-  margin: 0 6px; padding: 5px 8px;
-  padding-left: calc(6px + var(--nx-tp-depth, 1) * 10px);
-  border-radius: 8px; cursor: pointer; font-size: .92em;
+  display: flex; align-items: center; gap: var(--nx-ctl-gap);
+  margin: 0 var(--nx-ctl-gap);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  padding-left: calc(var(--nx-ctl-gap) + var(--nx-tp-depth, 1) * 10px);
+  border-radius: var(--nx-r-tile); cursor: pointer; font-size: .92em;
 }
-.nx-tp-sub:hover { background: var(--background-modifier-border); }
+.nx-tp-sub:hover { background: var(--nx-sf-2); }
 .nx-tp-sub.is-active { background: color-mix(in srgb, var(--interactive-accent) 22%, transparent); font-weight: 600; }
 .nx-tp-subchev { display: inline-flex; width: 14px; color: var(--text-faint); }
 .nx-tp-subchev .svg-icon { width: 12px; height: 12px; }
-.nx-tp-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--nx-tp-color); }
+.nx-tp-dot { flex: none; width: 7px; height: 7px; border-radius: var(--nx-r-circle); background: var(--nx-tp-color); }
 .nx-tp-sub-t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── main: header + list ── */
 .nx-tp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .nx-tp-head {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--nx-sp-2) var(--nx-sp-3);
   padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--nx-hairline);
 }
 .nx-tp-title {
   font-family: var(--font-text, inherit);
@@ -129,19 +152,31 @@
 }
 .nx-tp-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .nx-tp-seg {
-  display: inline-flex; padding: 2px; gap: 2px;
-  border-radius: 8px; background: var(--background-modifier-hover);
+  display: inline-flex; height: var(--nx-ctl-h); padding: var(--nx-bw); gap: var(--nx-bw);
+  border-radius: var(--nx-r-tile); background: var(--nx-sf-1);
 }
+/* Legacy alias of .nx-btn.is-sm.is-quiet — one half of a segmented control. */
 .nx-tp-segbtn {
-  padding: 3px 11px; border-radius: 6px; cursor: pointer;
-  font-size: .8em; color: var(--text-muted);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
+  height: 100%;
 }
-.nx-tp-segbtn:hover { color: var(--text-normal); }
-.nx-tp-segbtn.is-active { color: var(--text-on-accent); background: var(--interactive-accent); }
+.nx-tp-segbtn:hover { color: var(--nx-fg, var(--text-normal)); }
+.nx-tp-segbtn.is-active { color: var(--nx-on-accent, var(--text-on-accent)); background: var(--nx-accent, var(--interactive-accent)); }
+/* Legacy alias of .nx-input (00-tokens.css). A <select> sizes to its longest
+   option, so it keeps an automatic width — --nx-field-w would leave a hole in
+   the tool row. */
 .nx-tp-select {
-  font-size: .8em; padding: 3px 6px; border-radius: 7px;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-modifier-form-field); color: var(--text-normal);
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--background-modifier-form-field);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); box-shadow: none;
 }
 .nx-tp-icon.is-spinning .svg-icon { animation: nx-tp-spin 1s linear infinite; }
 @keyframes nx-tp-spin { to { transform: rotate(360deg); } }
@@ -149,7 +184,7 @@
 .nx-tp-list { flex: 1; overflow-y: auto; padding: 8px 20px 12px; }
 .nx-tp-empty { padding: 18px 2px; color: var(--text-faint); font-size: .9em; }
 .nx-tp-group {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: var(--nx-sp-2);
   margin: 14px 0 4px; cursor: pointer;
   font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
   color: var(--text-muted);
@@ -157,13 +192,15 @@
 .nx-tp-group:first-child { margin-top: 2px; }
 .nx-tp-group:hover { color: var(--text-normal); }
 
+/* Legacy alias of .nx-row (00-tokens.css) — one task. */
 .nx-tp-task {
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 7px 8px; margin: 0 -8px;
-  border-radius: 8px; cursor: pointer;
-  border-bottom: 1px solid var(--background-modifier-border-hover, transparent);
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  margin: 0 calc(-1 * var(--nx-sp-2));
+  border-radius: var(--nx-r-tile); cursor: pointer;
 }
-.nx-tp-task:hover { background: var(--background-modifier-hover); }
+.nx-tp-task:hover { background: var(--nx-sf-1); }
 .nx-tp-check { flex: none; align-self: center; margin: 0; cursor: pointer; }
 .nx-tp-body { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 10px; }
 .nx-tp-t { color: var(--text-normal); }
@@ -177,32 +214,37 @@
 .nx-tp-prio.is-high { color: var(--text-error, #e5534b); }
 .nx-tp-prio.is-medium { color: var(--text-warning, #d29922); }
 .nx-tp-chip {
-  font-size: .92em; padding: 0 7px; border-radius: 999px;
-  color: var(--text-muted); background: var(--background-modifier-hover);
+  font-size: .92em; padding: 0 7px; border-radius: var(--nx-r-pill);
+  color: var(--text-muted); background: var(--nx-sf-1);
 }
 .nx-tp-pending { font-style: italic; }
 
 /* new-task line */
 .nx-tp-new {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: var(--nx-sp-2);
   padding: 10px 20px 14px;
-  border-top: 1px solid var(--background-modifier-border);
+  border-top: var(--nx-hairline);
 }
 .nx-tp-new-ic { display: inline-flex; color: var(--text-faint); }
 .nx-tp-new-ic .svg-icon { width: 15px; height: 15px; }
+/* Legacy alias of .nx-input.is-grow (00-tokens.css) — the new-task line owns
+   its whole row. */
 .nx-tp-new-input {
-  flex: 1; padding: 6px 12px; font-size: .92em;
-  border-radius: 8px; border: 1px solid var(--background-modifier-border);
-  background: var(--background-modifier-form-field); color: var(--text-normal);
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--background-modifier-form-field);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); box-shadow: none;
+  flex: 1; width: 100%; min-width: 0;
 }
-.nx-tp-new-input:focus { border-color: var(--interactive-accent); outline: none; }
+.nx-tp-new-input:focus { border-color: var(--nx-accent, var(--interactive-accent)); outline: none; }
 
 /* ── narrow: tree above the list ── */
 @media (max-width: 760px) {
   .nx-tp { flex-direction: column; overflow-y: auto; }
   .nx-tp-side {
     width: auto; max-height: 40vh;
-    border-right: none; border-bottom: 1px solid var(--background-modifier-border);
+    border-right: none; border-bottom: var(--nx-hairline);
   }
   .nx-tp-head { padding: 12px 14px 10px; }
   .nx-tp-list { padding: 8px 14px 12px; }
@@ -214,17 +256,11 @@
 @media (max-width: 620px) {
   .nx-tp-side { max-height: 32vh; padding: 10px 8px 12px; }
   .nx-tp-card { height: 62px; }
-  .nx-tp-sub { padding-top: 8px; padding-bottom: 8px; }
-  .nx-tp-all { padding: 9px 10px; }
-  .nx-tp-icon { padding: 7px; }
+
   /* Title on its own line, controls below — otherwise the segmented control
      and the sort dropdown squeeze the project name to two characters. */
   .nx-tp-title { width: 100%; font-size: 1.2em; }
   .nx-tp-tools { margin-left: 0; flex-wrap: wrap; }
-  .nx-tp-segbtn { padding: 6px 13px; }
-  .nx-tp-select { padding: 6px 8px; }
-  .nx-tp-task { padding: 10px 8px; }
-  .nx-tp-new-input { padding: 9px 12px; }
 }
 
 /* A task that IS a note, rather than a task note standing in for one. */

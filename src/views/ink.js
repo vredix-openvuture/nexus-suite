@@ -2,164 +2,181 @@
 
 /* ============================================================================
  *  NEXUS SUITE · views · ink capture
- *  Ink-capture gallery view + tag modal.
+ *  The Ink tab of the capture hub — its adapter: which notes count as a
+ *  capture, what a scan's tile shows, which files one is made of, and the
+ *  verbs and card actions only a scan has.
+ *
+ *  The writes those actions perform live in lib/inkactions.js.
+ *
+ *  The gallery that used to live here IS the hub now (views/capturehub.js).
+ *  What stayed behind is the part that is genuinely about ink: which notes
+ *  count as a capture, what a scan's tile shows, and which files a capture is
+ *  actually made of, because deleting or moving one has to take them along.
  * ========================================================================== */
 
-const { ItemView, Modal, moment, setIcon } = require('obsidian');
-const { IMG_EXT, INK_VIEW } = require('../constants.js');
-const { nxMultiRow } = require('../lib/inputs.js');
+const { setIcon } = require('obsidian');
+const { IMG_EXT } = require('../constants.js');
+const capture = require('../lib/capture.js');
+const inkpages = require('../lib/inkpages.js');
+const actions = require('../lib/inkactions.js');
+const { NexusInkTagModal, NexusInkPagesModal } = require('../modals/capture.js');
 
-class NexusInkGalleryView extends ItemView {
-  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; }
-  getViewType() { return INK_VIEW; }
-  getDisplayText() { return 'Ink Capture'; }
-  getIcon() { return 'camera'; }
+/* The Ink adapter. See capturehub.js for the methods every tab answers. */
+function inkAdapter(plugin) {
+  const app = plugin.app;
+  const fmOf = (f) => ((app.metadataCache.getFileCache(f) || {}).frontmatter || null);
+  return {
+    id: 'ink', label: 'Ink', icon: 'camera', layout: 'grid',
+    one: 'scan', many: 'scans',
+    empty: 'No scans yet — hit Capture to add your first one.',
 
-  async onOpen() {
-    this.render();
-    this.registerEvent(this.app.metadataCache.on('changed', () => this._debounced()));
-    this.registerEvent(this.app.vault.on('create', () => this._debounced()));
-    this.registerEvent(this.app.vault.on('delete', () => this._debounced()));
-    this.registerEvent(this.app.vault.on('rename', () => this._debounced()));
-  }
-  _debounced() { window.clearTimeout(this._t); this._t = window.setTimeout(() => this.render(), 400); }
+    async list() {
+      const showExcalidraw = !!(plugin.settings.inkCapture.excalidraw || {}).enabled;
+      return app.vault.getMarkdownFiles()
+        .filter(f => capture.isInkCapture(fmOf(f), showExcalidraw))
+        .map(f => capture.inkItem({
+          path: f.path, basename: f.basename,
+          ctime: f.stat ? f.stat.ctime : 0, frontmatter: fmOf(f),
+        }));
+    },
 
-  _captures() {
-    const showExcalidraw = this.plugin.settings.inkCapture.excalidraw.enabled;
-    return this.app.vault.getMarkdownFiles()
-      .map(f => ({ f, fm: (this.app.metadataCache.getFileCache(f) || {}).frontmatter || {} }))
-      .filter(x => x.fm['ink-source'] || (showExcalidraw && x.fm['excalidraw-plugin'] === 'parsed'))
-      .sort((a, b) => this._sortKey(b) - this._sortKey(a));
-  }
-  // created is 'YYYY-MM-DD_HH:mm' (older sidecars: ISO) — Date.parse can't
-  // read the underscore format, so parse via moment with both formats.
-  _sortKey(x) {
-    const m = x.fm.created && moment(x.fm.created, ['YYYY-MM-DD_HH:mm', moment.ISO_8601], true);
-    return m && m.isValid() ? m.valueOf() : x.f.stat.ctime;
-  }
+    tile(item, card) {
+      const cov = card.createDiv('nx-cap-cover');
+      // The thumb (PDF only) is a page-1 render cached at capture time; the
+      // file is the attachment itself. Either way this is PAGE ONE — whatever
+      // order the pages were put in, the tile shows the top of the stack.
+      const thumb = item.thumb && app.vault.getAbstractFileByPath(item.thumb);
+      const img = item.file && app.vault.getAbstractFileByPath(item.file);
+      const url = (f) => 'url("' + app.vault.getResourcePath(f).replace(/"/g, '\\"') + '")';
+      if (thumb) cov.style.setProperty('--img', url(thumb));
+      else if (img && IMG_EXT.includes(String(img.extension).toLowerCase())) cov.style.setProperty('--img', url(img));
+      else if (img) { cov.addClass('is-glyph'); setIcon(cov.createDiv('nx-cap-cover-icon'), 'file-text'); }
+      else if (item.excalidraw) { cov.addClass('is-glyph'); setIcon(cov.createDiv('nx-cap-cover-icon'), 'pencil-ruler'); }
+      else cov.addClass('is-missing');
+      if (item.source) cov.createDiv({ cls: 'nx-cap-badge', text: item.source });
+      if (item.pageCount > 1) cov.createDiv({ cls: 'nx-cap-badge is-pages', text: item.pageCount + ' pages' });
+      if (item.sketch) { const m = cov.createDiv('nx-cap-badge is-marked'); setIcon(m, 'pen-line'); m.setAttribute('aria-label', 'Annotated'); }
+      card.createDiv({ cls: 'nx-cap-title', text: item.title });
+      const tags = card.createDiv('nx-cap-chips');
+      item.tags.forEach(t => tags.createSpan({ cls: 'nx-cap-chip', text: t }));
+    },
 
-  _tile(grid, x) {
-    const { f, fm } = x;
-    const isExcalidraw = fm['excalidraw-plugin'] === 'parsed';
-    const source = isExcalidraw ? 'excalidraw' : (fm['ink-source'] || '');
-    const t = grid.createDiv('nx-ink-tile');
-    const cov = t.createDiv('nx-ink-tile-cover');
-    // ink-file holds the full vault path (attachment lives flat inside the
-    // capture folder, alongside the sidecar note) — see plugin._makeInkSidecar.
-    // ink-thumb (PDF only) is a cached page-1 render, generated once at
-    // capture time by _makeInkPdfThumb.
-    const imgFile = fm['ink-file'] && this.app.vault.getAbstractFileByPath(fm['ink-file']);
-    const thumbFile = fm['ink-thumb'] && this.app.vault.getAbstractFileByPath(fm['ink-thumb']);
-    if (thumbFile) {
-      cov.style.setProperty('--img', 'url("' + this.app.vault.getResourcePath(thumbFile).replace(/"/g, '\\"') + '")');
-    } else if (imgFile && IMG_EXT.includes(imgFile.extension.toLowerCase())) {
-      cov.style.setProperty('--img', 'url("' + this.app.vault.getResourcePath(imgFile).replace(/"/g, '\\"') + '")');
-    } else if (imgFile) {
-      cov.addClass('is-pdf');
-      setIcon(cov.createDiv('nx-ink-tile-icon'), 'file-text');
-    } else if (isExcalidraw) {
-      cov.addClass('is-excalidraw');
-      setIcon(cov.createDiv('nx-ink-tile-icon'), 'pencil-ruler');
-    } else {
-      cov.addClass('is-missing');
-    }
-    if (source) cov.createDiv({ cls: 'nx-ink-tile-source', text: source });
-    t.createDiv({ cls: 'nx-ink-tile-title', text: f.basename });
-    const tagsWrap = t.createDiv('nx-ink-tile-tags');
-    (Array.isArray(fm.tags) ? fm.tags : []).forEach(tag => tagsWrap.createSpan({ cls: 'nx-ink-tag-chip', text: String(tag) }));
-    const editBtn = t.createDiv('nx-ink-tile-edit');
-    setIcon(editBtn, 'tag');
-    editBtn.setAttribute('aria-label', 'Edit tags');
-    editBtn.onclick = (e) => { e.stopPropagation(); this._retag(f); };
-    t.onclick = () => this.app.workspace.getLeaf(false).openFile(f);
-    return t;
-  }
+    open(item) {
+      const f = app.vault.getAbstractFileByPath(item.path);
+      if (f) app.workspace.getLeaf(false).openFile(f);
+    },
 
-  async _retag(f) {
-    const res = await new NexusInkTagModal(this.app, f.basename).openAndGet();
-    if (!res) return;
-    await this.app.fileManager.processFrontMatter(f, fr => {
-      // Baseline tags survive any retag: 'scribble' marks every ink capture,
-      // and 'excalidraw' is load-bearing for the excalidraw plugin's own
-      // file recognition — replacing tags wholesale used to drop both.
-      const keep = fr['ink-source'] ? ['scribble'] : (fr['excalidraw-plugin'] ? ['excalidraw'] : []);
-      fr.tags = Array.from(new Set([...keep, ...(res.tags || [])]));
-      if (res.note) fr.note = res.note;
-    });
-    if (res.name && res.name !== f.basename) await this.plugin._renameInkSidecar(f, res.name);
-  }
+    /* Every file this capture is made of — the note and every page with its
+       cached render. The sidecar alone would leave the scans behind as orphans
+       nothing links to any more, and a move that took only the note would do
+       the same thing without even calling it a delete. */
+    remove(item) {
+      const files = inkpages.captureFiles(item);
+      // The annotated copy belongs to this capture — leaving it behind puts an
+      // orphan on the Sketch tab whose "back to the note" points at a note in
+      // the trash.
+      if (item.sketch) files.push(plugin._sketchPath(item.sketch));
+      return files;
+    },
 
-  render() {
-    const root = this.contentEl;
-    root.empty();
-    root.addClass('nx-ink-gallery');
-    const inner = root.createDiv('nx-ink-gallery-inner');
-    const head = inner.createDiv('nx-ink-gallery-head');
-    head.createEl('h2', { text: 'Ink Capture' });
-    const cap = head.createEl('button', { cls: 'mod-cta', text: '+ Capture' });
-    cap.onclick = () => this.plugin.captureScan();
+    /* Two verbs of its own. Reading is a bulk job — the difference between a
+       folder of pictures and an archive you can search. Merging needs at least
+       two, which is what `min` is for; the hub hides it below that rather than
+       offering a button that cannot work. */
+    verbs: [
+      {
+        id: 'ocr', label: 'Read', icon: 'scan-text', min: 1,
+        available: () => plugin.ocrAvailable() && !!(plugin.settings.quicksketch.ocr || {}).command,
+        async run(items, notice) {
+          let done = 0, partial = 0;
+          const failed = [];
+          for (let i = 0; i < items.length; i++) {
+            notice('Reading ' + (i + 1) + ' of ' + items.length + ' …');
+            try {
+              const res = await plugin.ocrInkCapture(items[i]);
+              if (res.lines) done++;
+              if (res.partial) partial++;
+            } catch (err) {
+              failed.push(items[i].title + ': ' + (err && err.message ? err.message : err));
+            }
+          }
+          return { done, failed, note: partial ? partial + ' PDF' + (partial === 1 ? '' : 's') + ': first page only' : '' };
+        },
+      },
+      {
+        id: 'merge', label: 'Merge', icon: 'combine', min: 2,
+        async run(items, notice) {
+          notice('Merging ' + items.length + ' scans …');
+          const res = await actions.mergeCaptures(plugin, items);
+          return { done: res.done, failed: res.failed, note: 'one capture of ' + res.pages + ' pages' };
+        },
+      },
+    ],
 
-    const items = this._captures();
-    const grid = inner.createDiv('nx-ink-gallery-grid');
-    if (!items.length) {
-      grid.createDiv({ cls: 'nx-ink-gallery-empty', text: 'No scans yet — hit Capture to add your first one.' });
-      return;
-    }
-    items.forEach(x => this._tile(grid, x));
-  }
+    /* renameFile rewrote the `![[ink-…]]` embeds; it cannot know that
+       ink-file, ink-thumb and ink-pages are paths too. Without this a moved
+       capture points at where its scans used to be. */
+    async moved(moves) {
+      const byNote = new Map();
+      for (const { item, from, to } of moves) {
+        if (!byNote.has(item.path)) byNote.set(item.path, { item, map: {} });
+        byNote.get(item.path).map[from] = to;
+      }
+      for (const { item, map } of byNote.values()) {
+        const notePath = map[item.path] || item.path;
+        const note = app.vault.getAbstractFileByPath(notePath);
+        if (!note) continue;
+        await app.fileManager.processFrontMatter(note, fr =>
+          inkpages.writePages(fr, inkpages.remapPages(item.pages, map)));
+      }
+    },
+
+    /* On the tile, because both act on ONE capture and neither is worth
+       entering select mode for. */
+    quick(item) {
+      // An excalidraw drawing is surfaced here, not owned here: giving it
+      // ink-file or a pad of its own would turn it into something it is not.
+      if (item.excalidraw) return [];
+      return [
+        { icon: 'pen-line', label: item.sketch ? 'Open the annotated copy' : 'Annotate this scan', run: () => actions.markCapture(plugin, item) },
+        { icon: 'layers', label: 'Pages', run: async () => {
+          const res = await new NexusInkPagesModal(app, item, async () => {
+            const files = await actions.pickFiles('image/*,application/pdf');
+            return files.length ? actions.addPagesFrom(plugin, item, files) : [];
+          }).openAndGet();
+          if (!res.pages) { await actions.discardPages(plugin, res.added); return res.added.length > 0; }
+          await actions.savePages(plugin, item, res.pages);
+          return true;
+        } },
+      ];
+    },
+
+    async retag(items) {
+      const single = items.length === 1 ? items[0] : null;
+      const res = await new NexusInkTagModal(app, single ? single.title : '', { count: items.length }).openAndGet();
+      if (!res) return false;
+      for (const item of items) {
+        const f = app.vault.getAbstractFileByPath(item.path);
+        if (!f) continue;
+        await app.fileManager.processFrontMatter(f, fr => {
+          // Baseline tags survive any retag: 'scribble' marks every ink
+          // capture, and 'excalidraw' is load-bearing for the excalidraw
+          // plugin's own file recognition — replacing tags wholesale dropped
+          // both. A bulk retag ADDS instead of replacing, because one dialog
+          // cannot know what the other twenty notes already carry.
+          const keep = fr['ink-source'] ? ['scribble'] : (fr['excalidraw-plugin'] ? ['excalidraw'] : []);
+          const base = single ? [] : capture.tagList(fr.tags);
+          fr.tags = Array.from(new Set([].concat(keep, base, res.tags || [])));
+          if (res.note && single) fr.note = res.note;
+        });
+      }
+      if (single && res.name && res.name !== single.title) {
+        const f = app.vault.getAbstractFileByPath(single.path);
+        if (f) await plugin._renameInkSidecar(f, res.name);
+      }
+      return true;
+    },
+  };
 }
 
-/* Ink Capture: tag dialog shown right after a button-triggered scan (never for
-   sidecars the inbox watcher creates on its own — see _onInkVaultCreate, which
-   keeps the "just drop a file in" path free of popups). Tags field reuses the
-   same nxMultiRow + autocomplete idiom as the property-filter tag fields
-   elsewhere. Skip/Esc leaves tags empty — always addable later from the gallery. */
-class NexusInkTagModal extends Modal {
-  constructor(app, initialName) { super(app); this.result = null; this._tagsStr = ''; this.initialName = initialName || ''; }
-  _allTags() {
-    const t = this.app.metadataCache.getTags ? this.app.metadataCache.getTags() : {};
-    return Object.keys(t).map(x => x.replace(/^#/, '')).sort((a, b) => a.localeCompare(b));
-  }
-  openAndGet() { return new Promise(res => { this._resolve = res; this.open(); }); }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.createEl('h3', { text: 'Tag this scan' });
-    const nameInp = contentEl.createEl('input', { type: 'text', placeholder: 'Name (optional)' });
-    nameInp.value = this.initialName;
-    nameInp.style.width = '100%'; nameInp.style.marginBottom = '10px';
-    nxMultiRow(contentEl, 'Tags', 'One tag per line', '', ',', 'e.g. journal', v => { this._tagsStr = v; }, () => this._allTags());
-    const noteInp = contentEl.createEl('input', { type: 'text', placeholder: 'Short note (optional)' });
-    noteInp.style.width = '100%'; noteInp.style.marginTop = '10px';
-    const commit = () => {
-      const tags = this._tagsStr.split(',').map(s => s.trim()).filter(Boolean);
-      this.result = { tags, note: noteInp.value.trim(), name: nameInp.value.trim() };
-      this.close();
-    };
-    // Renaming the sidecar (see plugin._renameInkSidecar) never touches the
-    // attachment — that keeps its own id-based filename, which is the whole
-    // point of the id frontmatter: the display name stops being load-bearing.
-    nameInp.addEventListener('keydown', e => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      const firstTag = contentEl.querySelector('.nx-multirow-input');
-      if (firstTag) firstTag.focus();
-    });
-    noteInp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
-    const row = contentEl.createDiv();
-    row.style.marginTop = '14px'; row.style.textAlign = 'right';
-    const skip = row.createEl('button', { text: 'Skip' });
-    skip.onclick = () => this.close();
-    const ok = row.createEl('button', { text: 'Save', cls: 'mod-cta' });
-    ok.style.marginLeft = '8px';
-    ok.onclick = commit;
-    window.setTimeout(() => { nameInp.focus(); nameInp.select(); }, 0);
-  }
-  onClose() { this.contentEl.empty(); if (this._resolve) { this._resolve(this.result); this._resolve = null; } }
-}
-
-/* Timer's done popup: its own window with the line "X-minute timer finished."
-   and a (editable in edit mode) message below. If a break timer is set
-   (pauseSec > 0), the window stays locked (no closing via OK/Esc/click-outside)
-   until the break has elapsed. */
-
-module.exports = { NexusInkGalleryView, NexusInkTagModal };
+module.exports = { inkAdapter, NexusInkTagModal };

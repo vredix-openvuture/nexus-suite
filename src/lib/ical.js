@@ -2,9 +2,11 @@
 
 /* ============================================================================
  *  NEXUS SUITE · lib · iCalendar (RFC 5545)
- *  Dependency-free parser + serializer for VEVENT / VTODO. Runs on BOTH
- *  platforms (desktop parses server ICS; mobile re-parses nothing — it reads
- *  the normalized cache — but the same code powers local-calendar editing).
+ *  Dependency-free parser for VEVENT / VTODO. Only parseWhen and whenToMoment
+ *  have callers (recur.js, calstore.js) — the component parser below them has
+ *  had none since CalDAV was removed and is kept, unused, as the ready-made
+ *  reader for an .ics blob. The serializer half went with the CalDAV write
+ *  path; see docs/removed-features.md.
  *
  *  Logic ported/adapted from velumeron's caldav-client.py (the reference
  *  implementation) but reimplemented in JS so the plugin stays self-contained.
@@ -60,14 +62,10 @@ function unescapeText(v) {
   return String(v == null ? '' : v)
     .replace(/\\n/gi, '\n').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\');
 }
-function escapeText(v) {
-  return String(v == null ? '' : v)
-    .replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
-}
 
 /* ── Build the component tree from logical lines. Each component keeps its
  *  props (in order) and child components; top-level VEVENT/VTODO keep `raw`
- *  (the original lines) for lossless re-PUT. ── */
+ *  (the original lines) so nothing is lost on a round trip. ── */
 function parse(text) {
   const lines = unfold(text);
   let idx = 0;
@@ -176,7 +174,7 @@ function normalizeTodo(vt) {
   };
 }
 
-/* ── Split a raw ICS blob (one CalDAV resource) into its components ── */
+/* ── Split a raw ICS blob into its components ── */
 function parseResource(text) {
   const roots = parse(text);
   const out = { vevents: [], vtodos: [], vtimezones: [] };
@@ -192,64 +190,9 @@ function parseResource(text) {
   return out;
 }
 
-/* ── Serializer (for local events → ICS, and re-PUT in M2) ── */
-function foldLine(line) {
-  // fold at 75 octets (approx by chars — fine for our own ASCII-ish output)
-  if (line.length <= 75) return line;
-  const chunks = [];
-  let s = line;
-  chunks.push(s.slice(0, 75));
-  s = s.slice(75);
-  while (s.length) { chunks.push(' ' + s.slice(0, 74)); s = s.slice(74); }
-  return chunks.join('\r\n');
-}
-function whenProp(name, when) {
-  if (!when) return null;
-  if (when.d) return `${name};VALUE=DATE:${when.d.replace(/-/g, '')}`;
-  const base = when.dt.replace(/[-:]/g, '');
-  if (when.utc) return `${name}:${base}Z`;
-  if (when.tzid) return `${name};TZID=${when.tzid}:${base}`;
-  return `${name}:${base}`;
-}
-function nowStamp(moment) { return moment.utc().format('YYYYMMDDTHHmmss') + 'Z'; }
-
-function serializeEvent(ev, moment) {
-  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Nexus Suite//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT'];
-  L.push('UID:' + (ev.uid || ('nx-' + Date.now())));
-  L.push('DTSTAMP:' + nowStamp(moment));
-  const s = whenProp('DTSTART', ev.start); if (s) L.push(s);
-  const e = whenProp('DTEND', ev.end); if (e) L.push(e);
-  L.push('SUMMARY:' + escapeText(ev.summary || ''));
-  if (ev.location) L.push('LOCATION:' + escapeText(ev.location));
-  if (ev.description) L.push('DESCRIPTION:' + escapeText(ev.description));
-  if (ev.status) L.push('STATUS:' + ev.status);
-  if (ev.rrule) L.push('RRULE:' + ev.rrule);
-  (ev.exdate || []).forEach(x => { const p = whenProp('EXDATE', x); if (p) L.push(p); });
-  L.push('END:VEVENT', 'END:VCALENDAR');
-  return L.map(foldLine).join('\r\n') + '\r\n';
-}
-
-/* ── Serialize a VTODO (canonical task → ICS) for CalDAV PUT ── */
-function serializeTodo(task, moment) {
-  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Nexus Suite//EN', 'CALSCALE:GREGORIAN', 'BEGIN:VTODO'];
-  L.push('UID:' + (task.uid || ('nx-' + Date.now())));
-  L.push('DTSTAMP:' + nowStamp(moment));
-  L.push('SUMMARY:' + escapeText(task.title || ''));
-  if (task.description) L.push('DESCRIPTION:' + escapeText(task.description));
-  if (task.due) L.push('DUE;VALUE=DATE:' + String(task.due).slice(0, 10).replace(/-/g, ''));
-  L.push('STATUS:' + (task.done ? 'COMPLETED' : 'NEEDS-ACTION'));
-  L.push('PERCENT-COMPLETE:' + (task.done ? 100 : 0));
-  if (task.priority) L.push('PRIORITY:' + task.priority);
-  if (task.repeat) L.push('RRULE:' + task.repeat);
-  if (task.done) L.push('COMPLETED:' + nowStamp(moment));
-  L.push('SEQUENCE:' + (task.sequence != null ? task.sequence : 0));
-  L.push('END:VTODO', 'END:VCALENDAR');
-  return L.map(foldLine).join('\r\n') + '\r\n';
-}
-
 module.exports = {
   unfold, parseLine, parse, parseResource,
   normalizeEvent, normalizeTodo,
   parseWhen, whenToMoment,
-  escapeText, unescapeText, serializeEvent, serializeTodo, foldLine,
+  unescapeText,
 };

@@ -1,0 +1,324 @@
+<!doctype html><html><head><meta charset="utf-8"><title>ink vault harness</title><style>body{margin:0;background:#141414;color:#ddd;font:13px/1.5 ui-monospace;padding:16px}</style>
+</head><body>
+<!-- The pure layer is proved in capture.html. THIS page proves the part that
+     touches the vault: marking a scan, saving a page list, merging two
+     captures and moving one. The vault is a plain object of path -> text, so
+     "what ended up on disk" is something the test can read back — which is the
+     only way a delete that strands an attachment, or a move that leaves the
+     frontmatter pointing at nowhere, ever shows up before a user finds it. -->
+<pre id="out">running…</pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out=[];let pass=0,fail=0;
+function ok(n,c,d){if(c){pass++;out.push('PASS  '+n);}else{fail++;out.push('FAIL  '+n+(d?'  →  '+d:''));}}
+function eq(n,g,w){const a=JSON.stringify(g),b=JSON.stringify(w);ok(n,a===b,'got '+a+' want '+b);}
+
+// ── a fake vault: files by path, frontmatter parsed out of the note text ──
+function makeVault(files){
+  const trashed=[], notices=[];
+  const F=(p)=>({path:p,get basename(){return p.split('/').pop().replace(/\.[^.]+$/,'');},
+                 get extension(){return (p.split('.').pop()||'');},
+                 get parent(){const d=p.slice(0,p.lastIndexOf('/'));return {path:d,name:d.split('/').pop(),
+                   get children(){return Object.keys(files).filter(x=>x.startsWith(d+'/')&&x.slice(d.length+1).indexOf('/')<0).map(F);}};},
+                 stat:{ctime:1,mtime:1}});
+  const app={
+    vault:{
+      getAbstractFileByPath:(p)=>Object.prototype.hasOwnProperty.call(files,p)?F(p):null,
+      read:async(f)=>files[f.path],
+      modify:async(f,t)=>{files[f.path]=t;},
+      readBinary:async(f)=>new TextEncoder().encode(String(files[f.path])).buffer,
+      createBinary:async(p,b)=>{files[p]='<binary>';},
+      create:async(p,t)=>{files[p]=t;return F(p);},
+      getResourcePath:(f)=>'app://'+f.path,
+    },
+    fileManager:{
+      async processFrontMatter(f,fn){
+        const t=files[f.path]||'';
+        const m=/^---\n([\s\S]*?)\n---\n?/.exec(t);
+        const fm=m?JSON.parse(m[1]):{};
+        fn(fm);
+        files[f.path]='---\n'+JSON.stringify(fm)+'\n---\n'+(m?t.slice(m[0].length):t);
+      },
+      async renameFile(f,dest){ files[dest]=files[f.path]; delete files[f.path]; },
+      async trashFile(f){ trashed.push(f.path); delete files[f.path]; },
+    },
+  };
+  return {app,files,trashed,notices};
+}
+function fmOf(files,p){const m=/^---\n([\s\S]*?)\n---\n?/.exec(files[p]||'');return m?JSON.parse(m[1]):{};}
+function bodyOf(files,p){const t=files[p]||'';const m=/^---\n[\s\S]*?\n---\n?/.exec(t);return m?t.slice(m[0].length):t;}
+
+const C=window.captureLib,P=window.inkPagesLib,V=window.inkView;
+// The writes live in lib/inkactions.js; the adapter that offers them in views/ink.js.
+const A=window.inkActions;
+
+(async () => {
+try {
+// ── mark it ───────────────────────────────────────────────────────────────
+{
+  const files={
+    'Inbox/Paper/Lease/Lease.md':'---\n{"ink-source":"paper","ink-file":"Inbox/Paper/Lease/ink-a.png"}\n---\n![[ink-a.png]]\nmy own note\n',
+    'Inbox/Paper/Lease/ink-a.png':'PIXELS',
+  };
+  const v=makeVault(files);
+  let saved=null,opened=null;
+  const plugin={app:v.app,settings:{quicksketch:{enabled:true}},_sketchPath:(id)=>'Inbox/Quicksketch/'+id+'.svg',
+    saveSketch:async(id,svg)=>{saved={id,svg};files['Inbox/Quicksketch/'+id+'.svg']=svg;},
+    openSketchInSplit:(id,side,note)=>{opened={id,side,note};}};
+  const item=C.inkItem({path:'Inbox/Paper/Lease/Lease.md',basename:'Lease',frontmatter:fmOf(files,'Inbox/Paper/Lease/Lease.md')});
+  const grew=await A.markCapture(plugin,item);
+  ok('mark · it reports that something was written',grew===true);
+  ok('mark · a sketch sidecar was saved',!!saved&&saved.svg.indexOf('<svg')===0);
+  const parsed=window.parseSketchSVG(saved.svg);
+  ok('mark · with the scan on it, locked',parsed.objects[0].kind==='image'&&parsed.objects[0].locked===true);
+  ok('mark · the pad opened next to the capture note',opened.note==='Inbox/Paper/Lease/Lease.md'&&opened.id===saved.id);
+  eq('mark · the capture points at it',fmOf(files,'Inbox/Paper/Lease/Lease.md')['ink-sketch'],saved.id);
+  ok('mark · and its body carries the pad',bodyOf(files,'Inbox/Paper/Lease/Lease.md').indexOf('```quicksketch')>0);
+  ok('mark · what the user wrote survived',files['Inbox/Paper/Lease/Lease.md'].indexOf('my own note')>0);
+
+  // Marking again must reopen, not write a second sketch.
+  const again=C.inkItem({path:'Inbox/Paper/Lease/Lease.md',basename:'Lease',frontmatter:fmOf(files,'Inbox/Paper/Lease/Lease.md')});
+  const firstId=saved.id; saved=null;
+  const grew2=await A.markCapture(plugin,again);
+  ok('mark · marking again writes nothing',grew2===false&&saved===null);
+  eq('mark · and reopens the same sketch',opened.id,firstId);
+}
+// ── a PDF says what it can do ─────────────────────────────────────────────
+{
+  const files={'C/C.md':'---\n{"ink-source":"paper","ink-file":"C/ink-a.pdf"}\n---\n'};
+  const v=makeVault(files);
+  const plugin={app:v.app,settings:{quicksketch:{enabled:true}},_sketchPath:(id)=>'S/'+id+'.svg',saveSketch:async()=>{},openSketchInSplit:()=>{}};
+  const item=C.inkItem({path:'C/C.md',basename:'C',frontmatter:fmOf(files,'C/C.md')});
+  let msg='';
+  try{await A.markCapture(plugin,item);}catch(e){msg=e.message;}
+  ok('mark · a PDF with no cached page says so instead of guessing',/cached first page/.test(msg),msg);
+
+  // The pad IS Quick Sketch; with it off the write would land in a folder that
+  // was never created.
+  const off={app:v.app,settings:{quicksketch:{enabled:false}},_sketchPath:(id)=>'S/'+id+'.svg',saveSketch:async()=>{},openSketchInSplit:()=>{}};
+  let msg2='';
+  try{await A.markCapture(off,item);}catch(e){msg2=e.message;}
+  ok('mark · with Quick Sketch switched off it names the switch',/Quick Sketch/.test(msg2),msg2);
+}
+// ── pages: save the list, embed the new ones, trash what was dropped ──────
+{
+  const files={
+    'Cap/Cap.md':'---\n{"ink-source":"paper","ink-file":"Cap/ink-a.png","ink-thumb":"Cap/ink-a.thumb.png"}\n---\n![[ink-a.png]]\n',
+    'Cap/ink-a.png':'A','Cap/ink-a.thumb.png':'AT','Cap/ink-b.png':'B',
+  };
+  const v=makeVault(files);
+  const plugin={app:v.app};
+  const item=C.inkItem({path:'Cap/Cap.md',basename:'Cap',frontmatter:fmOf(files,'Cap/Cap.md')});
+  await A.savePages(plugin,item,[P.page('Cap/ink-a.png','Cap/ink-a.thumb.png'),P.page('Cap/ink-b.png')]);
+  const fm=fmOf(files,'Cap/Cap.md');
+  eq('pages · the list is written',fm['ink-pages'].length,2);
+  eq('pages · page one still stands alone for an older reader',fm['ink-file'],'Cap/ink-a.png');
+  ok('pages · the new page is embedded in the body',bodyOf(files,'Cap/Cap.md').indexOf('![[ink-b.png]]')>0);
+  eq('pages · nothing was trashed',v.trashed,[]);
+
+  // Drop page one. Its file AND its cached render go with it.
+  const two=C.inkItem({path:'Cap/Cap.md',basename:'Cap',frontmatter:fmOf(files,'Cap/Cap.md')});
+  await A.savePages(plugin,two,P.dropPage(two.pages,0));
+  eq('pages · the dropped page takes its file and its render',v.trashed.sort(),['Cap/ink-a.png','Cap/ink-a.thumb.png']);
+  const fm2=fmOf(files,'Cap/Cap.md');
+  eq('pages · one page left, so ink-pages is gone again',fm2['ink-pages'],undefined);
+  eq('pages · and page one is the survivor',fm2['ink-file'],'Cap/ink-b.png');
+  eq('pages · with no stale thumb left behind',fm2['ink-thumb'],undefined);
+
+  // Drop the last one.
+  const one=C.inkItem({path:'Cap/Cap.md',basename:'Cap',frontmatter:fmOf(files,'Cap/Cap.md')});
+  await A.savePages(plugin,one,[]);
+  const fm3=fmOf(files,'Cap/Cap.md');
+  ok('pages · the last drop leaves a capture, not a wreck',fm3['ink-source']==='paper'&&!('ink-file' in fm3)&&!('ink-pages' in fm3));
+  ok('pages · the note itself is untouched',!!files['Cap/Cap.md']);
+}
+// ── merge: pages hand over, files move, the absorbed note goes ────────────
+{
+  const files={
+    'I/A/A.md':'---\n{"ink-source":"paper","ink-file":"I/A/ink-a.png"}\n---\n![[ink-a.png]]\n',
+    'I/A/ink-a.png':'A',
+    'I/B/B.md':'---\n{"ink-source":"paper","ink-file":"I/B/ink-b.png","ink-thumb":"I/B/ink-b.thumb.png"}\n---\n![[ink-b.png]]\n',
+    'I/B/ink-b.png':'B','I/B/ink-b.thumb.png':'BT',
+  };
+  const v=makeVault(files);
+  const plugin={app:v.app};
+  const mk=(p,n)=>C.inkItem({path:p,basename:n,frontmatter:fmOf(files,p)});
+  const res=await A.mergeCaptures(plugin,[mk('I/A/A.md','A'),mk('I/B/B.md','B')]);
+  eq('merge · both captures accounted for',[res.done,res.failed],[2,[]]);
+  ok('merge · B’s files moved into A’s folder',!!files['I/A/ink-b.png']&&!!files['I/A/ink-b.thumb.png']);
+  ok('merge · and are gone from B’s',!files['I/B/ink-b.png']);
+  const fm=fmOf(files,'I/A/A.md');
+  eq('merge · A now has two pages',fm['ink-pages'].map(p=>p.file),['I/A/ink-a.png','I/A/ink-b.png']);
+  eq('merge · the moved render came along in the list',fm['ink-pages'][1].thumb,'I/A/ink-b.thumb.png');
+  ok('merge · the new page is embedded',bodyOf(files,'I/A/A.md').indexOf('![[ink-b.png]]')>0);
+  ok('merge · B’s note is trashed',v.trashed.indexOf('I/B/B.md')>=0);
+  ok('merge · and no file of B’s was trashed with it',v.trashed.filter(p=>/ink-b/.test(p)).length===0);
+}
+// ── merge refuses to swallow a drawing that has nothing to give ───────────
+{
+  const files={
+    'I/A/A.md':'---\n{"ink-source":"paper","ink-file":"I/A/ink-a.png"}\n---\n','I/A/ink-a.png':'A',
+    'D/x.md':'---\n{"excalidraw-plugin":"parsed"}\n---\n',
+  };
+  const v=makeVault(files);
+  const a=C.inkItem({path:'I/A/A.md',basename:'A',frontmatter:fmOf(files,'I/A/A.md')});
+  const x=C.inkItem({path:'D/x.md',basename:'x',frontmatter:fmOf(files,'D/x.md')});
+  const res=await A.mergeCaptures({app:v.app},[a,x]);
+  eq('merge · a page-less drawing is refused, not absorbed',res.done,1);
+  ok('merge · it says why',/no pages/.test(res.failed[0]),JSON.stringify(res.failed));
+  ok('merge · and it is still there',!!files['D/x.md']&&v.trashed.indexOf('D/x.md')<0);
+}
+// ── move: the plan, executed, then the stored paths repaired ──────────────
+{
+  const files={
+    'I/Cap/Cap.md':'---\n{"ink-source":"paper","ink-file":"I/Cap/ink-a.png","ink-thumb":"I/Cap/ink-a.thumb.png"}\n---\n![[ink-a.png]]\n',
+    'I/Cap/ink-a.png':'A','I/Cap/ink-a.thumb.png':'AT','Archive':'<folder>',
+  };
+  const v=makeVault(files);
+  const ad=V.inkAdapter({app:v.app,settings:{inkCapture:{},quicksketch:{}}});
+  const item=C.inkItem({path:'I/Cap/Cap.md',basename:'Cap',frontmatter:fmOf(files,'I/Cap/Cap.md')});
+  const plan=C.movePlan([item],'Archive',{files:(it)=>ad.remove(it),exists:(p)=>!!v.app.vault.getAbstractFileByPath(p)});
+  for(const m of plan.moves) await v.app.fileManager.renameFile(v.app.vault.getAbstractFileByPath(m.from),m.to);
+  await ad.moved(plan.moves);
+  ok('move · every file landed in the target folder',
+     !!files['Archive/Cap.md']&&!!files['Archive/ink-a.png']&&!!files['Archive/ink-a.thumb.png']);
+  ok('move · and none is left behind',!files['I/Cap/Cap.md']&&!files['I/Cap/ink-a.png']);
+  const fm=fmOf(files,'Archive/Cap.md');
+  eq('move · the stored paths were repaired, or the capture points at nothing',
+     [fm['ink-file'],fm['ink-thumb']],['Archive/ink-a.png','Archive/ink-a.thumb.png']);
+  const back=C.inkItem({path:'Archive/Cap.md',basename:'Cap',frontmatter:fm});
+  eq('move · so it still reads as a whole capture',[back.path].concat(back.files),
+     ['Archive/Cap.md','Archive/ink-a.png','Archive/ink-a.thumb.png']);
+}
+
+// ── the modals the callers construct must BE constructors ─────────────────
+// A rewrite of views/ink.js once dropped NexusInkTagModal and nothing noticed:
+// the pure tests never build a dialog, and the class is only reached by a
+// click. One check per class the rest of the plugin does `new` on.
+{
+  const M = window.captureModals;
+  for (const name of ['NexusInkTagModal', 'NexusMoveModal', 'NexusInkPagesModal']) {
+    ok('modals · ' + name + ' is exported and is a constructor', typeof M[name] === 'function');
+  }
+  ok('modals · and views/ink.js still re-exports the tag dialog main.js imports',
+     typeof window.inkView.NexusInkTagModal === 'function');
+}
+
+// ── a delete takes the annotated copy too ─────────────────────────────────
+{
+  const files={'C/C.md':'---\n{"ink-source":"paper","ink-file":"C/a.png","ink-sketch":"sk-9"}\n---\n',
+               'C/a.png':'A','S/sk-9.svg':'<svg/>'};
+  const v=makeVault(files);
+  const ad=V.inkAdapter({app:v.app,settings:{inkCapture:{},quicksketch:{}},_sketchPath:(id)=>'S/'+id+'.svg'});
+  const item=C.inkItem({path:'C/C.md',basename:'C',frontmatter:fmOf(files,'C/C.md')});
+  eq('delete · an annotated capture names its sketch as well',
+     ad.remove(item),['C/C.md','C/a.png','S/sk-9.svg']);
+  const plain=C.inkItem({path:'C/C.md',basename:'C',frontmatter:{'ink-source':'paper','ink-file':'C/a.png'}});
+  eq('delete · one that was never annotated names only its own files',
+     ad.remove(plain),['C/C.md','C/a.png']);
+}
+
+// ── a sketch cannot be moved out of the folder that defines it ────────────
+{
+  const v=makeVault({});
+  const sk=window.captureHub.sketchAdapter({app:v.app,settings:{quicksketch:{}},sketchDocuments:async()=>[]});
+  ok('move · the Sketch tab says it is not movable', sk.movable === false);
+  const ink=V.inkAdapter({app:v.app,settings:{inkCapture:{},quicksketch:{}}});
+  ok('move · the Ink tab does not say that', ink.movable !== false);
+}
+
+// ── merge refuses a survivor that cannot hold pages ───────────────────────
+{
+  const files={'x.md':'---\n{"excalidraw-plugin":"parsed"}\n---\n',
+               'I/A/A.md':'---\n{"ink-source":"paper","ink-file":"I/A/a.png"}\n---\n','I/A/a.png':'A'};
+  const v=makeVault(files);
+  const head=C.inkItem({path:'x.md',basename:'x',frontmatter:fmOf(files,'x.md')});
+  const other=C.inkItem({path:'I/A/A.md',basename:'A',frontmatter:fmOf(files,'I/A/A.md')});
+  let msg='';
+  try{await A.mergeCaptures({app:v.app},[head,other]);}catch(e){msg=e.message;}
+  ok('merge · an excalidraw drawing cannot be the survivor',/excalidraw/.test(msg),msg);
+  ok('merge · so nothing was written to it',!('ink-file' in fmOf(files,'x.md')));
+  ok('merge · and the other capture never moved',!!files['I/A/a.png']);
+}
+
+// ── the absorbed note is repaired before it is trashed ────────────────────
+{
+  const files={
+    'I/A/A.md':'---\n{"ink-source":"paper","ink-file":"I/A/a.png"}\n---\n','I/A/a.png':'A',
+    'I/B/B.md':'---\n{"ink-source":"paper","ink-file":"I/B/b.png"}\n---\n','I/B/b.png':'B',
+  };
+  const v=makeVault(files);
+  const seen=[];
+  // Fail the survivor's write: everything BEFORE it must already be coherent.
+  const app=Object.assign({},v.app,{fileManager:Object.assign({},v.app.fileManager,{
+    async processFrontMatter(f,fn){
+      seen.push(f.path);
+      if(f.path==='I/A/A.md'&&seen.filter(x=>x==='I/A/A.md').length===1) throw new Error('disk full');
+      return v.app.fileManager.processFrontMatter(f,fn);
+    }})});
+  const mk=(p,n)=>C.inkItem({path:p,basename:n,frontmatter:fmOf(files,p)});
+  let threw='';
+  try{await A.mergeCaptures({app},[mk('I/A/A.md','A'),mk('I/B/B.md','B')]);}catch(e){threw=e.message;}
+  ok('merge · a failed survivor write is reported, not swallowed',threw==='disk full',threw);
+  eq('merge · and the absorbed note already points at where its page went',
+     fmOf(files,'I/B/B.md')['ink-file'],'I/A/b.png');
+  ok('merge · so nothing was trashed with dangling paths',v.trashed.indexOf('I/B/B.md')<0);
+}
+
+// ── merge reports pages, not captures ─────────────────────────────────────
+{
+  const files={
+    'I/A/A.md':'---\n{"ink-source":"paper","ink-pages":[{"file":"I/A/a1.png"},{"file":"I/A/a2.png"}],"ink-file":"I/A/a1.png"}\n---\n',
+    'I/A/a1.png':'1','I/A/a2.png':'2',
+    'I/B/B.md':'---\n{"ink-source":"paper","ink-pages":[{"file":"I/B/b1.png"},{"file":"I/B/b2.png"}],"ink-file":"I/B/b1.png"}\n---\n',
+    'I/B/b1.png':'3','I/B/b2.png':'4',
+  };
+  const v=makeVault(files);
+  const mk=(p,n)=>C.inkItem({path:p,basename:n,frontmatter:fmOf(files,p)});
+  const res=await A.mergeCaptures({app:v.app},[mk('I/A/A.md','A'),mk('I/B/B.md','B')]);
+  eq('merge · two captures of two pages make one of four',res.pages,4);
+  eq('merge · and the capture count stays a capture count',res.done,2);
+  eq('merge · in the order they were shown',
+     fmOf(files,'I/A/A.md')['ink-pages'].map(p=>p.file),
+     ['I/A/a1.png','I/A/a2.png','I/A/b1.png','I/A/b2.png']);
+}
+
+// ── a cancelled Pages dialog leaves nothing behind ────────────────────────
+{
+  const files={'C/C.md':'---\n{"ink-source":"paper","ink-file":"C/a.png"}\n---\n','C/a.png':'A',
+               'C/new1.png':'N1','C/new2.png':'N2'};
+  const v=makeVault(files);
+  await A.discardPages({app:v.app},[P.page('C/new1.png'),P.page('C/new2.png','C/new2.thumb.png')]);
+  eq('pages · Cancel takes the copied files back out',v.trashed.sort(),['C/new1.png','C/new2.png']);
+  ok('pages · and leaves the capture alone',!!files['C/C.md']&&!!files['C/a.png']);
+}
+
+// ── only the renames that happened may be written back ────────────────────
+{
+  const files={'I/Cap/Cap.md':'---\n{"ink-source":"paper","ink-file":"I/Cap/a.png","ink-thumb":"I/Cap/a.thumb.png"}\n---\n',
+               'I/Cap/a.png':'A','I/Cap/a.thumb.png':'AT','Archive':'<folder>'};
+  const v=makeVault(files);
+  const ad=V.inkAdapter({app:v.app,settings:{inkCapture:{},quicksketch:{}}});
+  const item=C.inkItem({path:'I/Cap/Cap.md',basename:'Cap',frontmatter:fmOf(files,'I/Cap/Cap.md')});
+  const plan=C.movePlan([item],'Archive',{files:(it)=>ad.remove(it),exists:(p)=>!!v.app.vault.getAbstractFileByPath(p)});
+  // The thumb refuses to move; the other two go.
+  const done=[];
+  for(const m of plan.moves){
+    if(m.from==='I/Cap/a.thumb.png') continue;
+    await v.app.fileManager.renameFile(v.app.vault.getAbstractFileByPath(m.from),m.to);
+    done.push(m);
+  }
+  await ad.moved(done);
+  const fm=fmOf(files,'Archive/Cap.md');
+  eq('move · the page that moved points at where it went',fm['ink-file'],'Archive/a.png');
+  eq('move · the one that did NOT move still points at where it is',fm['ink-thumb'],'I/Cap/a.thumb.png');
+  ok('move · which is a path that exists',!!files['I/Cap/a.thumb.png']);
+}
+} catch(e) { fail++; out.push('FAIL  threw: '+(e&&e.stack||e)); }
+if(window.__err.length){fail++;out.push('FAIL  window error: '+window.__err.join('\n'));}
+out.push('');
+out.push(fail?(fail+' FAILED, '+pass+' passed'):('ALL GREEN — '+pass+' checks'));
+document.getElementById('out').textContent=out.join('\n');
+})();
+</script></body></html>

@@ -168,7 +168,10 @@ class NexusPlanner {
     const previous = el._nxSrc;
     if (el._nxRepaint) el._nxRepaint(src);
     const res = await blockedit.saveFencedBlock(this.app, TFile, el, ctx, 'nexus-planner', src, previous);
-    if (!res.ok) new Notice('Nexus: ' + res.reason + ' — the plan was not saved.');
+    if (!res.ok) { new Notice('Nexus: ' + res.reason + ' — the plan was not saved.'); return; }
+    // The calendars read this same block for their per-day line. A vault event
+    // reaches them too, but only after Obsidian gets around to firing it.
+    if (typeof this.plugin.refreshCalendarViews === 'function') this.plugin.refreshCalendarViews();
   }
 }
 

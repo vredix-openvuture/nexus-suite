@@ -53,9 +53,17 @@ function objectBounds(obj) {
   };
 }
 
+/* A locked object is drawn but never picked up. That is the whole of the lock:
+   it is not selectable, so nothing downstream — move, scale, duplicate, delete
+   — can reach it, and no separate rule has to remember to check. A scan being
+   annotated is locked, because a stray drag across the page must not move the
+   thing you are drawing on. */
+function isLocked(obj) { return !!(obj && obj.locked); }
+
 /* Topmost first: what is drawn last is what the finger lands on. */
 function objectAt(objects, x, y) {
   for (let i = objects.length - 1; i >= 0; i--) {
+    if (isLocked(objects[i])) continue;
     const b = objectBounds(objects[i]);
     if (x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY) return i;
   }
@@ -178,6 +186,6 @@ function objectsSVG(objects) {
 
 module.exports = {
   OBJECT_KINDS, NOTE_COLORS, noteColor, STICKERS, sticker, MIN_SIZE,
-  objectBounds, objectAt, placeObject, transformObject,
+  isLocked, objectBounds, objectAt, placeObject, transformObject,
   wrapText, noteFontSize, objectSVG, objectsSVG, xmlEscape, GLYPH_RATIO,
 };

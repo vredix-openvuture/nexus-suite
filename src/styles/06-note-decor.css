@@ -10,15 +10,21 @@
 }
 
 /* Inline −/+ stepper inside the note-style menu */
-.nx-bgstep { display: flex; align-items: center; gap: 8px; }
+.nx-bgstep { display: flex; align-items: center; gap: var(--nx-sp-2); }
 .nx-bgstep-val { font-variant-numeric: tabular-nums; min-width: 92px; }
+/* Legacy alias of .nx-btn.is-icon.is-sm (00-tokens.css). */
 .nx-bgstep-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 21px; height: 21px; border-radius: 5px; cursor: pointer;
-  font-size: 1.05em; line-height: 1; user-select: none;
-  color: var(--text-muted); background: var(--background-modifier-hover);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  color: var(--nx-fg-muted, var(--text-muted));
+  user-select: none;
 }
-.nx-bgstep-btn:hover { color: var(--text-normal); background: var(--background-modifier-border); }
+.nx-bgstep-btn:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-2); }
 /* First background layer = a blend gradient in the editor background color that
    softly fades the pattern at top & bottom (sits behind the text, does NOT
    fade the text). Beneath it, the actual pattern layers. */
@@ -117,16 +123,8 @@
 .nx-font-mono .metadata-property-value textarea,
 .nx-font-hand .metadata-property-value textarea { font-family: var(--font-text); }
 
-/* Button for the note background (to the left of the banner icon) */
-.nx-bg-btn {
-  position: absolute; top: 10px; right: 52px; z-index: 20;
-  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-s, 6px); cursor: pointer; opacity: .5;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--background-primary) 65%, transparent);
-  backdrop-filter: blur(4px);
-  transition: opacity .12s ease, color .12s ease, background .12s ease;
-}
-.nx-bg-btn:hover { opacity: 1; color: var(--text-normal); background: var(--background-modifier-hover); }
-.nx-bg-btn .svg-icon { width: 16px; height: 16px; }
+/* Button for the note background — second slot in the corner row. The button
+   itself is one of the three corner buttons defined in 02-banner.css; only its
+   position in the row belongs to this module. */
+.nx-bg-btn { right: 52px; }
 

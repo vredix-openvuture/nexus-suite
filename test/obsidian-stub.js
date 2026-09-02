@@ -45,7 +45,51 @@ function setIcon(el, name) {
   el.dataset.icon = name;
   el.innerHTML = '<span class="svg-icon"></span>';
 }
+/* A workspace with real leaves. Only what the startup paths touch, but that is
+   the point: which leaf setViewState was called on, and in what order things
+   happened, is the whole assertion. `events` records both, so "closes first,
+   then opens" can be proven rather than assumed. */
+function makeWorkspace(viewTypes) {
+  const workspace = {
+    leaves: [], revealed: [], events: [], newTabs: 0, activeIndex: 0,
+    addLeaf(type) {
+      const leaf = {
+        viewType: type, detached: false, pinned: false, stateCalls: [],
+        view: { getViewType: () => leaf.viewType },
+        async setViewState(state) {
+          // A real one crosses at least one microtask; without that hop a race
+          // between two callers cannot be reproduced here at all.
+          await Promise.resolve();
+          leaf.stateCalls.push(state);
+          leaf.viewType = state.type;
+          workspace.events.push('open:' + state.type);
+        },
+        setPinned(on) { leaf.pinned = on; },
+        detach() {
+          leaf.detached = true;
+          workspace.events.push('close:' + leaf.viewType);
+          workspace.leaves = workspace.leaves.filter(other => other !== leaf);
+        },
+      };
+      workspace.leaves.push(leaf);
+      return leaf;
+    },
+    getLeavesOfType(type) { return workspace.leaves.filter(leaf => leaf.viewType === type); },
+    getLeaf(newLeaf) {
+      if (newLeaf) { workspace.newTabs++; return workspace.addLeaf('empty'); }
+      return workspace.leaves[workspace.activeIndex] || workspace.addLeaf('empty');
+    },
+    revealLeaf(leaf) { workspace.revealed.push(leaf); },
+    iterateRootLeaves(fn) { workspace.leaves.slice().forEach(fn); },
+    onLayoutReady(fn) { fn(); },
+    on() { return {}; },
+  };
+  (viewTypes || []).forEach(type => workspace.addLeaf(type));
+  return workspace;
+}
+
 module.exports = {
+  makeWorkspace,
   Plugin, PluginSettingTab, Setting, Modal, ItemView, Notice, TFile, TFolder,
   TAbstractFile, Component, MarkdownView, FuzzySuggestModal, SuggestModal, Menu,
   MenuItem, ButtonComponent, Platform, EditorSuggest, moment, requestUrl, normalizePath,

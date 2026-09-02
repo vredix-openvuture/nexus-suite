@@ -287,6 +287,7 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     app: { vault: { adapter, getAbstractFileByPath: () => null }, workspace: { onLayoutReady() {} } },
     settings: { vaultSync: { enabled: true } },
     getCredential: () => ({}), deviceId: () => 'test-device',
+    deviceSetting: (key, fallback) => fallback,
   };
   const vs = new R.NexusVaultSync(plugin);
   const made = [];
@@ -340,15 +341,29 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     };
   }
   function runner(adapter) {
+    // The connection is per device now, so the stub answers from a device bag.
+    const bag = { vaultSyncUrl: 'https://example.invalid/dav' };
     const plugin = {
       app: { vault: { adapter, getAbstractFileByPath: () => null }, workspace: { onLayoutReady() {} } },
-      settings: { vaultSync: { enabled: true, url: 'https://example.invalid/dav', conflict: 'keepBoth' } },
+      settings: { vaultSync: { enabled: true, conflict: 'keepBoth' } },
       getCredential: () => ({ username: 'u', secret: 'p' }),
       deviceId: () => 'test-device',
+      deviceSetting: (key, fallback) => (bag[key] === undefined ? fallback : bag[key]),
     };
     return new R.NexusVaultSync(plugin);
   }
   const fakeServer = { async get() { return { arrayBuffer: new ArrayBuffer(4) }; } };
+
+  /* Where the runner reads the connection from: the device bag, never the
+     vault-wide settings that a sync would have replaced. */
+  {
+    const vs = runner(mobileAdapter());
+    vs.plugin.settings.vaultSync.url = 'https://wrong.example/other-device';
+    eq('runner · the server URL comes from the device store', vs.url, 'https://example.invalid/dav');
+    eq('runner · a leftover vault-wide URL is ignored', vs.client().baseUrl, 'https://example.invalid/dav');
+    eq('runner · the schedule falls back to the default when this device set none', vs.intervalMin, 15);
+    ok('runner · and syncing on start is on unless this device said otherwise', vs.onStart === true);
+  }
 
   await (async () => {
     const adapter = mobileAdapter();
@@ -389,6 +404,129 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     ok('runner · a folder that truly cannot be made says which one',
        message.indexOf('Tasks') >= 0 && message.indexOf('EACCES') >= 0, message);
   })();
+}
+
+
+// ── per-device settings ────────────────────────────────────────────────────
+/* The bug: data.json is a file in the vault, so the vault sync uploads it and
+   the other device downloads it — over its own settings, device name included.
+   The fix is not to stop syncing the file (notes and settings should travel);
+   it is to key what belongs to one machine by that machine's id. */
+{
+  const D = window.deviceSettingsLib;
+  const live = () => ({
+    vaultSync: { enabled: true, url: 'https://cloud.example/dav/Vault', deviceName: 'Desktop',
+                 onStart: true, intervalMin: 15, config: true, exclude: ['Archive/'] },
+    tasksCalendar: { enabled: true, accounts: [{ id: 'acc-1', kind: 'vikunja', label: 'Work', serverUrl: 'https://v.example' }] },
+  });
+
+  const settings = live();
+  ok('device · the migration reports that it ran', D.migrateDeviceSettings(settings, 'dev-a') === true);
+  const bag = settings.devices['dev-a'];
+  eq('device · the server URL is this device\'s now', bag.vaultSyncUrl, 'https://cloud.example/dav/Vault');
+  eq('device · so is the name it calls itself', bag.vaultSyncDeviceName, 'Desktop');
+  eq('device · and the schedule', [bag.vaultSyncOnStart, bag.vaultSyncIntervalMin], [true, 15]);
+  eq('device · the task accounts came along', bag.taskAccounts.length, 1);
+  eq('device · as a copy, not the same array', bag.taskAccounts === settings.tasksCalendar.accounts, false);
+  ok('device · shared policy is NOT moved',
+     bag.config === undefined && bag.exclude === undefined && settings.vaultSync.config === true);
+  /* Left in place on purpose: the second device reads the same data.json and
+     still has to find them when it updates. */
+  ok('device · the old keys are left where they were',
+     settings.vaultSync.url === 'https://cloud.example/dav/Vault' && settings.tasksCalendar.accounts.length === 1);
+
+  bag.vaultSyncDeviceName = 'Tablet';
+  ok('device · a second run does nothing', D.migrateDeviceSettings(settings, 'dev-a') === false);
+  eq('device · and does not overwrite what the device set since', bag.vaultSyncDeviceName, 'Tablet');
+
+  bag.vaultSyncUrl = '';
+  D.migrateDeviceSettings(settings, 'dev-a');
+  eq('device · a server someone removed does not come back', bag.vaultSyncUrl, '');
+
+  D.migrateDeviceSettings(settings, 'dev-b');
+  eq('device · the other device migrates its own copy from the same file',
+     settings.devices['dev-b'].vaultSyncUrl, 'https://cloud.example/dav/Vault');
+  eq('device · without disturbing the first', settings.devices['dev-a'].vaultSyncUrl, '');
+
+  const fresh = { vaultSync: {}, tasksCalendar: {} };
+  D.migrateDeviceSettings(fresh, 'dev-new');
+  eq('device · a fresh install migrates nothing but is marked done',
+     Object.keys(fresh.devices['dev-new']), ['migrated']);
+}
+
+// ── the round trip that used to lose a device's settings ───────────────────
+{
+  const Suite = window.NexusSuite;
+  const loaded = async (raw, deviceId) => {
+    const plugin = new Suite({ workspace: {}, vault: {} }, {});
+    plugin.loadData = async () => JSON.parse(JSON.stringify(raw));
+    plugin.saveData = async () => {};
+    plugin._deviceId = deviceId;      // the real one would ask localStorage
+    await plugin.loadSettings();
+    return plugin;
+  };
+  const asFile = (plugin) => JSON.parse(JSON.stringify(plugin.settings));
+
+  const desktop = await loaded({ vaultSync: { url: 'https://cloud.example/dav', deviceName: 'Desktop' } }, 'dev-desktop');
+  eq('round trip · the desktop migrated its connection', desktop.deviceSetting('vaultSyncDeviceName', ''), 'Desktop');
+  await desktop.setDeviceSetting('vaultSyncIntervalMin', 5);
+
+  const tablet = await loaded(asFile(desktop), 'dev-tablet');
+  await tablet.setDeviceSetting('vaultSyncDeviceName', 'Tablet');
+  await tablet.setDeviceSetting('vaultSyncIntervalMin', 60);
+  eq('round trip · the tablet has its own name', tablet.deviceSetting('vaultSyncDeviceName', ''), 'Tablet');
+
+  const desktopAgain = await loaded(asFile(tablet), 'dev-desktop');
+  eq('round trip · and the desktop still has ITS name after the tablet wrote data.json',
+     desktopAgain.deviceSetting('vaultSyncDeviceName', ''), 'Desktop');
+  eq('round trip · and its own interval', desktopAgain.deviceSetting('vaultSyncIntervalMin', 15), 5);
+  eq('round trip · while the tablet keeps its own',
+     desktopAgain.settings.devices['dev-tablet'].vaultSyncIntervalMin, 60);
+
+  /* Accounts are still reached by their old name, land in the device's bag, and
+     — the point — are NOT written back over the shared key. Saving them there
+     would hand one device's account list to the other on the next sync, which
+     is the bug being fixed one level up. */
+  const legacyFile = { tasksCalendar: { accounts: [{ id: 'acc-old', kind: 'vikunja', label: 'From before', serverUrl: 'https://old.example' }] } };
+  const first = await loaded(legacyFile, 'dev-first');
+  eq('accounts · the existing list is migrated into this device\'s bag',
+     first.settings.devices['dev-first'].taskAccounts.length, 1);
+  first.settings.tasksCalendar.accounts.push({ id: 'acc-9', kind: 'vikunja', label: 'Mine', serverUrl: 'https://v.example' });
+  eq('accounts · an account added by the old name lands in the bag too',
+     first.settings.devices['dev-first'].taskAccounts.length, 2);
+
+  const firstFile = asFile(first);
+  eq('accounts · nothing is written back over the shared key',
+     firstFile.tasksCalendar.accounts, undefined);
+  eq('accounts · the value it was migrated from is parked, unchanged',
+     firstFile.tasksCalendar.accountsBeforeDeviceStore.map(a => a.id), ['acc-old']);
+
+  const second = await loaded(firstFile, 'dev-second');
+  eq('accounts · a device updating later migrates from the parked copy, not from the first device\'s list',
+     second.settings.tasksCalendar.accounts.map(a => a.id), ['acc-old']);
+  eq('accounts · and the first device is untouched by that',
+     second.settings.devices['dev-first'].taskAccounts.length, 2);
+  second.settings.tasksCalendar.accounts = [];
+  eq('accounts · emptying the list on one device empties only that one',
+     [second.settings.devices['dev-second'].taskAccounts.length, second.settings.devices['dev-first'].taskAccounts.length], [0, 2]);
+
+  // The startup toggle became a three-way choice.
+  const oldOn = await loaded({ homepage: { openOnStartup: true } }, 'dev-x');
+  eq('round trip · openOnStartup true became "tab"', oldOn.settings.homepage.startup, 'tab');
+  const oldOff = await loaded({ homepage: { openOnStartup: false } }, 'dev-x');
+  eq('round trip · and false became "off"', oldOff.settings.homepage.startup, 'off');
+  eq('round trip · the old key is gone', oldOff.settings.homepage.openOnStartup, undefined);
+}
+
+// ── what the sync still refuses to carry ───────────────────────────────────
+/* The device store only works because data.json keeps travelling: the fix must
+   NOT be an extra exclusion. These four are the ones that stay excluded. */
+{
+  const skip = S.makeSkip({ config: true });
+  eq('skip · the device files are still exactly four', S.DEVICE_FILES.length, 4);
+  ok('skip · and every one of them is refused', S.DEVICE_FILES.every(path => skip(path)));
+  ok('skip · while the plugin\'s own settings still travel',
+     !skip('.obsidian/plugins/nexus-suite/data.json'));
 }
 
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }

@@ -4,14 +4,20 @@
    dashboard, the boards and the tasks page would keep floating rounded, tinted
    cards in the middle of it.
 
-   Rule of thumb, everywhere below: one hairline instead of a border, 4–6px
-   instead of 10–15px radius, the surface colour instead of an accent tint. The
-   accent survives only where it MEANS something — active, due, done.
+   Rule of thumb, everywhere below: one hairline instead of a border, the
+   surface colour instead of an accent tint. The accent survives only where it
+   MEANS something — active, due, done.
 
    Last file in the bundle on purpose: these are corrections to the module
    styles above and must win at equal specificity. */
 
 body.nx-style-plain {
+  /* The style turns the SAME two radii down and nothing else — every plugin
+     surface reads them, so there is no per-component override to keep in sync.
+     Same values the theme sets in section 21; declared here as well so the
+     style still flattens the plugin under any OTHER theme. */
+  --nx-radius: 6px;
+  --nx-r-tile: 3px;
   --nx-home-gap: 10px;
 }
 
@@ -49,8 +55,7 @@ body.nx-style-plain .nx-home-card,
 body.nx-style-plain .nx-home-stat,
 body.nx-style-plain.nx-blocked.theme-dark .nx-home-card:not(.nx-noborder),
 body.nx-style-plain.nx-blocked.theme-dark .nx-home-stat {
-  border-radius: 5px !important;
-  border: 1px solid var(--nx-border, var(--background-modifier-border)) !important;
+  border: var(--nx-hairline) !important;
   background: transparent !important;
   box-shadow: none !important;
 }
@@ -58,10 +63,6 @@ body.nx-style-plain.nx-blocked.theme-dark .nx-home-card:not(.nx-noborder):hover,
 body.nx-style-plain .nx-home-card:hover {
   background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 4%, transparent) !important;
 }
-body.nx-style-plain .nx-home-hero,
-body.nx-style-plain .nx-home-img,
-body.nx-style-plain .nx-home-card-img { border-radius: 5px !important; }
-
 /* ── banner: a picture, not a rounded plate ── */
 body.nx-style-plain .nx-banner,
 body.nx-style-plain .nx-banner-img { border-radius: 0 !important; }
@@ -70,9 +71,8 @@ body.nx-style-plain .nx-banner-img { border-radius: 0 !important; }
 body.nx-style-plain .nx-kb-col,
 body.nx-style-plain .nx-tb-col {
   background: transparent !important;
-  border: 1px solid var(--nx-border, var(--background-modifier-border)) !important;
-  border-top: 1px solid var(--nx-border, var(--background-modifier-border)) !important;
-  border-radius: 5px !important;
+  border: var(--nx-hairline) !important;
+  border-top: var(--nx-hairline) !important;
 }
 body.nx-style-plain .nx-kb-col.is-over,
 body.nx-style-plain .nx-tb-col.is-over {
@@ -81,7 +81,6 @@ body.nx-style-plain .nx-tb-col.is-over {
 }
 body.nx-style-plain .nx-kb-card,
 body.nx-style-plain .nx-tb-card {
-  border-radius: 4px;
   background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 4%, transparent);
   border-color: transparent;
 }
@@ -105,13 +104,12 @@ body.nx-style-plain .nx-tb-col-count.is-over {
 /* ── tasks page: the project tree is a list, not a stack of image cards ── */
 body.nx-style-plain .nx-tp-side {
   background: var(--nx-chip-side, var(--background-secondary)) !important;
-  border-right: 1px solid var(--nx-border, var(--background-modifier-border));
+  border-right: var(--nx-hairline);
 }
 body.nx-style-plain .nx-tp-card {
   height: auto !important;
   min-height: 0 !important;
   padding: 7px 10px !important;
-  border-radius: 4px !important;
   background-image: none !important;
   border: none !important;
 }
@@ -122,16 +120,10 @@ body.nx-style-plain .nx-tp-sub.is-active,
 body.nx-style-plain .nx-tp-all.is-active {
   background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 9%, transparent) !important;
 }
-body.nx-style-plain .nx-tp-task { border-radius: 4px; }
-
-/* ── calendar + agenda: grid lines instead of tiles ── */
-body.nx-style-plain .nx-cal-day,
-body.nx-style-plain .nx-calp-day,
-body.nx-style-plain .nx-agenda-item,
-body.nx-style-plain .nx-agenda-sec { border-radius: 4px !important; }
+/* ── agenda: a rule down the side instead of a framed block ── */
 body.nx-style-plain .nx-agenda {
   border: none !important;
-  border-left: 2px solid var(--nx-border, var(--background-modifier-border)) !important;
+  border-left: calc(var(--nx-bw) * 2) solid var(--nx-border, var(--background-modifier-border)) !important;
   border-radius: 0 !important;
   background: transparent !important;
 }

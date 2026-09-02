@@ -123,16 +123,16 @@ class NexusListConfigModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-class NexusQuicknoteConfigModal extends Modal {
+class NexusScratchConfigModal extends Modal {
   constructor(plugin, view, item) { super(plugin.app); this.plugin = plugin; this.view = view; this.item = item; }
   onOpen() {
     const { contentEl } = this; contentEl.addClass('nx-cardcfg');
-    contentEl.createEl('h3', { text: 'Quicknote card' });
+    contentEl.createEl('h3', { text: 'Scratch card' });
     const it = this.item;
     const save = async () => { await this.plugin.saveSettings(); this.view.render(); };
-    new Setting(contentEl).setName('Title').addText(t => t.setValue(it.title || 'Quicknote').onChange(async v => { it.title = v; await save(); }));
+    new Setting(contentEl).setName('Title').addText(t => t.setValue(it.title || 'Scratch').onChange(async v => { it.title = v; await save(); }));
     new Setting(contentEl).setName('Target folder').setDesc('New notes go here (empty = vault root).').addText(t => t.setPlaceholder('Inbox').setValue(it.folder || '').onChange(async v => { it.folder = v; await save(); }));
-    new Setting(contentEl).setName('Template (note path)').setDesc('Optional. Tokens: {{content}} {{date}} {{time}} {{title}}').addText(t => t.setPlaceholder('Templates/Quicknote.md').setValue(it.template || '').onChange(async v => { it.template = v; await save(); }));
+    new Setting(contentEl).setName('Template (note path)').setDesc('Optional. Tokens: {{content}} {{date}} {{time}} {{title}}').addText(t => t.setPlaceholder('Templates/Scratch.md').setValue(it.template || '').onChange(async v => { it.template = v; await save(); }));
     contentEl.createEl('p', { cls: 'setting-item-description', text: 'Filename is automatic: YYYY-MM-DD_HH-mm' });
     new Setting(contentEl).addButton(b => b.setButtonText('Remove card').setWarning().onClick(async () => { const ws = this.view._widgets(); const i = ws.indexOf(it); if (i >= 0) ws.splice(i, 1); await this.plugin.saveSettings(); this.view.render(); this.close(); }));
   }
@@ -260,7 +260,9 @@ class NexusCalendarCardConfigModal extends Modal {
 
     contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'View' });
     new Setting(contentEl).setName('Layout').addDropdown(dd => dd
-      .addOption('agenda', 'Agenda — upcoming events').addOption('month', 'Month — grid with dots')
+      .addOption('agenda', 'Agenda — upcoming events')
+      .addOption('week', 'Week — one line per day, from the planner')
+      .addOption('month', 'Month — grid with dots')
       .setValue(it.display || 'agenda').onChange(async v => { it.display = v; await save(); this.render(); }));
     if ((it.display || 'agenda') === 'agenda') {
       new Setting(contentEl).setName('Days ahead').setDesc('How far the agenda looks (1–60).')
@@ -275,10 +277,8 @@ class NexusCalendarCardConfigModal extends Modal {
     }
 
     contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Calendars' });
-    const cals = (this.plugin.settings.tasksCalendar.accounts || [])
-      .flatMap(a => (a.calendars || []).filter(c => c.enabled).map(c => c.display))
-      .concat((this.plugin.settings.tasksCalendar.localCalendars || []).map(c => c.name))
-      .filter(Boolean);
+    const cals = (this.plugin.settings.tasksCalendar.localCalendars || [])
+      .map(c => c.name).filter(Boolean);
     nxMultiRow(contentEl, 'Only these calendars', 'One name per line; empty = all. Substring is enough.',
       it.calendars, ',', cals[0] || 'Personal', v => { it.calendars = v; save(); }, () => cals);
 
@@ -655,4 +655,4 @@ class NexusHabitConfigModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-module.exports = { NexusCalendarCardConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusListConfigModal, NexusOrphanConfigModal, NexusQuicknoteConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusTaskCardConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };
+module.exports = { NexusCalendarCardConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusTaskCardConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };

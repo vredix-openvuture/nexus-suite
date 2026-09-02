@@ -1,7 +1,7 @@
 'use strict';
 
 /* ============================================================================
- *  NEXUS SUITE · lib · QuickNote
+ *  NEXUS SUITE · lib · Chatter (spoken notes)
  *  A note you speak instead of type. The sister of Quick Sketch: same idea —
  *  catch the thought before it is gone — with the other hand free.
  *
@@ -43,12 +43,12 @@ function titleFrom(lines, fallback) {
   const first = (lines && lines.length) ? lines[0] : '';
   const words = String(first).split(/\s+/).filter(Boolean).slice(0, 8).join(' ');
   const clean = words.replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^\.+/, '');
-  return clean.slice(0, 60) || fallback || 'Quick Note';
+  return clean.slice(0, 60) || fallback || 'Chatter';
 }
 
 function notePath(folder, title, stamp) {
   const dir = String(folder || 'Inbox/Quicknote').replace(/\/+$/, '');
-  const safe = String(title).replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Quick Note';
+  const safe = String(title).replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Chatter';
   return dir + '/' + safe + (stamp ? ' ' + stamp : '') + '.md';
 }
 

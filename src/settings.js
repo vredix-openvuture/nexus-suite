@@ -15,7 +15,7 @@ const { NexusConfirmModal, NexusNameModal } = require('./modals/misc.js');
 const { NexusTagRenameModal } = require('./modals/tags.js');
 const { nxAllTagCounts, nxFilesWithTag, nxRenameTag } = require('./lib/tagtools.js');
 const { FN_TYPES } = require('./lib/foldernotes.js');
-const { nxAutocomplete, nxFoldDescriptions, nxMultiRow } = require('./lib/inputs.js');
+const { nxAutocomplete, nxBlockExample, nxCollapseSections, nxFoldDescriptions, nxMultiRow } = require('./lib/inputs.js');
 const { nxAllFolders } = require('./lib/helpers.js');
 const calstore = require('./lib/calstore.js');
 const penGestures = require('./lib/sketchgestures.js');
@@ -23,9 +23,9 @@ const sketchSearch = require('./lib/sketchsearch.js');
 const vaultsync = require('./lib/vaultsync.js');
 const quicknoteLib = require('./lib/quicknote.js');
 const extcommand = require('./lib/extcommand.js');
-const { WebDavClient } = require('./lib/webdav.js');
 const tasks = require('./lib/tasks.js');
-const { BAR_DEFAULTS, BAR_ITEMS, BAR_MODES, HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS, TASK_STATES } = require('./constants.js');
+const planner = require('./lib/planner.js');
+const { BAR_DEFAULTS, BAR_ITEMS, BAR_MODES, HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
@@ -37,15 +37,16 @@ class NexusSettingsTab extends PluginSettingTab {
       .addToggle(t => t.setValue(obj.enabled).onChange(async v => { obj.enabled = v; await this.save(); if (after) after(); }));
   }
 
-  /* Tasks & Calendar — CalDAV accounts + local calendars. Secrets never live
-     here (they go to localStorage via plugin.setCredential); this tab only
-     edits the non-secret config in data.json. */
+  /* Tasks & Calendar — local calendars + the Vikunja accounts the tasks sync
+     against. Secrets never live here (they go to localStorage via
+     plugin.setCredential); this tab only edits the non-secret config in
+     data.json. */
   tTasksCalendar(e) {
     const s = this.plugin.settings.tasksCalendar;
     this.head(e, s);
 
     new Setting(e).setName('Data location')
-      .setDesc('Where the event cache and your local calendars live. The plugin folder keeps them out of the file explorer, search and graph, and plugin updates never touch it — but it only syncs if your sync includes .obsidian.')
+      .setDesc('Where your local calendars live. The plugin folder keeps them out of the file explorer, search and graph, and plugin updates never touch it — but it only syncs if your sync includes .obsidian.')
       .addDropdown(dd => dd
         .addOption('plugin', 'Plugin folder (.nexus-calendar)')
         .addOption('vault', 'A folder in the vault')
@@ -73,27 +74,17 @@ class NexusSettingsTab extends PluginSettingTab {
       });
     new Setting(e).setName('Sync on startup').addToggle(t => t.setValue(s.syncOnStartup).onChange(async v => { s.syncOnStartup = v; await this.save(); }));
     new Setting(e).setName('Sync interval (minutes)').addText(t => { t.inputEl.type = 'number'; t.setValue(String(s.syncIntervalMin)).onChange(async v => { s.syncIntervalMin = Math.max(5, parseInt(v, 10) || 15); await this.save(); }); });
-    new Setting(e).setName('Conflict policy').setDesc('When a server change and a local change collide (used once writing is enabled).')
+    new Setting(e).setName('Conflict policy').setDesc('When a change on the server and a change in your notes collide.')
       .addDropdown(d => d.addOption('server', 'Server wins').addOption('ask', 'Ask me').setValue(s.conflictPolicy).onChange(async v => { s.conflictPolicy = v; await this.save(); }));
 
-    // ── CalDAV accounts ──
-    e.createEl('h4', { text: 'CalDAV accounts', cls: 'nx-callout-h' });
-    const accWrap = e.createDiv('nx-set-list');
-    const renderAccounts = () => {
-      accWrap.empty();
-      if (!(s.accounts || []).length) accWrap.createDiv({ cls: 'nx-account-empty', text: 'No accounts yet.' });
-      (s.accounts || []).forEach(acc => {
-        const nCal = (acc.calendars || []).filter(c => c.enabled).length;
-        const set = new Setting(accWrap).setName(acc.label || acc.username || 'CalDAV')
-          .setDesc((acc.serverUrl || '') + ' · ' + nCal + ' calendar(s) on');
-        set.addButton(b => b.setIcon('pencil').setTooltip('Edit').onClick(() => new NexusAccountModal(this.plugin, acc, renderAccounts).open()));
-        set.addButton(b => b.setIcon('trash').setTooltip('Remove').onClick(async () => { s.accounts = s.accounts.filter(a => a.id !== acc.id); this.plugin.setCredential(acc.id, {}); await this.save(); renderAccounts(); }));
-      });
-    };
-    renderAccounts();
+    // ── Task accounts (Vikunja) ──
+    e.createEl('h4', { text: 'Task accounts', cls: 'nx-callout-h' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'An account belongs to THIS device and is never carried to another one — every device signs itself in. See Vault sync for why.' });
+    this.connectionList(e.createDiv('nx-set-list'), 'vikunja');
+    this.secretNote(e);
     new Setting(e)
-      .addButton(b => b.setButtonText('Add account').setCta().onClick(() => new NexusAccountModal(this.plugin, null, renderAccounts).open()))
-      .addButton(b => b.setButtonText('Sync now').onClick(() => { new Notice('Nexus: syncing…'); this.plugin.syncTaskCal().then(r => { new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000); renderAccounts(); }); }));
+      .addButton(b => b.setButtonText('Sync now').onClick(() => { new Notice('Nexus: syncing…'); this.plugin.syncTaskCal().then(r => { new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000); }); }));
 
     // ── Local calendars ──
     e.createEl('h4', { text: 'Local calendars', cls: 'nx-callout-h' });
@@ -121,6 +112,29 @@ class NexusSettingsTab extends PluginSettingTab {
       .addButton(b => b.setButtonText('New project').onClick(async () => { const name = await new NexusNameModal(this.app, 'New project name', 'Project').openAndGet(); if (name) { const f = await tasks.createProject(this.plugin, name); this.plugin.app.workspace.getLeaf(false).openFile(f); } }))
       .addButton(b => b.setButtonText('New task').setCta().onClick(() => new NexusTaskModal(this.plugin, null).open()));
 
+    // ── The month's planner note ──
+    e.createEl('h4', { text: 'Planner notes', cls: 'nx-callout-h' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The month view shows one line per day under the day number, and you can type one there. The line lives in a “nexus-planner” block in the month’s own note, so the plan stays plain text and the same block in the note shows exactly the same thing.' });
+    const pl = s.planner || (s.planner = { folder: 'Planner', pattern: 'YYYY-MM' });
+    const plannerExample = e.createEl('p', { cls: 'setting-item-description' });
+    const showExample = () => {
+      const path = planner.monthNotePath(pl, moment().format('YYYY-MM'));
+      plannerExample.setText('This month: ' + (path || '— the pattern produces no file name —'));
+    };
+    // Rebuilding every calendar rescans the vault, so it happens when the field
+    // is left rather than on each keystroke.
+    const refreshOnLeave = (t) => { t.inputEl.onblur = () => this.plugin.refreshCalendarViews(); return t; };
+    new Setting(e).setName('Planner folder')
+      .setDesc('Leave empty to keep the month notes in the vault root.')
+      .addText(t => refreshOnLeave(t).setPlaceholder('Planner').setValue(pl.folder || '')
+        .onChange(async v => { pl.folder = (v || '').trim(); await this.save(); showExample(); }));
+    new Setting(e).setName('File name')
+      .setDesc('YYYY, YY, MM, MMM and MMMM; anything else is kept as typed. A slash makes a subfolder, so "YYYY/YYYY-MM" files each year separately.')
+      .addText(t => refreshOnLeave(t).setPlaceholder('YYYY-MM').setValue(pl.pattern || '')
+        .onChange(async v => { pl.pattern = (v || '').trim() || 'YYYY-MM'; await this.save(); showExample(); }));
+    showExample();
+
     new Setting(e).addButton(b => b.setButtonText('Open calendar').setCta().onClick(() => this.plugin.openCalendarPage()));
   }
 
@@ -145,7 +159,6 @@ class NexusSettingsTab extends PluginSettingTab {
         { id: 'explorer',      icon: 'folder-tree',      fn: (e) => this.tExplorer(e) },
         { id: 'folderNotes',   icon: 'folder-open',      fn: (e) => this.tFolderNotes(e) },
         { id: 'icons',         icon: 'shapes',           fn: (e) => this.tIcons(e) },
-        { id: 'board',         icon: 'layout-grid',      fn: (e) => this.tBoard(e) },
         { id: 'kanban',        icon: 'square-kanban',    fn: (e) => this.tKanban(e) },
         { id: 'hider',         icon: 'eye-off',          fn: (e) => this.tHider(e) },
       ] },
@@ -154,8 +167,6 @@ class NexusSettingsTab extends PluginSettingTab {
         { id: 'callouts',      icon: 'message-square-quote', fn: (e) => this.tCallouts(e) },
         { id: 'columns',       icon: 'columns-2',        fn: (e) => this.tColumns(e) },
         { id: 'typography',    icon: 'type',             fn: (e) => this.tTypography(e) },
-        { id: 'focus',         icon: 'crosshair',        fn: (e) => this.tFocus(e) },
-        { id: 'editorial',     icon: 'pilcrow',          fn: (e) => this.tEditorial(e) },
         { id: 'propertyHider', icon: 'list',             fn: (e) => this.tPropHider(e) },
         { id: 'tagTools',      icon: 'tags',             fn: (e) => this.tTagTools(e) },
       ] },
@@ -175,7 +186,7 @@ class NexusSettingsTab extends PluginSettingTab {
       { title: 'Tools', tabs: [
         { id: 'search',        icon: 'search',           fn: (e) => this.tSearch(e) },
         { id: 'workspaces',    icon: 'layout-dashboard', fn: (e) => this.tWorkspaces(e) },
-        { id: 'sprint',        icon: 'timer',            fn: (e) => this.tSprint(e) },
+        { id: 'galaxy',        icon: 'orbit',            fn: (e) => this.tGalaxy(e) },
         { id: 'vaultSync',     icon: 'refresh-cw',       fn: (e) => this.tVaultSync(e) },
       ] },
     ];
@@ -188,6 +199,12 @@ class NexusSettingsTab extends PluginSettingTab {
 
     const renderBody = () => {
       body.empty();
+      /* The only way back to the rail in the narrow layout, so it is built with
+         the panel rather than once — renderBody() empties this container. */
+      const back = body.createDiv({ cls: 'nx-settings-back' });
+      setIcon(back.createDiv('nx-settings-back-ic'), 'chevron-left');
+      back.createSpan({ text: 'All settings' });
+      back.onclick = () => wrap.removeClass('is-panel');
       const t = tabs.find(x => x.id === this.active);
       const m = meta(t.id);
       const head = body.createDiv('nx-settings-head');
@@ -199,6 +216,10 @@ class NexusSettingsTab extends PluginSettingTab {
       // Every page says less: the explanations move into an ⓘ next to the name
       // they belong to (see lib/inputs.js · nxFoldDescriptions).
       nxFoldDescriptions(body);
+      /* A page long enough to need scrolling twice folds into its own sections.
+         Four is the threshold: below it the headings are a table of contents you
+         can already see, above it they are a wall. */
+      nxCollapseSections(body, t.id, 4);
       nav.querySelectorAll('.nx-settings-tab').forEach(el => el.toggleClass('is-active', el.getAttribute('data-id') === this.active));
     };
     groups.forEach(g => {
@@ -210,21 +231,62 @@ class NexusSettingsTab extends PluginSettingTab {
         btn.setAttribute('aria-label', m.name + (m.sub ? ' — ' + m.sub : ''));
         setIcon(btn.createDiv('nx-settings-tab-icon'), t.icon);
         btn.createDiv({ cls: 'nx-settings-tab-label', text: m.name });
-        btn.onclick = () => { this.active = t.id; renderBody(); };
+        btn.onclick = () => { this.active = t.id; renderBody(); openPanel(); };
       });
     });
+
+    /* Narrow: the rail and the panel are one drill-down column instead of two.
+       The stylesheet has always had this layout; nothing ever set the classes,
+       so on a phone the tab was two columns squeezed into 430px — the state the
+       user reviewed it in. 860px is where 188px of rail starts costing the
+       panel more than it gives.
+
+       The listener is torn down in hide(), because a settings tab is rebuilt
+       every time it is opened and each build would otherwise leave one behind. */
+    const narrow = window.matchMedia('(max-width: 620px)');
+    const openPanel = () => { if (narrow.matches) wrap.addClass('is-panel'); };
+    const applyNarrow = () => {
+      wrap.toggleClass('is-narrow', narrow.matches);
+      // Coming back to a wide window must not leave the panel state behind,
+      // or the rail stays hidden with nothing to bring it back.
+      if (!narrow.matches) wrap.removeClass('is-panel');
+    };
+    this._narrowQuery = narrow;
+    this._onNarrow = applyNarrow;
+    narrow.addEventListener('change', applyNarrow);
+    applyNarrow();
+
     renderBody();
   }
 
-  /* Kanban — the ```nexus-kanban``` boards plus the columns of the task board.
-     Both are only defaults: a board keeps its own columns in its own block, and
-     a Vikunja project brings the columns its server has. */
+  hide() {
+    if (this._narrowQuery && this._onNarrow) this._narrowQuery.removeEventListener('change', this._onNarrow);
+    this._narrowQuery = null;
+    this._onNarrow = null;
+  }
+
+  /* Kanban — the ```nexus-kanban``` boards in both their sources, plus the
+     columns of the task board. All of it is only defaults: a board keeps its
+     own columns in its own block, and a Vikunja project brings the columns its
+     server has. */
   tKanban(e) {
     const s = this.plugin.settings.kanban;
     this.head(e, s);
 
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'A board is a ```nexus-kanban``` block inside an ordinary note — columns and cards live in the block itself, so the board is one hand-editable text and works without the plugin.' });
+      text: 'A board is a ```nexus-kanban``` block inside an ordinary note. Where its cards come from is the one thing it asks: “source: block” keeps them in the block itself, so the board is one hand-editable text that works without the plugin — “source: folder” makes them the notes of a folder instead.' });
+    nxBlockExample(e, 'nexus-kanban', [
+      '## Backlog',
+      '- [ ] Order the connectors',
+      '- [ ] Read the datasheet',
+      '    A note under a card becomes its description.',
+      '',
+      '## In progress @2',
+      '- [ ] Route the power rail  #pcb  @2026-09-08',
+      '',
+      '## Done',
+      '- [x] Pick the microcontroller',
+    ]);
 
     nxMultiRow(e, 'Columns of a new board', 'One per row. Names decide the colour: “Erledigt”/“Done” is the done column, “In Arbeit”/“Doing” the active one.',
       (s.buckets || []).join('\n'), '\n', 'Backlog',
@@ -244,6 +306,45 @@ class NexusSettingsTab extends PluginSettingTab {
 
     new Setting(e).setName('Narrow columns').setDesc('Fits more columns on screen. Per board via “compact: true”.')
       .addToggle(t => t.setValue(!!s.compact).onChange(async v => { s.compact = v; await this.save(); }));
+
+    // ── the folder source ──
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'A folder as the board' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'With “source: folder” the cards are EVERY note of that folder — it never filters, so nothing goes quietly missing — and a column is what the note’s own frontmatter says. Dragging a card writes the new value into the note; the first column means “nothing set” and stays clean. Everything else is set per board through its gear and travels with the note.' });
+    new Setting(e).setName('Default state property')
+      .setDesc('Pre-filled for new folder boards. Written into the note itself, so other cards and the search can use it too.')
+      .addText(t => { t.setPlaceholder('status').setValue(s.statusProperty || 'status');
+        t.onChange(async v => { s.statusProperty = v.trim() || 'status'; await this.save(); });
+        nxAutocomplete(t.inputEl, () => this.plugin._allPropKeys(), v => { s.statusProperty = v; this.save(); }); });
+    // No trailing "# …" comments in the examples: the Copy button hands the
+    // block over verbatim, and the parser would read the comment as the value.
+    nxBlockExample(e, 'nexus-kanban', [
+      'source: folder',
+      'folder: SCHOOL/Biology',
+      'status: status',
+      'sort: name',
+      'dir: asc',
+      'size: medium',
+      'props: due',
+      '',
+      '## Offen',
+      '## In Arbeit @3',
+      '## Erledigt',
+    ]);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'folder: empty = the folder this note is in · status: the frontmatter property, and the first heading is what “nothing set” is called · sort: name | modified | created | state · dir: asc | desc · size: small | medium | large · props: comma-separated frontmatter keys shown as badges · excerpt, tags, links, orphans, state: “false” hides that part of a card.' });
+
+    // ── the grid and the web ──
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'The same notes without columns' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A ```nexus-graph``` block shows one folder either as a wall of cards or as the web of links between its notes, coloured by state. Neither has columns and neither writes anything back — that is why they are their own block. An older ```nexus-board``` block keeps working and lands here on its own.' });
+    nxBlockExample(e, 'nexus-graph', [
+      'folder: SCHOOL/Biology',
+      'view: graph',
+      'height: 260',
+    ]);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'view: graph | grid | board — “board” hands the block back to the columns · height: the web’s height in pixels. It reads the same keys as a folder board.' });
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Task board' });
     e.createEl('p', { cls: 'setting-item-description',
@@ -374,7 +475,17 @@ class NexusSettingsTab extends PluginSettingTab {
       .addText(t => t.setValue(s.delimiter).onChange(async v => { s.delimiter = v || '==='; await this.save(); }));
     new Setting(e).setName('Column gap').addText(t => t.setValue(s.gap)
       .onChange(async v => { s.gap = v || '1.5rem'; await this.save(); }));
-    e.createEl('p', { cls: 'setting-item-description', text: 'Code block ```columns``` with === as the column separator. Renders in Live Preview & Reading mode.' });
+    e.createEl('p', { cls: 'setting-item-description', text: 'Renders in Live Preview and in Reading mode. The example uses the separator set above.' });
+    nxBlockExample(e, 'columns', [
+      '### Left',
+      'Anything markdown can do works in a column —',
+      'lists, links, images, even another block.',
+      '',
+      (s.delimiter || '===').trim(),
+      '',
+      '### Right',
+      'A third column is one more separator.',
+    ]);
   }
   tHomepage(e) {
     const s = this.plugin.settings.homepage;   // module fields (shared)
@@ -411,8 +522,19 @@ class NexusSettingsTab extends PluginSettingTab {
       .addText(t => t.setPlaceholder('attachments/homepage/hero.jpg').setValue(doc.hero || '').onChange(async v => { doc.hero = v; await this.save(); refreshHome(); }));
     new Setting(e).setName('Ribbon icon').addToggle(t => t.setValue(s.ribbon)
       .onChange(async v => { s.ribbon = v; await this.save(); new Notice('Nexus: Restart/reload for the ribbon change.'); }));
-    new Setting(e).setName('Open on startup').addToggle(t => t.setValue(s.openOnStartup)
-      .onChange(async v => { s.openOnStartup = v; await this.save(); }));
+    new Setting(e).setName('On startup').setDesc('What the dashboard does when Obsidian starts.')
+      .addDropdown(d => d
+        .addOption('off', 'Nothing')
+        .addOption('tab', 'Open it in a tab of its own')
+        .addOption('closeAll', 'Close every tab, then open it')
+        .setValue(s.startup || 'off')
+        .onChange(async v => { s.startup = v; await this.save(); }));
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A tab of its own never replaces a note you left open — and when the dashboard is pinned, it brings that pinned tab forward instead of opening a second one. Closing every tab leaves the pinned Nexus pages where they are; the watchdog would only put them back anyway.' });
+    new Setting(e).setName('Open when the last tab closes')
+      .setDesc('Closing the final tab in the main area brings the dashboard up instead of leaving an empty pane.')
+      .addToggle(t => t.setValue(!!s.openWhenEmpty)
+        .onChange(async v => { s.openWhenEmpty = v; await this.save(); }));
 
     // ── Pinned tabs ──
     // Lives here because the dashboard is the page you reach for first, but it
@@ -428,6 +550,22 @@ class NexusSettingsTab extends PluginSettingTab {
 
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Configure cards individually: in the dashboard via the gear at the top-right of each card (size in units, filter, count, cover).' });
+
+    /* The grid these size lives here and not on the Theme tab, where they used
+       to sit: they describe the dashboard, not the look of the app. The Theme
+       tab is style and palette, nothing else. */
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'The card grid' });
+    const t = this.plugin.settings.theme;
+    const applyTheme = async () => { await this.save(); this.plugin.applyThemeSettings(); };
+    const slider = (name, key, min, max, def) => new Setting(e).setName(name)
+      .addSlider(sl => { sl.setLimits(min, max, 1).setValue(t[key] != null ? t[key] : def).setDynamicTooltip();
+        sl.onChange(async v => { t[key] = v; await applyTheme(); }); })
+      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default')
+        .onClick(async () => { t[key] = null; await applyTheme(); this.display(); }));
+    slider('Columns', 'homeCols', 8, 48, 24);
+    slider('Card base height', 'homeRow', 20, 160, 40);
+    slider('Card gap', 'homeGap', 4, 40, 12);
+    slider('Edge padding', 'homePad', 8, 80, 30);
   }
   tExplorer(e) {
     const s = this.plugin.settings.explorer;
@@ -445,6 +583,26 @@ class NexusSettingsTab extends PluginSettingTab {
       .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default').onClick(async () => {
         s.intensity = 22; await this.save(); this.plugin.applyExplorer(); this.display(); }));
 
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Hidden folders' });
+    new Setting(e).setName('Hide the attachment folder')
+      .setDesc('Takes it out of the file tree. The files stay where they are and every link keeps working — this only stops the folder from taking up the sidebar.')
+      .addToggle(t => t.setValue(!!s.hideAttachments)
+        .onChange(async v => { s.hideAttachments = v; await this.save(); this.plugin.applyExplorer(); this.display(); }));
+    if (s.hideAttachments) {
+      const detected = this.plugin.defaultAttachmentFolder();
+      new Setting(e).setName('Folder name')
+        .setDesc(detected
+          ? 'Empty uses what Obsidian is set to: ' + detected
+          : 'Obsidian puts attachments beside each note here, so there is no single folder to hide — name one.')
+        .addText(t => { t.setPlaceholder(detected || 'Attachments').setValue(s.attachmentFolder || '')
+          .onChange(async v => {
+            s.attachmentFolder = (v || '').trim().replace(/^\/|\/$/g, '');
+            await this.save(); this.plugin.applyExplorer(); });
+          t.inputEl.addClass('nx-input');
+          nxAutocomplete(t.inputEl, () => nxAllFolders(this.app), async (v) => {
+            s.attachmentFolder = v; await this.save(); this.plugin.applyExplorer(); }); });
+    }
+
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Ribbon (left icon bar)' });
     new Setting(e).setName('Visibility')
       .setDesc('Only with the Nexus theme active. "On hover" shows a thin strip on the left that expands on hover.')
@@ -460,157 +618,6 @@ class NexusSettingsTab extends PluginSettingTab {
       e.createEl('p', { cls: 'setting-item-description',
         text: 'Note: The Nexus theme is not currently active — folder cards & ribbon style only become visible with the Nexus theme.' });
   }
-  tBoard(e) {
-    const s = this.plugin.settings.board;
-    this.head(e, s);
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'A ```nexus-board``` block turns an ordinary note into the dashboard of one subject: EVERY note of that folder as a card. It never filters — a hand-built overview shows what you remembered to add, this shows the folder, so nothing goes missing.' });
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'Two arrangements of the same set: a sorted grid, or the same cards in columns by working state (drag them, or click the dot on a card). Everything else is set per dashboard through its gear — those settings are written back into the code block and travel with the note.' });
-    new Setting(e).setName('Default state property')
-      .setDesc('Pre-filled for new dashboards. Written into the note itself, so other cards and the search can use it too.')
-      .addText(t => { t.setPlaceholder('status').setValue(s.statusProperty || 'status');
-        t.onChange(async v => { s.statusProperty = v.trim() || 'status'; await this.save(); });
-        nxAutocomplete(t.inputEl, () => this.plugin._allPropKeys(), v => { s.statusProperty = v; this.save(); }); });
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Block reference' });
-    const pre = e.createEl('pre', { cls: 'nx-board-help' });
-    pre.setText([
-      '```nexus-board',
-      'folder: SCHOOL/Biology    # empty = the folder this note is in',
-      'mode: grid                # grid | board',
-      'sort: name                # name | modified | created | state',
-      'dir: asc                  # asc | desc',
-      'size: medium              # small | medium | large',
-      'status: status            # frontmatter property holding the state',
-      'states: Offen, In Arbeit, Ausbessern, Erledigt',
-      'props: due                # extra frontmatter shown as a badge',
-      'show: excerpt, tags, links, orphans, state, graph',
-      'height: 260               # graph height in px',
-      '```',
-    ].join('\n'));
-  }
-
-  tFocus(e) {
-    const s = this.plugin.settings.focus;
-    const apply = () => { if (this.plugin.focus) this.plugin.focus.apply(); };
-    this.head(e, s, apply);
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'Only affects editing, not reading view. Command "Toggle focus mode" flips it without coming here — worth a hotkey.' });
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Dimming' });
-    new Setting(e).setName('Dim everything else')
-      .addToggle(t => t.setValue(s.dim !== false).onChange(async v => { s.dim = v; await this.save(); apply(); }));
-    new Setting(e).setName('What stays lit')
-      .setDesc('Sentence-level would need a CodeMirror extension, which this plugin deliberately avoids — line and paragraph work through the DOM.')
-      .addDropdown(dd => dd.addOption('line', 'The current line').addOption('paragraph', 'The current paragraph')
-        .setValue(s.scope || 'line').onChange(async v => { s.scope = v; await this.save(); apply(); }));
-    new Setting(e).setName('How far the rest fades').setDesc('Lower = dimmer surroundings.')
-      .addSlider(sl => { sl.setLimits(5, 90, 5).setValue(s.dimOpacity == null ? 45 : s.dimOpacity).setDynamicTooltip();
-        sl.onChange(async v => { s.dimOpacity = v; await this.save(); apply(); }); })
-      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default (45 %)')
-        .onClick(async () => { s.dimOpacity = 45; await this.save(); apply(); this.display(); }));
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Typewriter scrolling' });
-    new Setting(e).setName('Keep the current line at a fixed height')
-      .setDesc('The text scrolls under the cursor instead of the cursor wandering down the screen.')
-      .addToggle(t => t.setValue(!!s.typewriter).onChange(async v => { s.typewriter = v; await this.save(); apply(); }));
-    new Setting(e).setName('Height').setDesc('0 = top of the editor, 100 = bottom.')
-      .addSlider(sl => { sl.setLimits(15, 85, 5).setValue(s.typewriterOffset == null ? 50 : s.typewriterOffset).setDynamicTooltip();
-        sl.onChange(async v => { s.typewriterOffset = v; await this.save(); apply(); }); });
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Keystroke sound' });
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'Synthesised live, not played from a file — nothing is bundled and it works on mobile too.' });
-    new Setting(e).setName('Sound while typing')
-      .addToggle(t => t.setValue(!!s.sound).onChange(async v => { s.sound = v; await this.save(); }));
-    new Setting(e).setName('Character')
-      .addDropdown(dd => dd.addOption('soft', 'Soft — muted thud').addOption('mechanical', 'Mechanical — sharp click')
-        .setValue(s.soundStyle || 'soft').onChange(async v => { s.soundStyle = v; await this.save(); }));
-    new Setting(e).setName('Volume')
-      .addSlider(sl => { sl.setLimits(0, 100, 5).setValue(s.soundVolume == null ? 25 : s.soundVolume).setDynamicTooltip();
-        sl.onChange(async v => { s.soundVolume = v; await this.save(); }); })
-      .addExtraButton(b => b.setIcon('play').setTooltip('Try it')
-        .onClick(() => { if (this.plugin.focus) { const was = s.sound; s.sound = true; this.plugin.focus.click(); s.sound = was; } }));
-    new Setting(e).setName('Bell on Enter').setDesc('Like the carriage return of a typewriter.')
-      .addToggle(t => t.setValue(!!s.bell).onChange(async v => { s.bell = v; await this.save(); }));
-  }
-
-  tSprint(e) {
-    const s = this.plugin.settings.sprint;
-    this.head(e, s);
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'Command "Start a writing sprint" opens the dialog; the values here are what it starts with. Only words you ADD during the sprint count — deleting takes them away again, and switching notes keeps adding to the same total.' });
-    new Setting(e).setName('Default duration')
-      .addText(t => { t.inputEl.type = 'number'; t.setValue(String(s.minutes || 15));
-        t.onChange(async v => { const n = parseInt(v, 10); if (n > 0) { s.minutes = n; await this.save(); } }); });
-    new Setting(e).setName('Default word goal')
-      .addText(t => { t.inputEl.type = 'number'; t.setValue(String(s.words || 300));
-        t.onChange(async v => { const n = parseInt(v, 10); if (n > 0) { s.words = n; await this.save(); } }); });
-    new Setting(e).setName('Use the clock by default')
-      .addToggle(t => t.setValue(s.useTime !== false).onChange(async v => { s.useTime = v; await this.save(); }));
-    new Setting(e).setName('Use the word goal by default')
-      .addToggle(t => t.setValue(s.useWords !== false).onChange(async v => { s.useWords = v; await this.save(); }));
-    new Setting(e).setName('Show progress in the status bar').setDesc('Click it to stop the sprint early.')
-      .addToggle(t => t.setValue(s.statusBar !== false).onChange(async v => { s.statusBar = v; await this.save(); if (this.plugin.sprint) this.plugin.sprint.paint(); }));
-    new Setting(e).setName('Turn on focus mode for the sprint').setDesc('Restores whatever it was afterwards.')
-      .addToggle(t => t.setValue(!!s.focusDuringSprint).onChange(async v => { s.focusDuringSprint = v; await this.save(); }));
-    new Setting(e).setName('Closing words').setDesc('Shown in the summary when a sprint ends (optional).')
-      .addText(t => t.setPlaceholder('Well run.').setValue(s.doneMessage || '')
-        .onChange(async v => { s.doneMessage = v; await this.save(); }));
-  }
-
-  tEditorial(e) {
-    const s = this.plugin.settings.editorial;
-    const apply = () => { if (this.plugin.editorial) this.plugin.editorial.apply(); };
-    this.head(e, s, apply);
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'All four are ordinary callouts, so a note keeps making sense without this plugin — it just renders as a plain callout instead of breaking. Commands insert them at the cursor.' });
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Margin note' });
-    e.createEl('p', { cls: 'setting-item-description', text: '> [!margin] — sits in the whitespace beside the text, and drops back inline on a narrow window.' });
-    new Setting(e).setName('Enabled')
-      .addToggle(t => t.setValue(s.margin !== false).onChange(async v => { s.margin = v; await this.save(); apply(); }));
-    new Setting(e).setName('Width')
-      .addSlider(sl => { sl.setLimits(120, 320, 10).setValue(s.marginWidth == null ? 200 : s.marginWidth).setDynamicTooltip();
-        sl.onChange(async v => { s.marginWidth = v; await this.save(); apply(); }); });
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Pull quote' });
-    e.createEl('p', { cls: 'setting-item-description', text: '> [!pullquote] — a sentence lifted out, centred and large. Quote marks are drawn, not typed.' });
-    new Setting(e).setName('Enabled')
-      .addToggle(t => t.setValue(s.pullquote !== false).onChange(async v => { s.pullquote = v; await this.save(); apply(); }));
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Ornamental divider' });
-    e.createEl('p', { cls: 'setting-item-description', text: '> [!ornament] — a hairline with a glyph on it. Type a character after the type to use that one instead.' });
-    new Setting(e).setName('Enabled')
-      .addToggle(t => t.setValue(s.ornament !== false).onChange(async v => { s.ornament = v; await this.save(); apply(); }));
-    new Setting(e).setName('Glyph')
-      .addText(t => t.setPlaceholder('❦').setValue(s.ornamentGlyph || '❦')
-        .onChange(async v => { s.ornamentGlyph = v.trim() || '❦'; await this.save(); apply(); }));
-
-    // ── Checklist states ──
-    // Pure CSS over Obsidian's own data-task attribute — the note stays plain
-    // markdown, so the characters keep their meaning in any other app.
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Checklist states' });
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'The alternate checkbox characters Minimal made a convention: "- [>] " and friends get their own icon and colour. Command "Set the checklist state" writes one into the current line.' });
-    new Setting(e).setName('Enabled')
-      .addToggle(t => t.setValue(s.taskStates !== false).onChange(async v => { s.taskStates = v; await this.save(); apply(); }));
-    const legend = e.createDiv('nx-task-legend nx-task-states');
-    TASK_STATES.filter(([ch]) => ch !== ' ' && ch !== 'x').forEach(([ch, label]) => {
-      const row = legend.createDiv({ cls: 'nx-task-legend-item', attr: { 'data-task': ch } });
-      const box = row.createEl('input', { type: 'checkbox' });
-      box.disabled = true;
-      row.createSpan({ cls: 'nx-task-legend-ch', text: '[' + ch + ']' });
-      row.createSpan({ cls: 'nx-task-legend-lbl', text: label });
-    });
-
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Drop cap' });
-    new Setting(e).setName('Enlarge the first letter of a note')
-      .setDesc('Reading view only. In Live Preview the editor\'s first line may be a property block or a heading, and CSS cannot tell those from prose — the cap would land on the wrong character.')
-      .addToggle(t => t.setValue(!!s.dropcap).onChange(async v => { s.dropcap = v; await this.save(); apply(); }));
-  }
-
   tFolderNotes(e) {
     const s = this.plugin.settings.folderNotes;
     const refresh = () => { if (this.plugin.folderNotes) this.plugin.folderNotes.refreshExplorer(); };
@@ -690,7 +697,16 @@ class NexusSettingsTab extends PluginSettingTab {
       () => this.plugin._allFolders());
 
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Code block ```folder-overview``` renders the contents of the folder. Optional lines: title, depth, include (folder, markdown, all), sort (name/created/modified), asc, style (list/grid), folder.' });
+      text: 'Code block ```folder-overview``` renders the contents of the folder. Every line is optional — without any it lists the folder the note sits in.' });
+    nxBlockExample(e, 'folder-overview', [
+      'title: In this folder',
+      'folder:                   # empty = the folder this note is in',
+      'depth: 2',
+      'include: markdown         # folder | markdown | all',
+      'sort: modified            # name | created | modified',
+      'asc: false',
+      'style: list               # list | grid',
+    ]);
   }
 
   tIcons(e) {
@@ -826,7 +842,7 @@ class NexusSettingsTab extends PluginSettingTab {
     const s = this.plugin.settings.quicknote;
     this.head(e, s);
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'Command "Quick Note (speak it)" opens a recorder. Say the thing, stop, and it becomes a note — the first few words become the file name, because that is what you will scan for later.' });
+      text: 'Command "Chatter (speak a note)" opens a recorder. Say the thing, stop, and it becomes a note — the first few words become the file name, because that is what you will scan for later.' });
 
     new Setting(e).setName('Folder').setDesc('Where spoken notes are filed.')
       .addText(t => t.setPlaceholder('Inbox/Quicknote').setValue(s.folder || '')
@@ -869,58 +885,111 @@ class NexusSettingsTab extends PluginSettingTab {
       .addToggle(t => t.setValue(s.openAfter !== false).onChange(async v => { s.openAfter = v; await this.save(); }));
   }
 
+  /* ── Connections ──────────────────────────────────────────────────────────
+     A connection is an ENTRY, not a row of text fields. It is declared once in
+     a modal and afterwards only tested or removed: editing it in place lets
+     half a connection be saved — a new URL against the old password — and the
+     first news of that is a failed sync. To change one, remove it and add it
+     again. The WebDAV server and the task accounts share this list because to
+     the person adding one they are the same idea, and both are per device. */
+  /* What happens to a secret on THIS device. It is written where the reader is
+     about to type one, and it is deliberately unflattering: a padlock that
+     overstates itself is worse than no padlock. */
+  secretNote(parent) {
+    const on = this.plugin.secretsEncrypted();
+    const p = parent.createEl('p', { cls: 'setting-item-description' });
+    p.createSpan({ text: on
+      ? 'Stored on this device only, encrypted with the system keyring — a backup or a stolen disk cannot read it. '
+      : 'Stored on this device only, in plain text: there is no keyring here that a plugin can reach. ' });
+    p.createSpan({ text: 'Nothing running as you is stopped by this either way, because sync has to open the secret without you. Use a token you can revoke.' });
+    return p;
+  }
+
+  connectionList(wrap, kind) {
+    const isSync = kind === 'vaultsync';
+    const paint = () => {
+      wrap.empty();
+      const list = wrap.createDiv('nx-list');
+      const url = this.plugin.deviceSetting('vaultSyncUrl', '');
+      const entries = isSync
+        ? (url ? [{ id: 'vaultsync',
+            title: this.plugin.deviceSetting('vaultSyncDeviceName', '') || this.plugin.deviceId(),
+            sub: 'webdav · ' + url }] : [])
+        : (this.plugin.settings.tasksCalendar.accounts || []).map(account => ({
+            id: account.id, account, title: account.label || 'Vikunja',
+            sub: (account.kind || 'vikunja') + ' · ' + (account.serverUrl || 'no server') }));
+
+      if (!entries.length) {
+        list.createDiv('nx-row').createDiv({ cls: 'nx-row-sub',
+          text: isSync ? 'No server yet.' : 'No account yet.' });
+      }
+      entries.forEach(entry => {
+        const row = list.createDiv('nx-row');
+        const main = row.createDiv('nx-row-main');
+        main.createDiv({ cls: 'nx-row-title', text: entry.title });
+        main.createDiv({ cls: 'nx-row-sub', text: entry.sub });
+        const aside = row.createDiv('nx-row-aside');
+        const test = aside.createEl('button', { cls: 'nx-btn is-sm', text: 'Test' });
+        test.onclick = async () => {
+          test.disabled = true; test.textContent = 'Testing…';
+          try { new Notice('Nexus: ' + (await this.plugin.testConnection(kind, entry.account)) + '.'); }
+          catch (err) { new Notice('Nexus: ' + (err && err.message ? err.message : 'the test failed.')); }
+          test.disabled = false; test.textContent = 'Test';
+        };
+        const remove = aside.createEl('button', { cls: 'nx-btn is-sm is-quiet is-danger', text: 'Remove' });
+        remove.onclick = async () => { await this.removeConnection(kind, entry); paint(); };
+      });
+      // One vault lives on one server, so the sync list stops at one entry.
+      if (isSync && entries.length) return;
+      const add = list.createEl('button', { cls: 'nx-btn nx-list-add',
+        text: isSync ? 'Add a server' : 'Add an account' });
+      add.onclick = () => new NexusAccountModal(this.plugin, { kind }, paint).open();
+    };
+    paint();
+  }
+  /* Removing a connection takes its credential with it: a stored password for a
+     server nothing lists any more is not a convenience, it is a leftover. */
+  async removeConnection(kind, entry) {
+    this.plugin.setCredential(kind === 'vaultsync' ? 'vaultsync' : entry.id, {});
+    if (kind === 'vaultsync') {
+      /* The vault-wide husks the migration reads from are emptied as well.
+         Left behind, a device whose id changed — localStorage cleared, a
+         reinstall — would migrate the removed server straight back in. Emptied
+         rather than deleted, so the key itself stays recognisable in the file. */
+      const legacy = this.plugin.settings.vaultSync;
+      legacy.url = '';
+      legacy.deviceName = '';
+      await this.plugin.setDeviceSetting('vaultSyncUrl', '');
+      await this.plugin.setDeviceSetting('vaultSyncDeviceName', '');
+      if (this.plugin.vaultSync) this.plugin.vaultSync.schedule();
+      return;
+    }
+    const tc = this.plugin.settings.tasksCalendar;
+    tc.accounts = (tc.accounts || []).filter(account => account.id !== entry.id);
+    await this.save();
+  }
+
   tVaultSync(e) {
-    const s = this.plugin.settings.vaultSync;
+    const s = this.plugin.settings.vaultSync;   // shared policy only — the connection is per device
     this.head(e, s);
     e.createEl('p', { cls: 'setting-item-description',
       text: 'The whole vault to a WebDAV server: Nextcloud, a Synology, or anything else that speaks it. Three-way, so a file you delete stays deleted instead of coming back, and a file you have not downloaded yet is not mistaken for one you removed. Credentials stay on this device and never go into the vault — which matters here more than usual, because the vault is what gets uploaded.' });
 
-    new Setting(e).setName('Server URL').setDesc('The folder the vault lives in, e.g. https://cloud.example.com/remote.php/dav/files/me/Vault')
-      .addText(t => t.setPlaceholder('https://…').setValue(s.url || '')
-        .onChange(async v => { s.url = v.trim(); await this.save(); }));
-
-    const cred = this.plugin.getCredential('vaultsync') || {};
-    new Setting(e).setName('User name').setClass('nx-set-sub')
-      .addText(t => t.setValue(cred.username || '').onChange(v => {
-        const now = this.plugin.getCredential('vaultsync') || {};
-        this.plugin.setCredential('vaultsync', Object.assign(now, { username: v.trim() }));
-      }));
-    new Setting(e).setName('App password').setDesc('Device-local, never synced. Use an app password, not your account password.').setClass('nx-set-sub')
-      .addText(t => {
-        t.inputEl.type = 'password';
-        t.setValue(cred.secret || '').onChange(v => {
-          const now = this.plugin.getCredential('vaultsync') || {};
-          this.plugin.setCredential('vaultsync', Object.assign(now, { secret: v }));
-        });
-      });
-    new Setting(e).setName('Connection').setDesc('Ask the server whether it is there and whether it knows you.')
-      .addButton(b => b.setButtonText('Test').setCta().onClick(async () => {
-        b.setDisabled(true).setButtonText('Testing…');
-        const now = this.plugin.getCredential('vaultsync') || {};
-        try {
-          if (!s.url) throw new Error('fill in the URL first');
-          const client = new WebDavClient({ baseUrl: s.url, username: now.username || '', password: now.secret || '' });
-          const res = await client.check();
-          new Notice('Nexus: ' + res.message + '.');
-        } catch (err) {
-          new Notice('Nexus: ' + (err && err.message ? err.message : 'the test failed.'));
-        }
-        b.setDisabled(false).setButtonText('Test');
-      }));
-
-    new Setting(e).setName('This device is called').setDesc('Shows up in the name of a conflict copy, so you can tell which machine wrote it.')
-      .addText(t => t.setPlaceholder(this.plugin.deviceId()).setValue(s.deviceName || '')
-        .onChange(async v => { s.deviceName = v.trim(); await this.save(); }));
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Server' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'The server, the user name and this device\'s name belong to THIS device: they are stored under its own key, so a sync carries them nowhere. Every device connects itself. A connection cannot be edited afterwards — remove it and add it again.' });
+    this.connectionList(e.createDiv('nx-set-list'), 'vaultsync');
+    this.secretNote(e);
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'When' });
-    new Setting(e).setName('Sync on start').setDesc('So a device you pick up is already what you left.')
-      .addToggle(t => t.setValue(s.onStart !== false).onChange(async v => { s.onStart = v; await this.save(); }));
-    new Setting(e).setName('Every').setDesc('Minutes between syncs. 0 = only when you ask.')
-      .addText(t => t.setPlaceholder('15').setValue(String(s.intervalMin == null ? 15 : s.intervalMin))
+    new Setting(e).setName('Sync on start').setDesc('So a device you pick up is already what you left. Per device.')
+      .addToggle(t => t.setValue(this.plugin.deviceSetting('vaultSyncOnStart', true) !== false)
+        .onChange(async v => { await this.plugin.setDeviceSetting('vaultSyncOnStart', v); }));
+    new Setting(e).setName('Every').setDesc('Minutes between syncs. 0 = only when you ask. Per device — a phone on mobile data and a desktop rarely want the same number.')
+      .addText(t => t.setPlaceholder('15').setValue(String(this.plugin.deviceSetting('vaultSyncIntervalMin', 15)))
         .onChange(async v => {
-          const n = parseInt(v, 10);
-          s.intervalMin = isFinite(n) && n > 0 ? n : 0;
-          await this.save();
+          const minutes = parseInt(v, 10);
+          await this.plugin.setDeviceSetting('vaultSyncIntervalMin', isFinite(minutes) && minutes > 0 ? minutes : 0);
           if (this.plugin.vaultSync) this.plugin.vaultSync.schedule();
         }));
 
@@ -1007,6 +1076,7 @@ class NexusSettingsTab extends PluginSettingTab {
     this.head(e, s);
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Code block ```quicksketch``` renders a pad you can draw on with pen, touch or mouse (pen pressure → line width). Each drawing is saved as a standalone .svg sidecar. Command "Insert quick sketch" adds a block at the cursor.' });
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'The paper' });
     new Setting(e).setName('Sketch folder').setDesc('Where the .svg sidecars are stored.')
       .addText(t => t.setPlaceholder('Inbox/Quicksketch').setValue(s.folder)
         .onChange(async v => { s.folder = v || 'Inbox/Quicksketch'; await this.save(); await this.plugin.ensureSketchFolder(); }));
@@ -1379,23 +1449,49 @@ class NexusSettingsTab extends PluginSettingTab {
     note.createEl('b', { text: 'Velumeron' });
     note.createSpan({ text: ' is the only live one: it pulls its colours from wallust, so the theme recolours together with your wallpaper and the desktop bar. That needs a machine running the Velumeron shell — anywhere else (a plain desktop, the tablet) pick a fixed palette.' });
 
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Spacing & sizes' });
-    const slider = (name, key, min, max, def) => new Setting(e).setName(name)
-      .addSlider(sl => { sl.setLimits(min, max, 1).setValue(s[key] != null ? s[key] : def).setDynamicTooltip();
-        sl.onChange(async v => { s[key] = v; await apply(); }); })
-      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default').onClick(async () => { s[key] = null; await apply(); this.display(); }));
-    slider('Homepage · Columns', 'homeCols', 8, 48, 24);
-    slider('Homepage · Card base height', 'homeRow', 20, 160, 40);
-    slider('Homepage · Card gap', 'homeGap', 4, 40, 12);
-    slider('Homepage · Edge padding', 'homePad', 8, 80, 30);
-    if ((s.style || 'mirobo') !== 'plain') {
-      slider('Theme · Card gap (global)', 'gap', 4, 32, 12);
-      slider('Theme · Corner radius (global)', 'radius', 0, 28, 12);
-    } else {
-      e.createEl('p', { cls: 'setting-item-description',
-        text: 'Card gap and corner radius belong to the Mirobo style — "Almost nothing" has no cards to space out.' });
-    }
+    /* Two axes and no third. The card gap and the corner radius used to be
+       sliders here; they are geometry, and geometry now comes from one token
+       block that the theme and the plugin share (themes/Nexus/docs/style-guide.md).
+       A slider that competes with it is how the same element ended up with a
+       different corner on every page. The stored values are still read in
+       applyTheme(), so anyone who moved a slider keeps what they set — there is
+       just no longer a control that invites it.
+
+       The dashboard's own grid sliders moved to the Dashboard tab, where the
+       thing they size actually lives. */
   }
+  /* The galaxy. Four settings and no more: everything else about how it looks
+     is the palette's business, and a graph with a dozen sliders is a graph
+     nobody ends up looking at. */
+  tGalaxy(e) {
+    const s = this.plugin.settings.galaxy;
+    this.head(e, s);
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Command "Open the galaxy", or the ribbon. Every note is a star and every link a line, laid out in three dimensions and drawn on a plain canvas — drag to turn it, and switch to 2D for the flat picture. This is a second view beside Obsidian\'s own graph, not a change to it: that one is a core plugin a plugin cannot reach into.' });
+
+    new Setting(e).setName('Ribbon icon')
+      .setDesc('Needs a reload to appear or disappear.')
+      .addToggle(t => t.setValue(s.ribbon !== false)
+        .onChange(async v => { s.ribbon = v; await this.save(); new Notice('Nexus: reload Obsidian for the ribbon change.'); }));
+
+    new Setting(e).setName('Keep turning on its own')
+      .setDesc('A slow drift while nothing is touching it. Off is a map that stays where you put it — and what a reduced-motion setting gets anyway.')
+      .addToggle(t => t.setValue(s.drift !== false)
+        .onChange(async v => { s.drift = v; await this.save(); this.plugin.refreshGalaxy(); }));
+
+    new Setting(e).setName('Show notes with no links')
+      .setDesc('Off leaves only what is connected. A vault with a lot of loose notes reads more clearly without them — they carry no shape.')
+      .addToggle(t => t.setValue(s.showOrphans !== false)
+        .onChange(async v => { s.showOrphans = v; await this.save(); this.plugin.refreshGalaxy(); }));
+
+    new Setting(e).setName('Link length')
+      .setDesc('How far apart two linked notes settle. Longer spreads the map out; shorter pulls clusters together.')
+      .addSlider(sl => { sl.setLimits(30, 140, 5).setValue(s.linkDistance || 60).setDynamicTooltip();
+        sl.onChange(async v => { s.linkDistance = v; await this.save(); this.plugin.refreshGalaxy(); }); })
+      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default').onClick(async () => {
+        s.linkDistance = 60; await this.save(); this.plugin.refreshGalaxy(); this.display(); }));
+  }
+
   tSearch(e) {
     const s = this.plugin.settings.search;
     this.head(e, s);
@@ -1422,17 +1518,21 @@ class NexusSettingsTab extends PluginSettingTab {
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Typed while writing, replaced the moment the sequence is complete. Each option below lists exactly what it converts.' });
 
-    /* The old labels ("Dashes (-- → – → —)") crammed the rule INTO the name and
-       still left you guessing which input produced which character. Show the
-       actual pairs instead: what you type on the left, what you get on the right. */
+    /* A replacement rule is a pair, so it is shown as two aligned columns and
+       not as a wrapping row of pills with an arrow inside each one. The arrows
+       were the thing that made the page unreadable: with the pairs aligned the
+       columns already say which side is which, and the eye can run down a
+       column instead of decoding twenty little chips. */
     const opt = (key, label, pairs, note) => {
       new Setting(e).setName(label)
         .addToggle(t => t.setValue(s[key]).onChange(async v => { s[key] = v; await this.save(); }));
       const map = e.createDiv('nx-st-map');
+      const head = map.createDiv('nx-st-pair is-head');
+      head.createSpan({ cls: 'nx-st-in', text: 'You type' });
+      head.createSpan({ cls: 'nx-st-out', text: 'You get' });
       pairs.forEach(([from, to]) => {
         const row = map.createDiv('nx-st-pair');
         row.createSpan({ cls: 'nx-st-in', text: from });
-        row.createSpan({ cls: 'nx-st-arrow', text: '→' });
         row.createSpan({ cls: 'nx-st-out', text: to });
       });
       if (note) map.createDiv({ cls: 'nx-st-note', text: note });
@@ -1467,10 +1567,28 @@ class NexusSettingsTab extends PluginSettingTab {
       e.createEl('p', { cls: 'setting-item-description', text: 'Currently hidden: — none —' });
     }
   }
-  _calloutSwatch(set, c, icon) {
+  /* The dot has to show the colour of the callout it stands for. It used to be
+     filled only when the user had overridden the colour — which is almost
+     never — so the whole list was one grey dot repeated twenty times.
+     Un-overridden types take Obsidian's own `--callout-<id>`, which is the
+     colour actually painted in a note.
+
+     Both forms have to be handled: older builds store "r, g, b" and newer ones
+     store a colour (see _calloutTripletMode). A triplet fed straight into
+     `background` paints nothing, and a colour wrapped in rgb() likewise. */
+  _calloutColour(id, c) {
+    const stored = c && (c.color || c.colorDark || c.colorLight);
+    const raw = stored != null && stored !== ''
+      ? String(stored).trim()
+      : String(getComputedStyle(document.body)
+          .getPropertyValue('--callout-' + (NX_CALLOUT_VARS[id] || id)) || '').trim();
+    if (!raw) return '';
+    return /^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$/.test(raw) ? `rgb(${raw})` : raw;
+  }
+  _calloutSwatch(set, c, icon, id) {
     const sw = set.nameEl.createSpan('nx-callout-swatch');
-    const col = c && (c.color || c.colorDark || c.colorLight);
-    if (col) sw.style.setProperty('--sw', `rgb(${col})`);
+    const col = this._calloutColour(id || (c && c.id), c);
+    if (col) sw.style.setProperty('--sw', col);
     if (icon) setIcon(set.nameEl.createSpan('nx-callout-swatch-icon'), icon);
   }
   tCallouts(e) {
@@ -1501,7 +1619,7 @@ class NexusSettingsTab extends PluginSettingTab {
     if (!custom.length) e.createEl('p', { cls: 'setting-item-description', text: '— none yet —' });
     custom.forEach(c => {
       const set = new Setting(e).setName(c.id || '(unnamed)').setDesc('custom');
-      this._calloutSwatch(set, c, c.icon || 'pencil');
+      this._calloutSwatch(set, c, c.icon || 'pencil', c.id);
       set.addExtraButton(b => b.setIcon('pencil').setTooltip('Edit')
         .onClick(() => new NexusCalloutModal(this.plugin, c, () => this.display()).open()));
       set.addExtraButton(b => b.setIcon('trash-2').setTooltip('Delete')
@@ -1513,7 +1631,7 @@ class NexusSettingsTab extends PluginSettingTab {
     NX_BUILTIN_CALLOUTS.forEach(bi => {
       const c = itemFor(bi.id);
       const set = new Setting(e).setName(bi.id).setDesc(c ? 'customized' : 'default');
-      this._calloutSwatch(set, c, (c && c.icon) || bi.icon);
+      this._calloutSwatch(set, c, (c && c.icon) || bi.icon, bi.id);
       set.addExtraButton(x => x.setIcon('pencil').setTooltip(c ? 'Edit override' : 'Customize')
         .onClick(() => {
           let item = itemFor(bi.id);

@@ -1550,8 +1550,11 @@ class NexusSketchSurface {
       const poly = this._marqueePoly(d);
       this.selection = poly.length >= 3 ? sel.hitStrokes(this.strokes, poly) : [];
       // An object is caught by its CENTRE: any-corner would grab a big photo
-      // whenever the lasso clipped one edge of it.
+      // whenever the lasso clipped one edge of it. A locked one is caught by
+      // nothing — see sketchobjects.isLocked; a lasso around a whole annotated
+      // scan would otherwise pick the scan up with the notes on it.
       this.selObjects = poly.length >= 3 ? this.objects.reduce((acc, obj, i) => {
+        if (objects.isLocked(obj)) return acc;
         const b = objects.objectBounds(obj);
         if (sel.pointInPolygon((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2, poly)) acc.push(i);
         return acc;

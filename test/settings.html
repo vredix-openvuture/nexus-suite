@@ -1,0 +1,225 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>settings harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+.nx-sec-body { display:none } .nx-sec-body.is-open { display:block }
+</style></head><body>
+<div id="page"></div>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+try {
+const I = window.inputsLib;
+
+// Obsidian's DOM sugar the helpers use.
+for (const P of [Element.prototype, Document.prototype]) {
+  P.createEl = function (tag, o) { const el = document.createElement(tag); if (o && o.cls) el.className = o.cls; if (o && o.text) el.textContent = o.text; this.appendChild(el); return el; };
+  P.createDiv = function (cls) { return this.createEl('div', { cls }); };
+  P.createSpan = function (o) { return this.createEl('span', o); };
+}
+Element.prototype.addClass = function (c) { this.classList.add(c); return this; };
+Element.prototype.toggleClass = function (c, on) { this.classList.toggle(c, !!on); return this; };
+Element.prototype.hasClass = function (c) { return this.classList.contains(c); };
+
+function page(sections, perSection) {
+  const root = document.getElementById('page');
+  root.innerHTML = '';
+  root.createEl('p', { cls: 'setting-item-description', text: 'intro that belongs to nobody' });
+  for (let i = 0; i < sections; i++) {
+    root.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Section ' + i });
+    for (let j = 0; j < perSection; j++) root.createEl('div', { cls: 'setting-item', text: 'S' + i + ' row ' + j });
+  }
+  return root;
+}
+
+// ── below the threshold nothing is touched ─────────────────────────────────
+{
+  window.localStorage.clear();
+  const root = page(3, 2);
+  const n = I.nxCollapseSections(root, 'short', 4);
+  eq('fold · a short page is left alone', n, 0);
+  eq('fold · and keeps every row visible', root.querySelectorAll('.setting-item').length, 6);
+  eq('fold · with no bodies inserted', root.querySelectorAll('.nx-sec-body').length, 0);
+}
+
+// ── past the threshold ─────────────────────────────────────────────────────
+{
+  window.localStorage.clear();
+  const root = page(5, 3);
+  const before = root.querySelectorAll('.setting-item').length;
+  const n = I.nxCollapseSections(root, 'sketch', 4);
+  eq('fold · every section becomes a handle', n, 5);
+  eq('fold · nothing is lost on the way', root.querySelectorAll('.setting-item').length, before);
+  eq('fold · one body per section', root.querySelectorAll('.nx-sec-body').length, 5);
+  // the intro belongs to no section and must stay where it was
+  ok('fold · the intro stays outside the sections',
+     root.firstElementChild.classList.contains('setting-item-description'));
+  const heads = [...root.querySelectorAll('.nx-cardcfg-sec')];
+  const bodies = [...root.querySelectorAll('.nx-sec-body')];
+  eq('fold · the first one is open', bodies.map(b => b.classList.contains('is-open')),
+     [true, false, false, false, false]);
+  eq('fold · each body holds its own rows', bodies.map(b => b.children.length), [3, 3, 3, 3, 3]);
+  eq('fold · and the right ones', [...bodies[2].children].map(c => c.textContent),
+     ['S2 row 0', 'S2 row 1', 'S2 row 2']);
+  ok('fold · a handle says whether it is open', heads[0].getAttribute('aria-expanded') === 'true');
+  ok('fold · and reachable by keyboard', heads[0].getAttribute('tabindex') === '0');
+
+  heads[2].click();
+  ok('fold · clicking a handle opens it', bodies[2].classList.contains('is-open'));
+  heads[2].click();
+  ok('fold · and clicking again closes it', !bodies[2].classList.contains('is-open'));
+
+  heads[3].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  ok('fold · Enter works like a click', bodies[3].classList.contains('is-open'));
+}
+
+// ── the open state survives a rebuild ──────────────────────────────────────
+{
+  window.localStorage.clear();
+  let root = page(5, 2);
+  I.nxCollapseSections(root, 'sketch', 4);
+  root.querySelectorAll('.nx-cardcfg-sec')[4].click();          // open the last one
+  root.querySelectorAll('.nx-cardcfg-sec')[0].click();          // close the first
+  root = page(5, 2);
+  I.nxCollapseSections(root, 'sketch', 4);
+  const openNow = [...root.querySelectorAll('.nx-sec-body')].map(b => b.classList.contains('is-open'));
+  eq('fold · what you left open is open next time', openNow, [false, false, false, false, true]);
+}
+
+// ── the block example ──────────────────────────────────────────────────────
+{
+  const root = document.getElementById('page');
+  root.innerHTML = '';
+  I.nxBlockExample(root, 'nexus-kanban', ['## Backlog', '- [ ] one']);
+  const code = root.querySelector('.nx-example code').textContent;
+  eq('example · the fence is added here, not by the caller',
+     code, '```nexus-kanban\n## Backlog\n- [ ] one\n```');
+  ok('example · and it offers a copy button', !!root.querySelector('.nx-example .nx-btn'));
+  I.nxBlockExample(root, 'columns', 'left\n===\nright');
+  ok('example · a plain string works as well as a list',
+     root.querySelectorAll('.nx-example').length === 2);
+}
+
+// ── the scratch-card migration ─────────────────────────────────────────────
+// A card still stored under the old type would simply not render, so this runs
+// against a plugin built the same way the startup harness builds one.
+{
+  const Suite = window.NexusSuite;
+  const make = (widgets, profiles) => {
+    const p = new Suite({ workspace: {}, vault: {} }, {});
+    p.settings = JSON.parse(JSON.stringify(window.DEFAULT_SETTINGS));
+    p.settings.homepage.widgets = widgets;
+    if (profiles) p.settings.homepage.profiles = profiles;
+    return p;
+  };
+
+  const p = make([
+    { type: 'clock', uid: 'a' },
+    { type: 'quicknote', uid: 'b', title: 'Quicknote' },
+    { type: 'quicknote', uid: 'c', title: 'Notes to self' },
+    { type: 'list', uid: 'd' },
+  ]);
+  p.migrateScratchCards();
+  const w = p.settings.homepage.widgets;
+  eq('scratch · the old type is renamed', w.map(x => x.type), ['clock', 'scratch', 'scratch', 'list']);
+  eq('scratch · the default title follows it', w[1].title, 'Scratch');
+  eq('scratch · a title someone chose is left alone', w[2].title, 'Notes to self');
+  const before = JSON.stringify(p.settings.homepage.widgets);
+  p.migrateScratchCards();
+  eq('scratch · running it twice changes nothing', JSON.stringify(p.settings.homepage.widgets), before);
+
+  // data.json travels between devices, so every profile is walked, not just this one.
+  const q = make([], { 'dev-1': { widgets: [{ type: 'quicknote', uid: 'x' }] },
+                       'dev-2': { widgets: [{ type: 'timer', uid: 'y' }] } });
+  q.migrateScratchCards();
+  eq('scratch · another device\'s profile is migrated too',
+     q.settings.homepage.profiles['dev-1'].widgets[0].type, 'scratch');
+  eq('scratch · and a profile with nothing to do is untouched',
+     q.settings.homepage.profiles['dev-2'].widgets[0].type, 'timer');
+
+  const r = make([]);
+  r.settings.homepage.profiles = { 'dev-3': null };
+  r.migrateScratchCards();
+  ok('scratch · a broken profile does not throw', true);
+}
+
+// ── the scratch writer ─────────────────────────────────────────────────────
+// It creates files, so the naming and the template rules are worth pinning.
+{
+  const S = window.scratchLib;
+  const taken = (set) => (p) => set.has(p);
+
+  eq('scratch · a folder and a stamp make the path',
+     S.scratchPath('Inbox/Notes', '2026-09-01_14-30', '07', taken(new Set())),
+     'Inbox/Notes/2026-09-01_14-30.md');
+  eq('scratch · no folder means the vault root',
+     S.scratchPath('', '2026-09-01_14-30', '07', taken(new Set())),
+     '2026-09-01_14-30.md');
+  eq('scratch · slashes around the folder are not part of it',
+     S.scratchPath('/Inbox/Notes/', '2026-09-01_14-30', '07', taken(new Set())),
+     'Inbox/Notes/2026-09-01_14-30.md');
+  // Two notes in one minute must not overwrite each other.
+  eq('scratch · a second note in the same minute earns seconds',
+     S.scratchPath('Inbox', '2026-09-01_14-30', '07', taken(new Set(['Inbox/2026-09-01_14-30.md']))),
+     'Inbox/2026-09-01_14-30-07.md');
+
+  const now = { format: (f) => ({ 'YYYY-MM-DD': '2026-09-01', 'HH:mm': '14:30' })[f] || f };
+  const app = (templates) => ({ vault: {
+    getAbstractFileByPath: (p) => (templates[p] ? { path: p } : null),
+    read: async (f) => templates[f.path],
+  } });
+
+  (async () => {
+    const plain = await S.applyTemplate(app({}), '', 'the thought', 'stamp', now);
+    eq('template · no template means the text itself', plain, 'the thought');
+
+    const withSlot = await S.applyTemplate(
+      app({ 'T.md': '# {{title}}\n{{date}} {{time}}\n\n{{content}}\n' }), 'T', 'the thought', 'stamp', now);
+    ok('template · the content goes where the slot is', withSlot.indexOf('the thought') > withSlot.indexOf('2026-09-01'));
+    ok('template · and the other tokens are filled', withSlot.indexOf('14:30') >= 0 && withSlot.indexOf('# stamp') >= 0);
+
+    // Losing what someone typed is worse than putting it in the wrong place.
+    const noSlot = await S.applyTemplate(app({ 'T.md': 'header only' }), 'T', 'the thought', 'stamp', now);
+    ok('template · a template with no slot appends rather than dropping the text',
+       noSlot.indexOf('header only') === 0 && noSlot.indexOf('the thought') > 0);
+
+    const missing = await S.applyTemplate(app({}), 'Nope', 'the thought', 'stamp', now);
+    eq('template · a template that is not there leaves the text alone', missing, 'the thought');
+
+    const noExt = await S.applyTemplate(app({ 'T.md': '{{content}}!' }), 'T', 'x', 'stamp', now);
+    eq('template · the .md may be left off the name', noExt, 'x!');
+
+    document.getElementById('out').textContent = out.concat(['',
+      fail ? (fail + ' FAILED, ' + pass + ' passed') : ('ALL GREEN — ' + pass + ' checks')]).join('\n');
+  })();
+}
+
+// ── secrets at rest ────────────────────────────────────────────────────────
+// The harness has no Electron, so this IS the mobile case — which is the one
+// worth pinning, because it is where a wrong assumption loses a password.
+{
+  const S = window.secretsLib;
+  ok('secret · no keyring here, and it says so', S.available() === false);
+  eq('secret · so a secret is stored as it was', S.encrypt('hunter2'), 'hunter2');
+  eq('secret · and reads back unchanged', S.decrypt('hunter2'), 'hunter2');
+  eq('secret · an empty secret stays empty', S.encrypt(''), '');
+  eq('secret · null does not become the word null', S.encrypt(null), '');
+  ok('secret · plain text is not mistaken for encrypted', !S.isEncrypted('hunter2'));
+  ok('secret · but a value from a machine that had a keyring is recognised',
+     S.isEncrypted(S.PREFIX + 'AAAA'));
+  // The important one: a secret encrypted on the desktop must not come back as
+  // gibberish on the phone and be written back over the real one.
+  eq('secret · and cannot be read here, rather than read wrongly',
+     S.decrypt(S.PREFIX + 'AAAA'), '');
+}
+
+} catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
+if (window.__err.length) { fail++; out.push('FAIL  window error: ' + window.__err.join('\n')); }
+document.getElementById('out').textContent = out.join('\n');
+</script></body></html>

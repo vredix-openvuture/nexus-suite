@@ -2,11 +2,11 @@
 
 /* ============================================================================
  *  NEXUS SUITE · lib · kanban boards
- *  A ```nexus-kanban``` block IS the board — config lines, then one section per
- *  column and one checklist line per card:
+ *  ONE board with TWO sources. The columns, the drag, the card and the column
+ *  kinds are one implementation; the only thing that differs is where the cards
+ *  come from and where a move is written.
  *
- *      title: Roadmap
- *      notes: Projects/Roadmap
+ *      source: block   (the default)
  *      ## Backlog
  *      - [ ] Rework the tab bar
  *      ## Doing @2
@@ -14,51 +14,25 @@
  *      ## Done
  *      - [x] Ship the pinned tabs
  *
- *  Why the cards live INSIDE the fence and not in the note body: a board note
- *  would otherwise render its columns twice — once as the board, once as plain
- *  markdown — and every card would need a hidden marker to stay addressable.
- *  Inside the block the whole board is ONE hand-editable text: it survives
- *  without the plugin, travels with the file, and needs no state in data.json.
+ *      source: folder
+ *      folder: SCHOOL/Biology
+ *      status: status
+ *      ## Offen
+ *      ## In Arbeit
+ *      ## Erledigt
  *
- *  Anything the parser does not understand is kept and written back untouched,
- *  so a rewrite (drag, rename, new card) can never eat a line someone typed.
+ *  This file is everything both sources share: the head, the column strip, the
+ *  card frame and the pointer drag. What a source has to answer for itself is
+ *  in kanbanblock.js (the fence IS the board) and board.js (the notes of a
+ *  folder are the cards) — see the seam described there.
  * ========================================================================== */
 
-const { Notice, TFile, moment, setIcon } = require('obsidian');
+const { Notice, TFile, setIcon } = require('obsidian');
 const blockedit = require('./blockedit.js');
-
-const RE_HEAD = /^\s{0,3}#{1,6}\s+(.*)$/;
-const RE_CARD = /^\s*[-*]\s+\[([ xX])\]\s?(.*)$/;
-const RE_LINK = /\[\[([^\]|#]+)(?:\|([^\]]*))?\]\]/;
-const RE_DUE = /(?:^|\s)@(\d{4}-\d{2}-\d{2})(?=\s|$)/;
-const RE_TAG = /(?:^|\s)#([\p{L}\d/_-]+)/gu;
-
-/* A column's colour says what KIND of column it is, read off its own name —
-   nobody should have to configure "Done is green".
-
-   These are Obsidian's SEMANTIC colours, not palette slots: on a warm palette
-   (the theme's own "Ember & Prussian" has orange in color2, color3 AND color11)
-   every column came out the same coral and the board lost its meaning. The
-   theme already colours task states from the same three vars, so blue/orange/
-   green is what the rest of the vault says too. */
-const KIND_SLOT = {
-  open:  ['--text-muted', '#8a8a95'],
-  doing: ['--color-blue', '#4a9eff'],
-  wait:  ['--color-orange', '#e9973f'],
-  done:  ['--color-green', '#44cf6e'],
-};
-function bucketKind(title) {
-  const t = String(title || '').toLowerCase();
-  if (/erled|fertig|done|closed|abgeschlossen|ship/.test(t)) return 'done';
-  if (/wart|block|halt|pause|später|spaeter|review|prüf|pruef/.test(t)) return 'wait';
-  if (/arbeit|doing|progress|aktiv|wip|läuft|laeuft/.test(t)) return 'doing';
-  return 'open';
-}
-function kindVar(kind) {
-  const s = KIND_SLOT[kind] || KIND_SLOT.open;
-  return 'var(' + s[0] + ', ' + s[1] + ')';
-}
-const truthy = (v) => /^(true|yes|1|on)$/i.test(String(v).trim());
+const block = require('./kanbanblock.js');
+const edit = require('./kanbanedit.js');
+const { parseKanban, stringifyKanban, kindVar } = block;
+const { blockSource } = edit;
 
 /* Auto-scroll the column strip while a card is held against its edge. Without
    it, a board wider than the screen can only be dropped into the columns that
@@ -80,130 +54,39 @@ function nxEdgeScroller(container) {
   };
 }
 
-/* ---- parse ---------------------------------------------------------------- */
+/* ---- the card ------------------------------------------------------------- */
 
-/* One checklist line → card. `rest` keeps whatever is left after the link, the
-   due date and the tags have been lifted out, so a card can carry free text
-   next to a note link ("[[Spec]] second pass"). */
-function parseCard(line) {
-  const m = String(line).match(RE_CARD);
-  if (!m) return null;
-  let rest = m[2];
-  const link = rest.match(RE_LINK);
-  if (link) rest = rest.replace(RE_LINK, ' ');
-  const due = rest.match(RE_DUE);
-  if (due) rest = rest.replace(RE_DUE, ' ');
-  const tags = [];
-  rest = rest.replace(RE_TAG, (all, t) => { tags.push(t); return ' '; });
-  const text = rest.replace(/\s+/g, ' ').trim();
-  return {
-    done: m[1].toLowerCase() === 'x',
-    link: link ? link[1].trim() : '',
-    alias: link && link[2] ? link[2].trim() : '',
-    text,
-    /* Filled by the parser from the indented lines under the card, so a card
-       can say more than fits on one line. Empty for a card that has none. */
-    desc: '',
-    due: due ? due[1] : '',
-    tags,
-  };
-}
-/* What the card is CALLED — its own text wins, otherwise the note it points at. */
-function cardTitle(card) {
-  return card.text || card.alias || card.link || '';
-}
-/* A card's own lines: the checklist line, then its description indented under
-   it. Two spaces, because that is what an editor and a human both read as "this
-   belongs to the line above". */
-function cardLines(card) {
-  const out = [cardLine(card)];
-  String(card.desc || '').split('\n').forEach(l => { if (l.trim()) out.push('  ' + l.trim()); });
-  return out;
-}
-function cardLine(card) {
-  const bits = [];
-  if (card.link) bits.push('[[' + card.link + (card.alias && card.alias !== card.link ? '|' + card.alias : '') + ']]');
-  if (card.text) bits.push(card.text);
-  if (card.due) bits.push('@' + card.due);
-  (card.tags || []).forEach(t => bits.push('#' + t));
-  return '- [' + (card.done ? 'x' : ' ') + '] ' + bits.join(' ');
-}
-
-function parseKanban(src, defaults) {
-  const cfg = Object.assign({
-    title: '', notes: '', template: '', compact: false, due: true, tags: true, counts: true,
-  }, defaults || {}, { buckets: [], extra: [] });
-  let cur = null;
-  // The card an indented line would belong to, cleared by anything that is not
-  // a card or one of its own lines — so a stray indent further down the column
-  // is kept as it was rather than glued onto a card three lines above.
-  let lastCard = null;
-  String(src || '').split('\n').forEach(raw => {
-    const line = raw.replace(/\s+$/, '');
-    const head = line.match(RE_HEAD);
-    if (head) {
-      lastCard = null;
-      let title = head[1].trim();
-      let limit = 0;
-      const lim = title.match(/\s+@(\d+)$/);
-      if (lim) { limit = parseInt(lim[1], 10) || 0; title = title.slice(0, lim.index).trim(); }
-      cur = { title, limit, cards: [], extra: [] };
-      cfg.buckets.push(cur);
-      return;
-    }
-    const card = parseCard(line);
-    if (card) {
-      // A card before the first heading still belongs somewhere — give it a home
-      // rather than dropping it on the floor.
-      if (!cur) { cur = { title: 'Backlog', limit: 0, cards: [], extra: [] }; cfg.buckets.push(cur); }
-      cur.cards.push(card);
-      lastCard = card;
-      return;
-    }
-    // An indented line under a card is that card's description. Checked after
-    // parseCard, so an indented checklist line is still a card of its own.
-    const cont = line.match(/^(?:\t+| {2,})(\S.*)$/);
-    if (cont && lastCard) {
-      lastCard.desc = lastCard.desc ? lastCard.desc + '\n' + cont[1].trim() : cont[1].trim();
-      return;
-    }
-    if (!line.trim()) return;
-    lastCard = null;
-    if (cur) { cur.extra.push(line); return; }
-    const i = line.indexOf(':');
-    if (i < 0) { cfg.extra.push(line); return; }
-    const k = line.slice(0, i).trim().toLowerCase();
-    const v = line.slice(i + 1).trim();
-    switch (k) {
-      case 'title': cfg.title = v; break;
-      case 'notes': case 'folder': cfg.notes = v.replace(/^\/|\/$/g, ''); break;
-      case 'template': cfg.template = v; break;
-      case 'compact': cfg.compact = truthy(v); break;
-      case 'due': cfg.due = truthy(v); break;
-      case 'tags': cfg.tags = truthy(v); break;
-      case 'counts': cfg.counts = truthy(v); break;
-      default: cfg.extra.push(line); break;
-    }
+/* One card, whoever filled it — the column strip, the folder board and the
+   graph block's grid all draw this and only differ in what goes in the slots.
+   The caller wires the events, because only it knows what a click means. */
+function cardFrame(parent, v) {
+  const c = parent.createDiv('nx-kb-card'
+    + (v.done ? ' is-done' : '') + (v.missing ? ' is-missing' : '')
+    + (v.orphan ? ' is-orphan' : '') + (v.state ? ' has-state' : ''));
+  if (v.kind) c.style.setProperty('--nx-kb-kind', kindVar(v.kind));
+  const lead = v.lead ? c.createDiv('nx-kb-card-lead') : null;
+  const body = c.createDiv('nx-kb-card-body');
+  const line = body.createDiv('nx-kb-card-line');
+  if (v.icon) {
+    const ic = line.createSpan({ cls: 'nx-kb-card-ic' });
+    setIcon(ic, v.icon);
+    if (v.iconLabel) ic.setAttribute('aria-label', v.iconLabel);
+  }
+  line.createSpan({ cls: 'nx-kb-card-t', text: v.title || '(no title)' });
+  // Four lines at most, the rest cut off with an ellipsis (CSS line-clamp) —
+  // a card is a glance, and the whole text is one click away.
+  if (v.desc != null) body.createDiv({ cls: 'nx-kb-card-desc', text: v.desc });
+  const meta = body.createDiv('nx-kb-card-meta');
+  (v.chips || []).forEach(ch => {
+    const chip = meta.createSpan({ cls: 'nx-kb-' + ch.cls + (ch.mod ? ' ' + ch.mod : '') });
+    if (ch.icon) setIcon(chip, ch.icon);
+    chip.createSpan({ text: ch.text });
+    if (ch.label) chip.setAttribute('aria-label', ch.label);
   });
-  return cfg;
-}
-
-function stringifyKanban(cfg) {
-  const out = [];
-  if (cfg.title) out.push('title: ' + cfg.title);
-  if (cfg.notes) out.push('notes: ' + cfg.notes);
-  if (cfg.template) out.push('template: ' + cfg.template);
-  if (cfg.compact) out.push('compact: true');
-  if (cfg.due === false) out.push('due: false');
-  if (cfg.tags === false) out.push('tags: false');
-  if (cfg.counts === false) out.push('counts: false');
-  (cfg.extra || []).forEach(l => out.push(l));
-  (cfg.buckets || []).forEach(b => {
-    out.push('## ' + b.title + (b.limit ? ' @' + b.limit : ''));
-    (b.cards || []).forEach(c => cardLines(c).forEach(l => out.push(l)));
-    (b.extra || []).forEach(l => out.push(l));
-  });
-  return out.join('\n');
+  const dots = c.createDiv('nx-kb-card-menu');
+  setIcon(dots, 'ellipsis-vertical');
+  dots.setAttribute('aria-label', 'Card menu');
+  return { el: c, lead, body, meta, dots };
 }
 
 /* ---- the module ----------------------------------------------------------- */
@@ -214,28 +97,64 @@ class NexusKanban {
 
   init() {
     const p = this.plugin;
-    p.registerMarkdownCodeBlockProcessor('nexus-kanban', (src, el, ctx) => {
-      try { this.render(src, el, ctx); }
+    const draw = (fence, defaults) => (src, el, ctx) => {
+      try { this.render(src, el, ctx, { fence, defaults }); }
       catch (e) {
         el.empty();
         el.createDiv({ cls: 'nx-kb-empty', text: 'Kanban: ' + e.message });
         console.error('[nexus-suite] kanban', e);
       }
-    });
+    };
+    const statusProp = this.s.statusProperty || 'status';
+    p.registerMarkdownCodeBlockProcessor('nexus-kanban', draw('nexus-kanban', { statusProp }));
+    /* The old block, unchanged for whoever wrote it: its cards were always the
+       notes of a folder, and `mode: grid` / `show: graph` still reach the views
+       that moved into ```nexus-graph```. */
+    p.registerMarkdownCodeBlockProcessor('nexus-board', draw('nexus-board',
+      { source: 'folder', mode: 'grid', statusProp }));
+    /* Where the grid and the force-directed web live now. Same config, same
+       cards — only the arrangement differs, so it is the same processor. */
+    p.registerMarkdownCodeBlockProcessor('nexus-graph', draw('nexus-graph',
+      { source: 'folder', mode: 'graph', statusProp }));
+
     p.addCommand({ id: 'nexus-insert-kanban', name: 'Insert a kanban board',
       editorCallback: (editor) => editor.replaceSelection(this.blockText('')) });
     p.addCommand({ id: 'nexus-new-kanban', name: 'New kanban board (note)',
       callback: () => this.newBoardNote() });
+    p.addCommand({ id: 'nexus-insert-board', name: 'Insert a folder board',
+      editorCallback: (editor, view) => {
+        const dir = view && view.file && view.file.parent ? view.file.parent.path : '';
+        editor.replaceSelection(this.blockText('', dir));
+      } });
+    p.addCommand({ id: 'nexus-insert-graph', name: 'Insert a folder graph',
+      editorCallback: (editor, view) => {
+        const dir = view && view.file && view.file.parent ? view.file.parent.path : '';
+        editor.replaceSelection('```nexus-graph\nfolder: ' + dir + '\nview: graph\n```\n');
+      } });
+
+    // A folder board is a view of the vault, so it has to follow the vault.
+    ['create', 'delete', 'rename'].forEach(ev => p.registerEvent(this.app.vault.on(ev, () => this.refreshFolderBoards())));
+    p.registerEvent(this.app.metadataCache.on('changed', () => this.refreshFolderBoards()));
+  }
+  refreshFolderBoards() {
+    window.clearTimeout(this._t);
+    this._t = window.setTimeout(() => {
+      document.querySelectorAll('.nx-kb.is-folder, .nx-graph').forEach(el => {
+        if (el._nxRepaint) try { el._nxRepaint(); }
+        catch (e) { console.error('[nexus-suite] kanban refresh', e); }
+      });
+    }, 350);
   }
 
   /* The starting block — the columns come from the settings so a new board is
      already the board this vault works with. */
-  blockText(title) {
+  blockText(title, folder) {
     const cols = (this.s.buckets && this.s.buckets.length ? this.s.buckets : ['Backlog', 'In progress', 'Done']);
     const lines = ['```nexus-kanban'];
+    if (folder != null) lines.push('source: folder', 'folder: ' + folder);
     if (title) lines.push('title: ' + title);
-    if (this.s.notesFolder) lines.push('notes: ' + this.s.notesFolder);
-    cols.forEach(c => lines.push('## ' + c));
+    if (folder == null && this.s.notesFolder) lines.push('notes: ' + this.s.notesFolder);
+    (folder != null ? require('./board.js').DEFAULT_STATES : cols).forEach(c => lines.push('## ' + c));
     lines.push('```', '');
     return lines.join('\n');
   }
@@ -279,30 +198,54 @@ class NexusKanban {
 
   /* ---- render ------------------------------------------------------------- */
 
-  render(src, el, ctx) {
+  render(src, el, ctx, opts) {
+    const o = opts || {};
     if (this.s.enabled === false) {
       el.empty();
       el.addClass('nx-kb');
-      el.createDiv({ cls: 'nx-kb-empty', text: 'The Kanban module is off — turn on “Enabled” in Settings → Kanban.' });
+      el.createDiv({ cls: 'nx-kb-empty',
+        text: 'This block needs the Kanban module — turn on “Enabled” in Settings → Kanban.' });
       return;
     }
-    // Parsed WITHOUT the settings mixed in: whatever the settings say must not
-    // end up written into the user's block on the next save. They are applied
-    // where they are used instead (here, and in createNote).
-    const cfg = parseKanban(src);
+    /* The only setting the parser is given is the default status property, and
+       a folder board writes it into its own block on the first save on purpose:
+       from then on the board names the property itself and a change in the
+       settings cannot re-bucket a note. Everything else the settings say is
+       applied where it is used (here, and in createNote). */
+    const cfg = parseKanban(src, o.defaults);
+    // The grid and the graph are their own block now; the old fence still
+    // reaches them, so a note written before today renders what it always did.
+    if (cfg.source === 'folder' && (cfg.mode === 'grid' || cfg.mode === 'graph')) {
+      require('./graph.js').render(this, src, cfg, el, ctx, o);
+      return;
+    }
+    if (el._nxRO) { try { el._nxRO.disconnect(); } catch (e) {} el._nxRO = null; }
+
     el.empty();
+    // The view buttons re-render the same element as the other block, so the
+    // classes that block set have to go with it.
+    el.removeClass('nx-graph'); el.removeClass('is-sm'); el.removeClass('is-lg');
     el.addClass('nx-kb');
     el.toggleClass('is-compact', cfg.compact || !!this.s.compact);
+    el.toggleClass('is-folder', cfg.source === 'folder');
     el._nxSrc = src;   // what is on the board right now — see save()/locateBlock
-    el._nxRepaint = (next) => { try { this.render(next != null ? next : src, el, ctx); } catch (e) {} };
+    el._nxFence = o.fence || 'nexus-kanban';
+    el._nxRepaint = (next) => {
+      try { this.render(next != null ? next : src, el, ctx, o); }
+      catch (e) { console.error('[nexus-suite] ' + el._nxFence + ' repaint', ctx && ctx.sourcePath, e); }
+    };
+
+    const source = cfg.source === 'folder'
+      ? require('./board.js').folderSource(this, cfg, el, ctx)
+      : blockSource(this, cfg, el, ctx);
+    const cols = source.columns();
 
     const head = el.createDiv('nx-kb-head');
     const boardNote = ctx && ctx.sourcePath ? this.app.vault.getAbstractFileByPath(ctx.sourcePath) : null;
-    head.createDiv({ cls: 'nx-kb-title', text: cfg.title || (boardNote ? boardNote.basename : 'Board') });
-
-    const open = cfg.buckets.reduce((n, b) => n + b.cards.filter(c => !c.done).length, 0);
-    const total = cfg.buckets.reduce((n, b) => n + b.cards.length, 0);
-    head.createDiv({ cls: 'nx-kb-count', text: open + ' / ' + total });
+    head.createDiv({ cls: 'nx-kb-title',
+      text: cfg.title || (source.root ? source.root.split('/').pop() : boardNote ? boardNote.basename : 'Board') });
+    if (source.head) source.head(head, cols);
+    head.createDiv({ cls: 'nx-kb-count', text: source.total(cols) });
 
     const tools = head.createDiv('nx-kb-tools');
     const tool = (icon, label, fn) => {
@@ -312,58 +255,73 @@ class NexusKanban {
       b.onclick = fn;
       return b;
     };
-    tool('plus', 'New column', async () => {
-      const { NexusNameModal } = require('../modals/misc.js');
-      const name = await new NexusNameModal(this.app, 'Name of the column', 'New column').openAndGet();
-      if (!name) return;
-      cfg.buckets.push({ title: name, limit: 0, cards: [], extra: [] });
-      this.save(el, ctx, cfg);
-    });
-    tool('eraser', 'Remove all done cards', async () => {
-      const { NexusConfirmModal } = require('../modals/misc.js');
-      const n = cfg.buckets.reduce((x, b) => x + b.cards.filter(c => c.done).length, 0);
-      if (!n) { new Notice('No done cards.'); return; }
-      const ok = await new NexusConfirmModal(this.app, 'Remove ' + n + ' done card(s)?',
-        'The cards disappear from the board. Notes they point at are kept.', 'Remove').openAndGet();
-      if (!ok) return;
-      cfg.buckets.forEach(b => { b.cards = b.cards.filter(c => !c.done); });
-      this.save(el, ctx, cfg);
-    });
+    if (source.tools) source.tools(tools);
+    if (source.id === 'block') {
+      tool('plus', 'New column', async () => {
+        const { NexusNameModal } = require('../modals/misc.js');
+        const name = await new NexusNameModal(this.app, 'Name of the column', 'New column').openAndGet();
+        if (!name) return;
+        cfg.buckets.push({ title: name, limit: 0, cards: [], extra: [] });
+        this.save(el, ctx, cfg);
+      });
+      tool('eraser', 'Remove all done cards', async () => {
+        const { NexusConfirmModal } = require('../modals/misc.js');
+        const n = cfg.buckets.reduce((x, b) => x + b.cards.filter(c => c.done).length, 0);
+        if (!n) { new Notice('No done cards.'); return; }
+        const ok = await new NexusConfirmModal(this.app, 'Remove ' + n + ' done card(s)?',
+          'The cards disappear from the board. Notes they point at are kept.', 'Remove').openAndGet();
+        if (!ok) return;
+        cfg.buckets.forEach(b => { b.cards = b.cards.filter(c => !c.done); });
+        this.save(el, ctx, cfg);
+      });
+    }
 
-    const cols = el.createDiv('nx-kb-cols');
-    if (!cfg.buckets.length) {
-      cols.createDiv({ cls: 'nx-kb-empty', text: 'No columns yet — use + up there.' });
+    const strip = el.createDiv('nx-kb-cols');
+    if (!cols.length) {
+      // Only a block board can have none: a folder board is given the default
+      // columns rather than being left with nothing to drop into.
+      strip.createDiv({ cls: 'nx-kb-empty', text: 'No columns yet — use + up there.' });
       return;
     }
-    cfg.buckets.forEach((b, i) => this.column(cols, cfg, b, i, el, ctx));
+    cols.forEach((col, i) => this.column(strip, cfg, source, col, i));
+    if (source.after) source.after(el, cols);
   }
 
-  column(cols, cfg, bucket, index, el, ctx) {
-    const kind = bucketKind(bucket.title);
-    const col = cols.createDiv('nx-kb-col is-' + kind);
-    col.dataset.i = String(index);
-    col.style.setProperty('--nx-kb-kind', kindVar(kind));
+  column(strip, cfg, source, col, index) {
+    const wrap = strip.createDiv('nx-kb-col is-' + col.kind + (col.stray ? ' is-stray' : ''));
+    wrap.dataset.i = String(index);
+    wrap.style.setProperty('--nx-kb-kind', kindVar(col.kind));
 
-    const head = col.createDiv('nx-kb-col-head');
+    const head = wrap.createDiv('nx-kb-col-head');
     head.createSpan({ cls: 'nx-kb-col-dot' });
-    head.createSpan({ cls: 'nx-kb-col-title', text: bucket.title });
-    const open = bucket.cards.filter(c => !c.done).length;
+    head.createSpan({ cls: 'nx-kb-col-title', text: col.title });
     if (cfg.counts !== false) {
-      const cnt = head.createSpan({ cls: 'nx-kb-col-count', text: bucket.limit ? open + '/' + bucket.limit : String(bucket.cards.length) });
-      if (bucket.limit && open > bucket.limit) cnt.addClass('is-over');
+      const cnt = head.createSpan({ cls: 'nx-kb-col-count', text: col.count.text });
+      if (col.count.over) cnt.addClass('is-over');
     }
-    const menu = head.createDiv('nx-kb-col-menu');
-    setIcon(menu, 'ellipsis-vertical');
-    menu.setAttribute('aria-label', 'Column menu');
-    menu.onclick = (e) => { e.stopPropagation(); this.columnMenu(e, cfg, index, el, ctx); };
+    if (source.colMenu && !col.stray) {
+      const menu = head.createDiv('nx-kb-col-menu');
+      setIcon(menu, 'ellipsis-vertical');
+      menu.setAttribute('aria-label', 'Column menu');
+      menu.onclick = (e) => { e.stopPropagation(); source.colMenu(e, index); };
+    }
 
-    const list = col.createDiv('nx-kb-cards');
+    const list = wrap.createDiv('nx-kb-cards');
     list.dataset.i = String(index);
-    bucket.cards.forEach((card, ci) => this.card(list, cfg, index, ci, card, el, ctx));
+    col.items.forEach((item, ii) => {
+      const frame = cardFrame(list, source.view(item, col));
+      frame.el.dataset.b = String(index);
+      frame.el.dataset.c = String(ii);
+      source.fill(frame, item, index, ii, col);
+      if (!frame.meta.childElementCount) frame.meta.remove();
+      this.dragSource(frame.el, source, index, ii);
+    });
+    if (!col.items.length && source.id === 'folder') list.createDiv({ cls: 'nx-kb-drop-hint', text: 'drop a note here' });
 
+    if (!source.add) return;
     // No icon in front of the field: the dashed row and the placeholder already
     // say what it is, and the + was one more thing to draw on every column.
-    const add = col.createDiv('nx-kb-add');
+    const add = wrap.createDiv('nx-kb-add');
     const input = add.createEl('input', { cls: 'nx-kb-add-input', attr: { type: 'text', placeholder: 'New card' } });
     input.onkeydown = (e) => {
       if (e.key !== 'Enter') return;
@@ -371,80 +329,26 @@ class NexusKanban {
       const title = input.value.trim();
       if (!title) return;
       input.value = '';
-      bucket.cards.push({ done: false, link: '', alias: '', text: title, desc: '', due: '', tags: [] });
-      this.save(el, ctx, cfg);
+      source.add(index, title);
     };
-  }
-
-  card(list, cfg, bi, ci, card, el, ctx) {
-    const note = card.link ? this.noteByName(card.link) : null;
-    const c = list.createDiv('nx-kb-card' + (card.done ? ' is-done' : '') + (card.link && !note ? ' is-missing' : ''));
-    c.dataset.b = String(bi);
-    c.dataset.c = String(ci);
-
-    const box = c.createEl('input', { cls: 'nx-kb-check', attr: { type: 'checkbox' } });
-    box.checked = !!card.done;
-    box.onclick = (e) => e.stopPropagation();
-    box.onchange = () => { card.done = box.checked; this.save(el, ctx, cfg); };
-
-    const body = c.createDiv('nx-kb-card-body');
-    const line = body.createDiv('nx-kb-card-line');
-    if (card.link) {
-      const ic = line.createSpan({ cls: 'nx-kb-card-ic' });
-      setIcon(ic, note ? 'file-text' : 'file-question');
-      ic.setAttribute('aria-label', note ? note.path : 'No note called "' + card.link + '"');
-    }
-    line.createSpan({ cls: 'nx-kb-card-t', text: cardTitle(card) || '(no title)' });
-
-    // Four lines at most, the rest cut off with an ellipsis (CSS line-clamp) —
-    // a card is a glance, and the whole text is one click away in the editor.
-    if (card.desc) body.createDiv({ cls: 'nx-kb-card-desc', text: card.desc });
-
-    const meta = body.createDiv('nx-kb-card-meta');
-    if (card.due && cfg.due !== false) {
-      const today = moment().format('YYYY-MM-DD');
-      const late = !card.done && card.due < today;
-      const d = moment(card.due, 'YYYY-MM-DD');
-      meta.createSpan({
-        cls: 'nx-kb-due' + (late ? ' is-late' : '') + (card.due === today ? ' is-today' : ''),
-        text: card.due === today ? 'today' : d.isValid() ? d.format('D MMM') : card.due,
-      });
-    }
-    if (cfg.tags !== false) (card.tags || []).forEach(t => meta.createSpan({ cls: 'nx-kb-tag', text: '#' + t }));
-    if (!meta.childElementCount) meta.remove();
-
-    const dots = c.createDiv('nx-kb-card-menu');
-    setIcon(dots, 'ellipsis-vertical');
-    dots.setAttribute('aria-label', 'Card menu');
-    dots.onclick = (e) => { e.stopPropagation(); this.cardMenu(e, cfg, bi, ci, el, ctx); };
-
-    /* One click, the whole card. It used to open the linked note, which left a
-       card with a note as the one thing on the board that could not be edited,
-       and rename the rest — so the due date, the tags and the column each meant
-       a trip through the ⋮ menu. The note is now a button inside the editor.
-       Ctrl/⌘ still goes straight to the note, for a board used as an index. */
-    c.onclick = (e) => {
-      if (c.hasClass('is-dragging')) return;
-      if (note && (e.ctrlKey || e.metaKey)) {
-        this.app.workspace.getLeaf('tab').openFile(note);
-        return;
-      }
-      this.editCard(cfg, bi, ci, el, ctx);
-    };
-    c.oncontextmenu = (e) => { e.preventDefault(); this.cardMenu(e, cfg, bi, ci, el, ctx); };
-    this.dragSource(c, cfg, bi, ci, el, ctx);
   }
 
   /* ---- menus -------------------------------------------------------------- */
 
-  columnMenu(evt, cfg, index, el, ctx) {
+  /* Shared by both sources. `opts.rename` lets the folder source carry the
+     notes along with the label, and `opts.fixedFirst` keeps column 0 where it
+     is: on a folder board it is the ABSENCE of the property, so moving another
+     column in front of it would re-bucket every note in the folder. */
+  columnMenu(evt, cfg, index, el, ctx, opts) {
+    const o = opts || {};
     const { NexusPopupMenu } = require('../modals/pickers.js');
     const { NexusConfirmModal, NexusNameModal } = require('../modals/misc.js');
     const b = cfg.buckets[index];
     const menu = new NexusPopupMenu(this.app, b.title);
     menu.addItem(i => i.setTitle('Rename').setIcon('pencil').onClick(async () => {
       const name = await new NexusNameModal(this.app, 'Name of the column', b.title).openAndGet();
-      if (!name) return;
+      if (!name || name === b.title) return;
+      if (o.rename) { o.rename(index, name); return; }
       b.title = name;
       this.save(el, ctx, cfg);
     }));
@@ -455,14 +359,18 @@ class NexusKanban {
       this.save(el, ctx, cfg);
     }));
     menu.addSeparator();
-    if (index > 0) menu.addItem(i => i.setTitle('Move left').setIcon('arrow-left').onClick(() => {
+    const first = o.fixedFirst ? 1 : 0;
+    if (index > first) menu.addItem(i => i.setTitle('Move left').setIcon('arrow-left').onClick(() => {
       cfg.buckets.splice(index - 1, 0, cfg.buckets.splice(index, 1)[0]);
       this.save(el, ctx, cfg);
     }));
-    if (index < cfg.buckets.length - 1) menu.addItem(i => i.setTitle('Move right').setIcon('arrow-right').onClick(() => {
+    if (index >= first && index < cfg.buckets.length - 1) menu.addItem(i => i.setTitle('Move right').setIcon('arrow-right').onClick(() => {
       cfg.buckets.splice(index + 1, 0, cfg.buckets.splice(index, 1)[0]);
       this.save(el, ctx, cfg);
     }));
+    // Deleting a column would strand its cards. A folder board's cards are
+    // notes and outlive the board, so it has no such item at all.
+    if (o.folder) { menu.showAtMouseEvent(evt); return; }
     menu.addSeparator();
     menu.addItem(i => i.setTitle('Remove done cards').setIcon('eraser').onClick(() => {
       b.cards = b.cards.filter(c => !c.done);
@@ -480,195 +388,18 @@ class NexusKanban {
     menu.showAtMouseEvent(evt);
   }
 
-  cardMenu(evt, cfg, bi, ci, el, ctx) {
-    const { NexusPopupMenu } = require('../modals/pickers.js');
-    const { NexusNamePickModal } = require('../modals/misc.js');
-    const card = cfg.buckets[bi].cards[ci];
-    const note = card.link ? this.noteByName(card.link) : null;
-    const menu = new NexusPopupMenu(this.app, cardTitle(card) || 'Card');
-
-    if (note) {
-      menu.addItem(i => i.setTitle('Open note').setIcon('file-text')
-        .onClick(() => this.app.workspace.getLeaf(false).openFile(note)));
-      menu.addItem(i => i.setTitle('Open in a new tab').setIcon('layout')
-        .onClick(() => this.app.workspace.getLeaf('tab').openFile(note)));
-      menu.addItem(i => i.setTitle('Unlink the note').setIcon('unlink').onClick(() => {
-        if (!card.text) card.text = cardTitle(card);
-        card.link = ''; card.alias = '';
-        this.save(el, ctx, cfg);
-      }));
-    } else {
-      menu.addItem(i => i.setTitle('Create a note for this card').setIcon('file-plus')
-        .onClick(() => this.createNote(cfg, bi, ci, el, ctx)));
-      menu.addItem(i => i.setTitle('Link an existing note').setIcon('link').onClick(() => {
-        new NexusNamePickModal(this.app, 'Which note?',
-          this.app.vault.getMarkdownFiles().map(f => f.path).sort((a, b) => a.localeCompare(b)),
-          (path) => {
-            const f = this.app.vault.getAbstractFileByPath(path);
-            if (!(f instanceof TFile)) return;
-            card.link = f.basename;
-            // The card keeps its own wording; the note name is only the target.
-            if (card.text && card.text === f.basename) card.text = '';
-            this.save(el, ctx, cfg);
-          }).open();
-      }));
-    }
-    menu.addSeparator();
-    menu.addItem(i => i.setTitle('Edit…').setIcon('pencil').onClick(() => this.editCard(cfg, bi, ci, el, ctx)));
-    menu.addItem(i => i.setTitle(card.due ? 'Due date (' + card.due + ')' : 'Due date').setIcon('calendar-days').onClick(async () => {
-      const { NexusNameModal } = require('../modals/misc.js');
-      const v = await new NexusNameModal(this.app, 'Due date (YYYY-MM-DD, empty = none)', card.due || '', true).openAndGet();
-      if (v == null) return;
-      const t = String(v).trim();
-      card.due = /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : '';
-      this.save(el, ctx, cfg);
-    }));
-    menu.addItem(i => i.setTitle(card.done ? 'Mark as open' : 'Mark as done').setIcon(card.done ? 'circle' : 'check')
-      .onClick(() => { card.done = !card.done; this.save(el, ctx, cfg); }));
-    menu.addSeparator();
-    cfg.buckets.forEach((b, i) => {
-      if (i === bi) return;
-      menu.addItem(x => x.setTitle('Move to “' + b.title + '”').setIcon('arrow-right')
-        .onClick(() => { this.move(cfg, bi, ci, i, b.cards.length); this.save(el, ctx, cfg); }));
-    });
-    menu.addSeparator();
-    menu.addItem(i => i.setTitle('Delete card').setIcon('trash-2').onClick(() => {
-      cfg.buckets[bi].cards.splice(ci, 1);
-      this.save(el, ctx, cfg);
-    }));
-    menu.showAtMouseEvent(evt);
-  }
-
-  /* The card editor. Everything the card is, in one modal — and every way out
-     of it except Cancel keeps the edits, so "create a note" or "to the note"
-     never throws away what was just typed. */
-  async editCard(cfg, bi, ci, el, ctx) {
-    const { NexusKanbanCardModal } = require('../modals/kanbancard.js');
-    const { NexusNamePickModal } = require('../modals/misc.js');
-    const bucket = cfg.buckets[bi];
-    const card = bucket && bucket.cards[ci];
-    if (!card) return;
-
-    const res = await new NexusKanbanCardModal(this.app, {
-      card,
-      columns: cfg.buckets.map(b => b.title),
-      columnIndex: bi,
-      note: card.link ? this.noteByName(card.link) : null,
-    }).openAndGet();
-    if (!res) return;
-
-    if (res.action === 'delete') {
-      bucket.cards.splice(ci, 1);
-      await this.save(el, ctx, cfg);
-      return;
-    }
-
-    // Matching the note's own name means "just show the note" — keep it clean.
-    const edited = res.card;
-    if (edited.link && edited.text && edited.text === (edited.alias || edited.link)) edited.text = '';
-    if (res.action === 'unlink') {
-      if (!edited.text) edited.text = edited.alias || edited.link;
-      edited.link = ''; edited.alias = '';
-    }
-    Object.assign(card, {
-      done: edited.done, text: edited.text, desc: edited.desc,
-      due: edited.due, tags: edited.tags, link: edited.link, alias: edited.alias,
-    });
-
-    // The column is applied before anything that navigates away, so a card that
-    // was moved and opened lands in the right place either way.
-    let index = ci;
-    if (res.column !== bi && cfg.buckets[res.column]) {
-      this.move(cfg, bi, ci, res.column, cfg.buckets[res.column].cards.length);
-      index = cfg.buckets[res.column].cards.length - 1;
-    }
-    const at = res.column !== bi ? res.column : bi;
-    await this.save(el, ctx, cfg);
-
-    if (res.action === 'open') {
-      const note = card.link ? this.noteByName(card.link) : null;
-      if (note) this.app.workspace.getLeaf(false).openFile(note);
-      return;
-    }
-    if (res.action === 'create') {
-      await this.createNote(cfg, at, index, el, ctx);
-      return;
-    }
-    if (res.action === 'link') {
-      new NexusNamePickModal(this.app, 'Which note?',
-        this.app.vault.getMarkdownFiles().map(f => f.path).sort((a, b) => a.localeCompare(b)),
-        (path) => {
-          const f = this.app.vault.getAbstractFileByPath(path);
-          if (!(f instanceof TFile)) return;
-          const target = cfg.buckets[at] && cfg.buckets[at].cards[index];
-          if (!target) return;
-          target.link = f.basename;
-          if (target.text && target.text === f.basename) target.text = '';
-          this.save(el, ctx, cfg);
-        }).open();
-    }
-  }
-
-  /* A card without a note becomes one: the note is created in the board's
-     `notes:` folder, the card starts pointing at it, and the note carries a
-     link back so the board is findable from the note side too. */
-  async createNote(cfg, bi, ci, el, ctx) {
-    const card = cfg.buckets[bi].cards[ci];
-    const title = cardTitle(card);
-    if (!title) { new Notice('The card has no title yet.'); return; }
-    const boardPath = ctx && ctx.sourcePath ? ctx.sourcePath : '';
-    const boardFile = boardPath ? this.app.vault.getAbstractFileByPath(boardPath) : null;
-    let folder = (cfg.notes || this.s.notesFolder || '').replace(/^\/|\/$/g, '');
-    if (!folder && boardFile && boardFile.parent && boardFile.parent.path !== '/') folder = boardFile.parent.path;
-    if (folder) await this.ensureFolder(folder);
-
-    let body = '';
-    if (cfg.template) {
-      const tf = this.app.vault.getAbstractFileByPath(cfg.template.endsWith('.md') ? cfg.template : cfg.template + '.md');
-      if (tf instanceof TFile) { try { body = await this.app.vault.read(tf); } catch (e) {} }
-      else new Notice('Template not found: ' + cfg.template);
-    }
-    if (!body) {
-      const fm = ['---', 'nexus-type: card'];
-      if (boardFile) fm.push('nexus-board: "[[' + boardFile.basename + ']]"');
-      if (card.due) fm.push('due: ' + card.due);
-      if ((card.tags || []).length) fm.push('tags: [' + card.tags.join(', ') + ']');
-      fm.push('---', '', '# ' + title, '');
-      body = fm.join('\n');
-    }
-    const path = this.freePath((folder ? folder + '/' : '') + this.sanitize(title) + '.md');
-    const file = await this.app.vault.create(path, body);
-    card.link = file.basename;
-    if (card.text === file.basename) card.text = '';
-    await this.save(el, ctx, cfg);
-    this.app.workspace.getLeaf('tab').openFile(file);
-  }
-
   /* ---- moving cards -------------------------------------------------------- */
 
-  move(cfg, bi, ci, toB, toIndex) {
-    const from = cfg.buckets[bi], to = cfg.buckets[toB];
-    if (!from || !to) return;
-    const [card] = from.cards.splice(ci, 1);
-    if (!card) return;
-    let at = toIndex == null ? to.cards.length : toIndex;
-    if (bi === toB && ci < at) at -= 1;                    // the gap it left shifts the target
-    at = Math.max(0, Math.min(to.cards.length, at));
-    // Dropping into a "done" column completes the card, dragging it out reopens
-    // it — otherwise the column and the checkbox would tell different stories.
-    const kind = bucketKind(to.title);
-    if (kind === 'done') card.done = true;
-    else if (bucketKind(from.title) === 'done' && card.done) card.done = false;
-    to.cards.splice(at, 0, card);
-  }
 
   /* Pointer-based drag — a finger on the tablet cannot use HTML5 drag & drop.
      The drop index comes from the card midpoints under the pointer, so a card
-     can be placed inside a column and not just appended to it. */
-  dragSource(cardEl, cfg, bi, ci, el, ctx) {
+     can be placed inside a column and not just appended to it. One drag for
+     both sources: only what `move` does with the result differs. */
+  dragSource(cardEl, source, bi, ci) {
+    const el = cardEl.closest('.nx-kb');
     cardEl.addEventListener('pointerdown', (e) => {
       if (e.button != null && e.button > 0) return;
-      if (e.target && e.target.closest && e.target.closest('.nx-kb-check, .nx-kb-card-menu')) return;
+      if (e.target && e.target.closest && e.target.closest('.nx-kb-card-lead, .nx-kb-card-menu')) return;
       const startX = e.clientX, startY = e.clientY;
       let ghost = null, moved = false, mark = null;
       const scroller = nxEdgeScroller(el.querySelector('.nx-kb-cols'));
@@ -695,7 +426,7 @@ class NexusKanban {
           moved = true;
           cardEl.addClass('is-dragging');
           ghost = document.body.createDiv('nx-kb-ghost');
-          ghost.setText(cardTitle(cfg.buckets[bi].cards[ci]) || 'Card');
+          ghost.setText((cardEl.querySelector('.nx-kb-card-t') || {}).textContent || 'Card');
         }
         ghost.style.left = ev.clientX + 12 + 'px';
         ghost.style.top = ev.clientY + 12 + 'px';
@@ -717,8 +448,7 @@ class NexusKanban {
         window.setTimeout(() => cardEl.removeClass('is-dragging'), 0);
         if (!moved || !s) return;
         if (s.bucket === bi && (s.at === ci || s.at === ci + 1)) return;   // dropped where it was
-        this.move(cfg, bi, ci, s.bucket, s.at);
-        this.save(el, ctx, cfg);
+        source.move(bi, ci, s.bucket, s.at);
       };
       document.addEventListener('pointermove', move);
       document.addEventListener('pointerup', up);
@@ -729,12 +459,13 @@ class NexusKanban {
 
   /* Finding the block again is shared with every other block that IS its data —
      see lib/blockedit.js for why getSectionInfo alone is not enough. */
-  locateBlock(lines, previousSrc, info) {
-    return blockedit.locateFencedBlock(lines, 'nexus-kanban', previousSrc, info);
+  locateBlock(lines, previousSrc, info, fence) {
+    return blockedit.locateFencedBlock(lines, fence || 'nexus-kanban', previousSrc, info);
   }
 
   async save(el, ctx, cfg) {
     const src = stringifyKanban(cfg);
+    const fence = el._nxFence || 'nexus-kanban';
     // What is in the FILE right now — captured before the repaint, which
     // replaces it on the element.
     const previous = el._nxSrc;
@@ -742,12 +473,15 @@ class NexusKanban {
     // Obsidian's own re-render lands a moment later — without this the card
     // would visibly snap back before it moves.
     if (el._nxRepaint) el._nxRepaint(src);
-    const res = await blockedit.saveFencedBlock(this.app, TFile, el, ctx, 'nexus-kanban', src, previous);
+    const res = await blockedit.saveFencedBlock(this.app, TFile, el, ctx, fence, src, previous);
     if (!res.ok) new Notice('Nexus: ' + res.reason + ' — the board was not saved.');
+    // Reported, not thrown: a caller that follows the write with vault changes
+    // of its own (a column rename) has to know it did not land.
+    return res.ok;
   }
 }
 
-module.exports = {
-  NexusKanban, parseKanban, stringifyKanban, parseCard, cardLine, cardLines, cardTitle,
-  bucketKind, kindVar, nxEdgeScroller,
-};
+/* The block format is re-exported here on purpose: kanban.js is what the rest
+   of the suite (and the test harness) asks for a board, and which file inside
+   the module holds the parser is nobody else's business. */
+module.exports = Object.assign({}, block, edit, { NexusKanban, nxEdgeScroller, cardFrame });

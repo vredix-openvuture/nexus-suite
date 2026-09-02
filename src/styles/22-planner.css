@@ -3,8 +3,8 @@
       be READ at a glance, so the day number is small and quiet and the line the
       user wrote is the thing that carries. ── */
 .nx-pl {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius);
   overflow: hidden;
   background: var(--background-primary);
 }
@@ -13,19 +13,25 @@
 .nx-pl-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--nx-sp-3);
   padding: 10px 12px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--nx-hairline);
 }
 .nx-pl-title { font-weight: 650; font-size: 15px; }
 .nx-pl-count { font-size: 12px; color: var(--text-muted); }
 .nx-pl-tools { margin-left: auto; display: flex; gap: 2px; }
+/* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
 .nx-pl-tool {
-  width: 26px; height: 26px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
 }
-.nx-pl-tool:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-pl-tool:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 .nx-pl-tool .svg-icon { width: 15px; height: 15px; }
 
 .nx-pl-dow, .nx-pl-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
@@ -35,13 +41,13 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-faint);
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--nx-hairline);
 }
 .nx-pl-cell {
   min-height: 74px;
   padding: 5px 6px 7px;
-  border-right: 1px solid var(--background-modifier-border);
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-right: var(--nx-hairline);
+  border-bottom: var(--nx-hairline);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -55,22 +61,27 @@
 .nx-pl-cell.is-today .nx-pl-num {
   background: var(--interactive-accent);
   color: var(--text-on-accent, #fff);
-  border-radius: 999px;
+  border-radius: var(--nx-r-pill);
   padding: 0 5px;
 }
 
-.nx-pl-cell-head { display: flex; align-items: center; gap: 4px; }
+.nx-pl-cell-head { display: flex; align-items: center; gap: var(--nx-sp-1); }
 .nx-pl-num { font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
 .nx-pl-open {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
   margin-left: auto;
-  width: 18px; height: 18px; border-radius: 4px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-faint);
   opacity: 0;
-  cursor: pointer;
 }
 .nx-pl-cell:hover .nx-pl-open, .nx-pl-open:focus-visible { opacity: 1; }
-.nx-pl-open:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-pl-open:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 .nx-pl-open .svg-icon { width: 12px; height: 12px; }
 
 /* The line itself: no box, no border, so a filled month reads as writing on
@@ -84,11 +95,11 @@
   font-size: 12.5px;
   line-height: 1.35;
   color: var(--text-normal);
-  border-radius: 4px;
+  border-radius: var(--nx-r-tile);
   min-width: 0;
 }
-.nx-pl-input:hover { background: var(--background-modifier-hover); }
-.nx-pl-input:focus { outline: none; background: var(--background-modifier-hover); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-pl-input:hover { background: var(--nx-sf-1); }
+.nx-pl-input:focus { outline: none; background: var(--nx-sf-1); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
 
 /* A week is seven rows of one line each, with room to actually write. */
 .nx-pl.is-week .nx-pl-cell { min-height: 54px; }
@@ -99,7 +110,7 @@
   .nx-pl-dow { display: none; }
   .nx-pl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nx-pl-cell { min-height: 62px; }
-  .nx-pl-cell:nth-child(7n) { border-right: 1px solid var(--background-modifier-border); }
+  .nx-pl-cell:nth-child(7n) { border-right: var(--nx-hairline); }
   .nx-pl-cell:nth-child(2n) { border-right: 0; }
   .nx-pl-open { opacity: 1; }
 }
@@ -112,9 +123,18 @@
    recogniser that is not there. */
 .nx-qn-modal .nx-qn-status.is-blocked { color: var(--color-orange, #e9973f); }
 .nx-qn-modal .nx-qn-record:disabled { opacity: .5; cursor: not-allowed; }
+/* Legacy alias of .nx-btn (00-tokens.css). It was a 999px pill; an ordinary
+   button is never a pill, however important it is. */
 .nx-qn-record {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 9px 18px; font-size: 15px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  height: var(--nx-ctl-h);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  padding: 0 var(--nx-sp-4);
+  gap: var(--nx-sp-2);
 }
 .nx-qn-record .nx-qn-ic { display: flex; }
 .nx-qn-record .svg-icon { width: 17px; height: 17px; }
@@ -125,12 +145,12 @@
   max-height: 240px;
   overflow-y: auto;
   padding: 10px 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s, 5px);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius);
   background: var(--background-primary-alt, var(--background-secondary));
 }
 .nx-qn-hint { color: var(--text-faint); font-size: 13px; }
 .nx-qn-line + .nx-qn-line { margin-top: 7px; }
 .nx-qn-row { display: flex; align-items: center; gap: 14px; }
 .nx-qn-check { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; }
-.nx-qn-engine { margin-top: 12px; font-size: 12px; color: var(--text-faint); }
+.nx-qn-engine { margin-top: var(--nx-sp-3); font-size: 12px; color: var(--text-faint); }

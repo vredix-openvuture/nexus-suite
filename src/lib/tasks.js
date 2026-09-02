@@ -7,8 +7,8 @@
  *      checklist of its tasks (+ "## Subprojects" links).
  *    · Task note     = frontmatter (status/due/priority/repeat/…) + description.
  *  Checking a task in the project note flips its state; a REPEAT task advances
- *  its due date instead of completing. Remote providers (CalDAV VTODO / Vikunja
- *  REST) plug into the SAME notes via the sync engine in later milestones.
+ *  its due date instead of completing. The remote provider (Vikunja REST) plugs
+ *  into the SAME notes via the sync engine.
  * ========================================================================== */
 
 const { MarkdownView, Notice, moment, TFile } = require('obsidian');
@@ -204,9 +204,9 @@ async function setTaskDone(plugin, k, done) {
   if (!st) return { missing: true };
   let repeated = false, newDue = st.due;
   await app.fileManager.processFrontMatter(st.file, fm => {
-    // Repeat advances the due date here for local AND CalDAV (plain VTODO has no
-    // server-side recurrence roll-over). Vikunja is the exception — its server
-    // owns the repeat, so there we just mark done and let sync push it.
+    // Repeat advances the due date here for local tasks. Vikunja is the
+    // exception — its server owns the repeat, so there we just mark done and
+    // let sync push it.
     if (done && fm.repeat && (fm['nexus-provider'] || 'local') !== 'vikunja') {
       newDue = advanceDue(fm.due, fm.repeat);
       fm.due = newDue;

@@ -1,0 +1,255 @@
+/* ============================================================================
+ *  NEXUS SUITE — TOKENS
+ *
+ *  The single source of every shared number in this plugin: radii, border,
+ *  surfaces, control geometry, spacing. Nothing below this file writes a
+ *  literal radius, a literal `1px solid`, or a bare `opacity:` that means "a
+ *  surface". See .claude/token-spec.md for the contract and why it exists.
+ *
+ *  The block between the NX TOKENS markers is duplicated verbatim into
+ *  themes/Nexus/theme.css section 1, on `.theme-dark, .theme-light` — a higher
+ *  specificity, so the theme wins when it is active and the plugin still has
+ *  every token it uses under any other theme. test/tokens.sh fails if the
+ *  two ever drift apart.
+ * ==========================================================================*/
+
+/* `:root, body` and not `:root` alone: Obsidian declares its own variables on
+   body, and a token that references one has to be substituted on an element
+   where it exists. Declaring on both means the body copy re-resolves with them
+   in scope. The theme's `.theme-dark, .theme-light` is more specific and still
+   wins wherever it is active. */
+:root,
+body {
+/* >>> NX TOKENS >>> */
+  /* ── Radii · two, and that is all ───────────────────────────────────────
+     --nx-radius  what CONTAINS something: card, panel, modal, code block,
+                  callout, banner, image, popover surface.
+     --nx-r-tile  what IS a control: button, input, list row, tab, chip, tag,
+                  swatch, toggle.
+     The style variants (plain, the narrow block, the Notion palette) override
+     these two and nothing else — that is the mechanism working. */
+  --nx-radius:      10px;
+  --nx-r-tile:      6px;
+
+  /* Shapes, not radii. Only where the element genuinely is one. */
+  --nx-r-circle:    50%;
+  --nx-r-pill:      999px;
+
+  /* ── Border ─────────────────────────────────────────────────────────────
+     --nx-border keeps its existing meaning: it is a COLOUR, set per palette.
+     --nx-hairline is the shorthand that replaces every written-out
+     `1px solid var(--nx-border)`. Its fallback is load-bearing: --nx-border is
+     declared by the theme, not by the plugin, and without the floor all ~110
+     `border: var(--nx-hairline)` rules would be invalid at computed-value time
+     under any other theme — the plugin would render with no borders at all.
+
+     The floor is a LITERAL and it has to be. A var() chain is substituted on
+     the element that declares it: --background-modifier-border lives on body,
+     so at :root that fallback is undefined too, the whole chain is invalid, and
+     the empty result inherits down past the point where the variable does
+     exist. Measured, not assumed. */
+  --nx-bw:          1px;
+  --nx-hairline:    var(--nx-bw) solid var(--nx-border, var(--background-modifier-border, rgba(128, 128, 128, .28)));
+  --nx-border-strong: color-mix(in srgb, var(--nx-fg, currentColor) 12%, var(--nx-border, var(--background-modifier-border, rgba(128, 128, 128, .28))));
+
+  /* ── Surfaces · lifted from the ground, never tinted ────────────────────
+     Translucent on purpose, so one token works on the editor, the sidebar and
+     a modal without knowing which ground it sits on. */
+  --nx-op-faint:    4%;
+  --nx-op-soft:     8%;
+  --nx-op-strong:   14%;
+  --nx-sf-1:        color-mix(in srgb, var(--nx-fg, currentColor) var(--nx-op-faint), transparent);
+  --nx-sf-2:        color-mix(in srgb, var(--nx-fg, currentColor) var(--nx-op-soft), transparent);
+  --nx-sf-3:        color-mix(in srgb, var(--nx-fg, currentColor) var(--nx-op-strong), transparent);
+
+  /* ── Controls · one height, one padding, one field width ────────────────
+     The review found text fields of three different widths inside a single
+     settings tab. --nx-field-w is the answer to that, everywhere. */
+  --nx-ctl-h:       30px;
+  --nx-ctl-h-sm:    24px;
+  --nx-ctl-pad-x:   10px;
+  --nx-ctl-gap:     6px;
+  --nx-field-w:     220px;
+  --nx-row-h:       34px;
+
+  /* ── Spacing · five steps, nothing between them ─────────────────────────
+     --nx-gap keeps its own meaning: the gap BETWEEN chips, which the style
+     variants turn to 0. */
+  --nx-sp-1:        4px;
+  --nx-sp-2:        8px;
+  --nx-sp-3:        12px;
+  --nx-sp-4:        18px;
+  --nx-sp-5:        28px;
+  --nx-gap:         12px;
+
+  /* ── Bars ───────────────────────────────────────────────────────────────*/
+  --nx-bar-h:       38px;
+  --nx-tab-gap:     5px;
+/* <<< NX TOKENS <<< */
+}
+
+
+/* ============================================================================
+ *  THE SHARED COMPONENTS
+ *
+ *  Before this file there were 41 separate `.nx-*-btn` / `-add` / `-del` /
+ *  `-input` class families and four separate implementations of "a row with a
+ *  field and a delete button". That is where the 44× 6px / 38× 999px / 23× 8px
+ *  radius spread came from, and it is why one settings row never looked like
+ *  the next. A button that has to look different gets a modifier here; it does
+ *  not get a new class.
+ * ==========================================================================*/
+
+/* ── Button ────────────────────────────────────────────────────────────────*/
+.nx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h);
+  padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.nx-btn:hover      { background: var(--nx-sf-2); }
+.nx-btn:active     { background: var(--nx-sf-3); }
+.nx-btn:disabled,
+.nx-btn.is-disabled { opacity: .45; pointer-events: none; }
+
+/* The one button on a surface that the eye should land on first. */
+.nx-btn.is-primary {
+  background: var(--nx-accent, var(--interactive-accent));
+  border-color: transparent;
+  color: var(--nx-on-accent, var(--text-on-accent));
+}
+.nx-btn.is-primary:hover  { background: color-mix(in srgb, var(--nx-fg, #fff) 10%, var(--nx-accent, var(--interactive-accent))); }
+
+/* No border, no fill — for a button that sits inside something already framed. */
+.nx-btn.is-quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
+}
+.nx-btn.is-quiet:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
+
+.nx-btn.is-danger:hover {
+  background: color-mix(in srgb, var(--color-red, #d33) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-red, #d33) 40%, transparent);
+  color: var(--color-red, #d33);
+}
+
+/* Square, icon only. Same height as everything else in the row. */
+.nx-btn.is-icon {
+  width: var(--nx-ctl-h);
+  padding: 0;
+  color: var(--nx-fg-muted, var(--text-muted));
+}
+.nx-btn.is-icon:hover { color: var(--nx-fg, var(--text-normal)); }
+.nx-btn.is-icon .svg-icon { width: 16px; height: 16px; }
+
+/* Dense variant, for a control that lives inside a list row. */
+.nx-btn.is-sm { height: var(--nx-ctl-h-sm); padding: 0 var(--nx-sp-2); font-size: .8em; }
+.nx-btn.is-sm.is-icon { width: var(--nx-ctl-h-sm); padding: 0; }
+
+/* Only where the shape carries meaning — a segmented control, a status pill. */
+.nx-btn.is-pill { border-radius: var(--nx-r-pill); }
+
+/* ── Field ─────────────────────────────────────────────────────────────────*/
+.nx-input,
+input.nx-input,
+textarea.nx-input,
+select.nx-input {
+  width: var(--nx-field-w);
+  max-width: 100%;
+  height: var(--nx-ctl-h);
+  padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
+  background: var(--background-modifier-form-field);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em);
+  box-shadow: none;
+}
+textarea.nx-input { height: auto; padding: var(--nx-sp-2) var(--nx-ctl-pad-x); line-height: 1.45; resize: vertical; }
+.nx-input:focus { outline: none; border-color: var(--nx-accent, var(--interactive-accent)); }
+.nx-input.is-grow  { width: 100%; flex: 1; }
+.nx-input.is-short { width: calc(var(--nx-field-w) / 2); }
+
+/* ── Row ───────────────────────────────────────────────────────────────────
+   ONE list row. A property filter, a multi-value list, an assigned icon, a
+   connection, a saved workspace — they are all this. */
+.nx-row {
+  display: flex;
+  align-items: center;
+  gap: var(--nx-ctl-gap);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1);
+}
+.nx-row + .nx-row { margin-top: var(--nx-sp-1); }
+.nx-row-main  { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--nx-ctl-gap); }
+.nx-row-aside { display: flex; align-items: center; gap: var(--nx-sp-1); flex: 0 0 auto; }
+.nx-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-row-sub   { color: var(--nx-fg-muted, var(--text-muted)); font-size: .82em; }
+
+/* A list of rows, and the row that adds one. */
+.nx-list { display: flex; flex-direction: column; gap: var(--nx-sp-1); }
+.nx-list-add {
+  border-style: dashed;
+  background: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
+  justify-content: center;
+  width: 100%;
+}
+.nx-list-add:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
+
+/* ── Card ──────────────────────────────────────────────────────────────────
+   A surface that contains other things. Everything smaller than this is a row
+   or a button, not a card — the review found single-line entries rendered as
+   full cards on the properties, tags and icons pages. */
+.nx-card {
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius);
+  background: var(--nx-sf-1);
+  padding: var(--nx-sp-3);
+}
+
+/* ── A colour dot ──────────────────────────────────────────────────────────
+   The one place a circle is correct. `--dot` carries the actual colour, so a
+   dot always shows the thing it stands for; a row of identical dots is a bug. */
+.nx-dot {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: var(--nx-r-circle);
+  background: var(--dot, var(--nx-fg-muted, var(--text-muted)));
+  box-shadow: inset 0 0 0 var(--nx-bw) color-mix(in srgb, var(--nx-fg, currentColor) 20%, transparent);
+}
+
+/* ── A copyable example ────────────────────────────────────────────────────
+   Every feature driven by a code block shows one, so the syntax is visible
+   where the settings for it are. */
+.nx-example { position: relative; margin: var(--nx-sp-2) 0 var(--nx-sp-3); }
+.nx-example pre {
+  margin: 0;
+  padding: var(--nx-sp-3);
+  padding-right: calc(var(--nx-ctl-h) + var(--nx-sp-3));
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius);
+  background: var(--nx-sf-1);
+  font-size: .82em;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+}
+.nx-example .nx-btn { position: absolute; top: var(--nx-sp-2); right: var(--nx-sp-2); }

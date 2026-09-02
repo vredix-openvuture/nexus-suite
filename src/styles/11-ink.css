@@ -57,7 +57,7 @@
   display: block !important;
   width: 50% !important; max-width: 50% !important; margin: 1.25em auto !important;
   height: auto !important; max-height: none !important;
-  border: 1px solid var(--nx-border, var(--background-modifier-border)); border-radius: 6px;
+  border: var(--nx-hairline); border-radius: var(--nx-radius);
   overflow: hidden; background: var(--background-secondary);
 }
 .nx-ink-pdf-loading { padding: 40px; text-align: center; color: var(--text-muted); }
@@ -66,16 +66,23 @@
    size controls on the far right. */
 .nx-ink-pdf-toolbar {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  padding: 6px; border-bottom: 1px solid var(--nx-border, var(--background-modifier-border));
+  padding: 6px; border-bottom: var(--nx-hairline);
 }
 .nx-ink-pdf-toolbar-group { display: flex; align-items: center; gap: 6px; }
 .nx-ink-pdf-toolbar-group:last-child { justify-content: flex-end; }
 .nx-ink-pdf-toolbar-center { gap: 14px; }
+/* Legacy alias of .nx-btn.is-quiet (00-tokens.css) — the PDF toolbar. */
 .nx-ink-pdf-nav {
-  cursor: pointer; border: none; background: transparent; font-size: 1.1em;
-  padding: 2px 10px; border-radius: 6px; color: var(--text-normal);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
 }
-.nx-ink-pdf-nav:hover { background: var(--background-modifier-hover); }
+.nx-ink-pdf-nav:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 .nx-ink-pdf-nav.is-disabled { opacity: .35; pointer-events: none; }
 .nx-ink-pdf-nav.is-active { color: var(--nx-accent, var(--interactive-accent)); }
 .nx-ink-pdf-pagelabel { font-size: .85em; color: var(--text-muted); min-width: 4em; text-align: center; }
@@ -86,7 +93,7 @@
    exactly right. This rule only supplies the resting/base look. */
 .nx-ink-pdf-toc {
   width: 0; flex: 0 0 auto; overflow: hidden; max-height: 70vh; overflow-y: auto;
-  border-right: 1px solid transparent; transition: width .15s ease;
+  border-right: var(--nx-bw) solid transparent; transition: width .15s ease;
   font-size: .82em; background: var(--background-primary);
 }
 .nx-ink-pdf-toc-heading {
@@ -94,21 +101,28 @@
   margin: 10px 2px 6px;
 }
 .nx-ink-pdf-toc-heading:first-child { margin-top: 2px; }
-.nx-ink-pdf-toc-thumbs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.nx-ink-pdf-toc-thumbs { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--nx-sp-2); }
 .nx-ink-pdf-toc-thumb { cursor: pointer; text-align: center; }
 .nx-ink-pdf-toc-thumb canvas {
-  display: block; width: 100%; height: auto; border-radius: 4px;
-  border: 1px solid var(--nx-border, var(--background-modifier-border));
+  display: block; width: 100%; height: auto; border-radius: var(--nx-r-tile);
+  border: var(--nx-hairline);
 }
 .nx-ink-pdf-toc-thumb:hover canvas { border-color: var(--nx-accent, var(--interactive-accent)); }
 .nx-ink-pdf-toc-thumb-label { font-size: .75em; color: var(--text-muted); margin-top: 2px; }
-.nx-ink-pdf-toc-list { list-style: none; margin: 0; padding-left: 12px; }
+.nx-ink-pdf-toc-list { list-style: none; margin: 0; padding-left: var(--nx-sp-3); }
 .nx-ink-pdf-toc-list:first-child { padding-left: 0; }
+/* Legacy alias of .nx-row (00-tokens.css) — one outline entry. Stays a BLOCK:
+   text-overflow does not apply to a flex container's anonymous item, so a flex
+   row would clip a long heading with no ellipsis. line-height carries the row
+   height instead of align-items. */
 .nx-ink-pdf-toc-list a {
-  display: block; padding: 3px 4px; border-radius: 4px; color: var(--text-normal);
+  display: block;
+  padding: 0 var(--nx-sp-2);
+  line-height: var(--nx-row-h);
+  border-radius: var(--nx-r-tile); color: var(--nx-fg, var(--text-normal));
   text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.nx-ink-pdf-toc-list a:hover { background: var(--background-modifier-hover); }
+.nx-ink-pdf-toc-list a:hover { background: var(--nx-sf-1); }
 .nx-ink-pdf-pages { flex: 1 1 auto; min-width: 0; }
 .nx-ink-pdf-canvas { display: block; width: 100%; height: auto; }
 .nx-ink-pdf-pages .nx-ink-pdf-canvas + .nx-ink-pdf-canvas { margin-top: 10px; }
@@ -125,8 +139,8 @@
 .nx-ink-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
 .nx-ink-tile { position: relative; cursor: pointer; }
 .nx-ink-tile-cover {
-  position: relative; aspect-ratio: 3 / 4; border-radius: 8px; overflow: hidden;
-  border: 1px solid var(--nx-border, var(--background-modifier-border));
+  position: relative; aspect-ratio: 3 / 4; border-radius: var(--nx-radius); overflow: hidden;
+  border: var(--nx-hairline);
   box-shadow: 0 2px 6px rgba(0,0,0,.22);
   background-image: var(--img); background-size: cover; background-position: center;
   background-color: var(--background-secondary);
@@ -145,23 +159,32 @@
 .nx-ink-tile-icon .svg-icon { width: 30px; height: 30px; }
 .nx-ink-tile-source {
   position: absolute; left: 6px; bottom: 6px;
-  font-size: .62em; font-weight: 600; text-transform: capitalize; padding: 1px 7px; border-radius: 999px;
+  font-size: .62em; font-weight: 600; text-transform: capitalize; padding: 1px 7px; border-radius: var(--nx-r-pill);
   background: rgba(0,0,0,.62); color: #fff; backdrop-filter: blur(3px);
 }
 .nx-ink-tile-title {
   margin-top: 7px; font-size: .85em; line-height: 1.25; color: var(--text-normal);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.nx-ink-tile-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.nx-ink-tile-tags { display: flex; flex-wrap: wrap; gap: var(--nx-sp-1); margin-top: 5px; }
 .nx-ink-tag-chip {
-  font-size: .68em; padding: 2px 8px; border-radius: 999px;
+  font-size: .68em; padding: 2px 8px; border-radius: var(--nx-r-pill);
   background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%, transparent);
   color: var(--text-normal);
 }
+/* Legacy alias of .nx-btn.is-icon.is-sm — floats over a scan, so it keeps its
+   own scrim and a white glyph instead of the theme's colours. */
 .nx-ink-tile-edit {
-  position: absolute; top: 6px; right: 6px; display: flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 999px;
-  background: rgba(0,0,0,.55); color: #fff; opacity: 0; transition: opacity .12s ease;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  position: absolute; top: 6px; right: 6px;
+  border-color: transparent;
+  background: rgba(0, 0, 0, .55); color: #fff;
+  opacity: 0;
 }
 .nx-ink-tile-edit .svg-icon { width: 14px; height: 14px; }
 .nx-ink-tile:hover .nx-ink-tile-edit { opacity: 1; }
@@ -178,7 +201,6 @@
 
   .nx-ink-pdf-toolbar { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 10px; }
   .nx-ink-pdf-toolbar-group:last-child { justify-content: center; }
-  .nx-ink-pdf-nav { padding: 6px 12px; }
 
   .nx-ink-pdf-body { flex-direction: column; }
   .nx-ink-pdf-toc { max-height: 42vh; border-right: none; }

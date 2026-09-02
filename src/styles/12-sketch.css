@@ -1,18 +1,9 @@
 /* Slate toggle — a visible corner button on every note (flips nexus: slate).
-   Sits left of the banner/background buttons (right 16 / 52 → this at 88). */
+   Third slot in the corner row (banner 16 / background 52 → this at 88); the
+   button's own look is one of the three corner buttons in 02-banner.css. */
 .view-content:has(> .nx-slate-btn) { position: relative; }
-.nx-slate-btn {
-  position: absolute; top: 10px; right: 88px; z-index: 20;
-  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-s, 6px); cursor: pointer; opacity: .5;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--background-primary) 65%, transparent);
-  backdrop-filter: blur(4px);
-  transition: opacity .12s ease, color .12s ease, background .12s ease;
-}
-.nx-slate-btn:hover { opacity: 1; color: var(--text-normal); background: var(--background-modifier-hover); }
-.nx-slate-btn.is-active { opacity: 1; color: var(--interactive-accent); }
-.nx-slate-btn .svg-icon { width: 16px; height: 16px; }
+.nx-slate-btn { right: 88px; }
+.nx-slate-btn.is-active { opacity: 1; color: var(--nx-accent, var(--interactive-accent)); }
 
 /* ── PROTOKOLL — native note (title/properties/banner) + endless sketch area
       injected below the content, into the note's SCROLL container
@@ -109,8 +100,8 @@
 .nx-sketch {
   position: relative;
   margin: 0.6em 0;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-m, 8px);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius);
   overflow: hidden;
   /* The SVG owns the paper (white/black fill, or transparent for "native"), so the
      wrapper stays transparent — a native pad then shows the note's own background.
@@ -156,9 +147,9 @@
 .nx-sketch-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--nx-sp-1);
   padding: 7px 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--nx-hairline);
   background: var(--background-primary);
   flex-wrap: nowrap;
   min-height: 0;
@@ -188,9 +179,9 @@
 .nx-sketch-subbar {
   display: none;
   align-items: center;
-  gap: 4px;
+  gap: var(--nx-sp-1);
   padding: 5px 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: var(--nx-hairline);
   background: var(--background-secondary);
   min-width: 0;
   overflow-x: auto;
@@ -205,13 +196,26 @@
 
 /* Pen types, as a row instead of the old pop-up grid. Tap the active one again
    for that pen's behaviour sheet. */
-.nx-sk-subpen {
-  width: 28px; height: 28px; flex: 0 0 auto;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 6px; cursor: pointer; color: var(--text-muted);
+/* Legacy aliases of .nx-btn.is-icon.is-quiet (00-tokens.css) — the sketch
+   toolbar. Four classes because the JS names four jobs; one look, because they
+   sit in one bar. The markup moves to .nx-btn in a later pass. */
+.nx-sk-subpen,
+.nx-sk-btn,
+.nx-sk-fav,
+.nx-sk-penchip {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h); padding: 0;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
+  flex: 0 0 auto;
 }
-.nx-sk-subpen:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
-.nx-sk-subpen.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); color: var(--interactive-accent); }
+.nx-sk-subpen:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
+.nx-sk-subpen.is-active { background: var(--nx-sf-2); color: var(--interactive-accent); }
 .nx-sk-subpen .svg-icon { width: 17px; height: 17px; }
 .nx-sk-subpens { gap: 2px; }
 /* ── Narrow screens: on a phone the tool group alone can be wider than the
@@ -232,38 +236,23 @@
   .nx-sketch-fs-stage { padding: 12px 8px 48px; }
 }
 
-.nx-sk-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.nx-sk-btn:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-sk-btn:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 /* Active = accent-coloured icon on a subtle tint (NOT a solid accent blob). */
-.nx-sk-btn.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); color: var(--interactive-accent); }
+.nx-sk-btn.is-active { background: var(--nx-sf-2); color: var(--interactive-accent); }
 .nx-sk-btn .svg-icon { width: 17px; height: 17px; }
 .nx-sk-done { color: var(--text-accent); }
 
 .nx-sk-grp { display: flex; align-items: center; gap: 3px; }
 .nx-sk-spacer { flex: 1 1 8px; min-width: 6px; }
-.nx-sk-sep { width: 1px; align-self: stretch; margin: 3px 5px; background: var(--background-modifier-border); }
+.nx-sk-sep { width: var(--nx-bw); align-self: stretch; margin: 3px 5px; background: var(--nx-border, var(--background-modifier-border)); }
 
 /* Size favourites — each shows a dot in its actual brush width. Tap to use,
    press-and-hold for a slider. */
 .nx-sk-favs { display: flex; align-items: center; gap: 2px; }
-.nx-sk-fav {
-  width: 26px; height: 26px;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 6px; cursor: pointer;
-  touch-action: none;   /* let press-and-hold work on touch without scrolling */
-}
-.nx-sk-fav:hover { background: var(--background-modifier-hover); }
-.nx-sk-fav.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
-.nx-sk-fav-dot { width: var(--d, 6px); height: var(--d, 6px); border-radius: 50%; background: var(--text-normal); }
+.nx-sk-fav { touch-action: none; }   /* press-and-hold must not scroll the page */
+.nx-sk-fav:hover { background: var(--nx-sf-1); }
+.nx-sk-fav.is-active { background: var(--nx-sf-2); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-sk-fav-dot { width: var(--d, 6px); height: var(--d, 6px); border-radius: var(--nx-r-circle); background: var(--text-normal); }
 
 /* Colour swatches. Small, and the active ring is an INSET shadow drawn inside
    the dot — outset rings/outlines get shaved off by the strip's overflow clip
@@ -272,7 +261,7 @@
 .nx-sk-color {
   width: 13px;
   height: 13px;
-  border-radius: 50%;
+  border-radius: var(--nx-r-circle);
   background: var(--c);
   cursor: pointer;
   box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
@@ -291,8 +280,8 @@
   z-index: calc(var(--layer-modal, 100) + 50);
   min-width: 190px;
   padding: 10px 12px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius);
   background: var(--background-primary);
   box-shadow: 0 8px 26px rgba(0, 0, 0, 0.35);
   /* Never taller than the screen: on a phone the palette list or the colour
@@ -300,42 +289,44 @@
   max-height: 76vh;
   overflow-y: auto;
 }
-.nx-sk-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 8px; }
+.nx-sk-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: var(--nx-sp-2); }
 
 .nx-sk-pen-row { display: flex; flex-direction: column; gap: 2px; }
-.nx-sk-pen { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px; cursor: pointer; }
-.nx-sk-pen:hover { background: var(--background-modifier-hover); }
-.nx-sk-pen.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+/* Legacy alias of .nx-row (00-tokens.css) — one pen in the picker. */
+.nx-sk-pen {
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  border-radius: var(--nx-r-tile); cursor: pointer;
+}
+.nx-sk-pen:hover { background: var(--nx-sf-1); }
+.nx-sk-pen.is-active { background: var(--nx-sf-2); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
 .nx-sk-pen-ic { display: flex; color: var(--text-normal); }
 .nx-sk-pen-ic .svg-icon { width: 16px; height: 16px; }
 .nx-sk-pen-lbl { font-size: 13px; }
 
-.nx-sk-colorinput { width: 100%; height: 34px; border: none; background: none; cursor: pointer; padding: 0; }
-.nx-sk-savecol { width: 100%; margin-top: 8px; }
+/* A native <input type=color>: full width, one control height. */
+.nx-sk-colorinput { width: 100%; height: var(--nx-ctl-h); border: none; background: none; cursor: pointer; padding: 0; }
+.nx-sk-savecol { width: 100%; margin-top: var(--nx-sp-2); }
 
-.nx-sk-bgtypes { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 10px; }
-.nx-sk-bgtype { text-align: center; padding: 6px 4px; font-size: 12px; border-radius: 6px; cursor: pointer; background: var(--background-secondary); }
-.nx-sk-bgtype:hover { background: var(--background-modifier-hover); }
+.nx-sk-bgtypes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--nx-sp-1); margin-bottom: 10px; }
+.nx-sk-bgtype { text-align: center; padding: 6px 4px; font-size: 12px; border-radius: var(--nx-r-tile); cursor: pointer; background: var(--background-secondary); }
+.nx-sk-bgtype:hover { background: var(--nx-sf-1); }
 .nx-sk-bgtype.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
 .nx-sk-bgtoggle { display: block; margin-bottom: 10px; }
-.nx-sk-slider { margin-top: 8px; }
+.nx-sk-slider { margin-top: var(--nx-sp-2); }
 .nx-sk-slider-lbl { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); }
 .nx-sk-slider input[type="range"] { width: 100%; accent-color: var(--interactive-accent); }
 /* Value lives in the label's flex row (right side). NEVER floated — a float here
    dropped out of flow and overlapped the rows beneath (the marker-menu bug). */
 .nx-sk-slider-val { color: var(--text-normal); }
-.nx-sk-slider-val-block { display: block; text-align: center; margin-top: 8px; color: var(--text-muted); }
+.nx-sk-slider-val-block { display: block; text-align: center; margin-top: var(--nx-sp-2); color: var(--text-muted); }
 
 /* Drawing-pen chooser popover: a row of pen chips + the selected pen's settings. */
 .nx-sk-penpop { min-width: 222px; }
 .nx-sk-penrow { display: flex; gap: 5px; margin-bottom: 6px; }
-.nx-sk-penchip {
-  width: 34px; height: 34px; flex: 0 0 auto;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 8px; cursor: pointer; color: var(--text-muted);
-}
-.nx-sk-penchip:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
-.nx-sk-penchip.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-sk-penchip:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
+.nx-sk-penchip.is-active { background: var(--nx-sf-2); color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
 .nx-sk-penchip .svg-icon { width: 18px; height: 18px; }
 .nx-sk-pensettings { margin-top: 2px; }
 
@@ -399,13 +390,19 @@
   opacity: 0.55;
 }
 .nx-sk-sectext { fill: var(--text-faint, #888); opacity: 0.85; }
+/* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
 .nx-sk-menuitem-x {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
   margin-left: auto;
-  display: flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px; border-radius: 4px;
-  color: var(--text-faint);
 }
-.nx-sk-menuitem-x:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-sk-menuitem-x:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 .nx-sk-menuitem-x .svg-icon { width: 13px; height: 13px; }
 
 /* Slate notes: the two chrome switches from the settings. Hiding the properties
@@ -423,7 +420,7 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
 .nx-sksearch-body { min-width: 0; }
 .nx-sksearch-title { font-weight: 550; }
 .nx-sksearch-meta {
-  display: flex; gap: 8px; align-items: center;
+  display: flex; gap: var(--nx-sp-2); align-items: center;
   font-size: 11.5px; color: var(--text-muted);
 }
 .nx-sksearch-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -431,26 +428,25 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
 /* A hit in recognised handwriting is a guess, and it says so. */
 .nx-sksearch-badge {
   flex: 0 0 auto;
-  padding: 0 5px; border-radius: 4px;
-  background: var(--background-modifier-hover);
+  padding: 0 5px; border-radius: var(--nx-r-pill);
+  background: var(--nx-sf-1);
   font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
 }
 
 /* Sticky-note editor in the insert popover. */
+/* Legacy alias of textarea.nx-input.is-grow (00-tokens.css). */
 .nx-sk-notetext {
-  width: 100%;
-  resize: vertical;
-  min-height: 70px;
-  font: inherit;
-  padding: 6px 8px;
-  border-radius: var(--radius-s, 5px);
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-primary);
-  color: var(--text-normal);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--background-modifier-form-field);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); box-shadow: none;
+  width: 100%; height: auto; min-height: 70px;
+  padding: var(--nx-sp-2) var(--nx-ctl-pad-x);
+  font: inherit; line-height: 1.45; resize: vertical;
 }
 .nx-sk-notecolors { display: flex; gap: 7px; margin: 8px 0; }
 .nx-sk-notecolor {
-  width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
+  width: 22px; height: 22px; border-radius: var(--nx-r-tile); cursor: pointer;
   background: var(--c);
   box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
 }
@@ -474,36 +470,43 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
 /* Graceful fallback when the interactive editor fails to mount (e.g. an
    unexpected mobile error) — the saved drawing still shows as a static image. */
 .nx-sketch-fallback { padding: 0; }
-.nx-sketch-fallback-img { display: block; width: 100%; height: auto; border-radius: var(--radius-m, 8px); }
+.nx-sketch-fallback-img { display: block; width: 100%; height: auto; border-radius: var(--nx-radius); }
 .nx-sketch-fallback-msg { font-size: 11px; color: var(--text-muted); padding: 6px 10px; }
 
 /* Size fine-tune row: − slider + (exact 0.1 steps on the buttons). */
-.nx-sk-sizerow { display: flex; align-items: center; gap: 8px; }
+.nx-sk-sizerow { display: flex; align-items: center; gap: var(--nx-sp-2); }
 .nx-sk-sizerow input[type="range"] { flex: 1 1 auto; accent-color: var(--interactive-accent); }
+/* Legacy alias of .nx-btn.is-icon.is-sm (00-tokens.css). */
 .nx-sk-stepbtn {
-  width: 26px; height: 26px; flex: 0 0 auto;
-  display: flex; align-items: center; justify-content: center;
-  border-radius: 6px; cursor: pointer;
-  font-size: 16px; line-height: 1;
-  background: var(--background-secondary); color: var(--text-normal);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  flex: 0 0 auto;
 }
-.nx-sk-stepbtn:hover { background: var(--background-modifier-hover); }
+.nx-sk-stepbtn:hover { background: var(--nx-sf-2); }
 
 /* Pen behaviour popover extras (marker tip / overlap row). */
 .nx-sk-cfgrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--text-muted); }
 
 /* Palette switcher popover. */
 .nx-sk-palpop { min-width: 230px; }
+/* Legacy alias of .nx-row (00-tokens.css) — one palette. */
 .nx-sk-palrow {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 7px; border-radius: 6px; cursor: pointer;
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  border-radius: var(--nx-r-tile); cursor: pointer;
 }
-.nx-sk-palrow:hover { background: var(--background-modifier-hover); }
-.nx-sk-palrow.is-active { background: var(--background-modifier-active-hover, var(--background-modifier-hover)); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
-.nx-sk-palname { flex: 1 1 auto; min-width: 0; font-size: 12px; background: transparent; border: none; border-bottom: 1px dashed var(--background-modifier-border); color: var(--text-normal); padding: 1px 2px; }
+.nx-sk-palrow:hover { background: var(--nx-sf-1); }
+.nx-sk-palrow.is-active { background: var(--nx-sf-2); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
+.nx-sk-palname { flex: 1 1 auto; min-width: 0; font-size: 12px; background: transparent; border: none; border-bottom: var(--nx-bw) dashed var(--nx-border, var(--background-modifier-border)); color: var(--text-normal); padding: 1px 2px; }
 .nx-sk-palname-ro { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nx-sk-palrow-sw { display: flex; gap: 3px; flex: 0 0 auto; }
-.nx-sk-paldot { width: 11px; height: 11px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1px var(--background-modifier-border) inset; }
+.nx-sk-paldot { width: 11px; height: 11px; border-radius: var(--nx-r-circle); background: var(--c); box-shadow: 0 0 0 1px var(--background-modifier-border) inset; }
 .nx-sk-paldel { display: flex; color: var(--text-muted); cursor: pointer; flex: 0 0 auto; }
 .nx-sk-paldel:hover { color: var(--text-error); }
 .nx-sk-paldel .svg-icon { width: 12px; height: 12px; }
@@ -511,21 +514,21 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
 /* Clear confirm popover. */
 .nx-sk-confirm { min-width: 210px; }
 .nx-sk-confirm-msg { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; }
-.nx-sk-confirm-row { display: flex; justify-content: flex-end; gap: 8px; }
+.nx-sk-confirm-row { display: flex; justify-content: flex-end; gap: var(--nx-sp-2); }
 
 /* Palette editor in the settings tab. */
-.nx-sk-palette-edit { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.nx-sk-palette-edit { display: flex; flex-wrap: wrap; gap: var(--nx-sp-2); margin: 4px 0 10px; }
 .nx-sk-palette-chip {
   position: relative;
   width: 30px; height: 30px;
-  border-radius: 6px;
+  border-radius: var(--nx-r-tile);
   background: var(--c);
   box-shadow: 0 0 0 1px var(--background-modifier-border) inset;
 }
 .nx-sk-palette-rm {
   position: absolute; top: -6px; right: -6px;
   width: 16px; height: 16px;
-  border-radius: 50%;
+  border-radius: var(--nx-r-circle);
   background: var(--background-primary);
   box-shadow: 0 0 0 1px var(--background-modifier-border);
   display: flex; align-items: center; justify-content: center;
@@ -540,14 +543,20 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
   position: absolute; inset: 0; width: 100%; height: 100%;
   opacity: 0; cursor: pointer; border: none; padding: 0; background: none;
 }
+/* Legacy alias of .nx-btn.is-icon + .nx-list-add (00-tokens.css). */
 .nx-sk-palette-add {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h); padding: 0;
   position: relative;
-  width: 30px; height: 30px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-faint); cursor: pointer;
-  border: 1px dashed var(--background-modifier-border);
+  border-style: dashed; background: transparent;
+  color: var(--nx-fg-muted, var(--text-faint));
 }
-.nx-sk-palette-add:hover { color: var(--text-normal); border-color: var(--interactive-accent); }
+.nx-sk-palette-add:hover { color: var(--nx-fg, var(--text-normal)); border-color: var(--nx-accent, var(--interactive-accent)); }
 .nx-sk-palette-add .svg-icon { width: 14px; height: 14px; }
 .nx-sk-palette-full {
   align-self: center; font-size: .72em; letter-spacing: .06em; text-transform: uppercase;
@@ -605,28 +614,26 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
 .nx-sketch.is-view .nx-sketch-resize { display: none; }
 /* View mode: uniform rounded corners on all sides (no edge fade). */
 .nx-sketch.is-view .nx-sketch-pad {
-  border-radius: var(--radius-m, 8px);
+  border-radius: var(--nx-radius);
   overflow: hidden;
 }
 
 /* "Enter edit" affordance — pencil that appears on hover in view mode. */
+/* Legacy alias of .nx-btn.is-icon (00-tokens.css) — it floats over the paper,
+   so it keeps an opaque ground and a shadow. */
 .nx-sketch-enter {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 30px;
-  height: 30px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 7px;
-  background: var(--background-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  color: var(--text-normal);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile); color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
   cursor: pointer;
+  width: var(--nx-ctl-h); padding: 0;
+  position: absolute; top: 8px; right: 8px;
+  background: var(--background-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
   opacity: 0;
   transform: translateY(-3px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity .15s ease, transform .15s ease;
   pointer-events: none;
 }
 .nx-sketch.is-view:hover .nx-sketch-enter { opacity: 1; transform: none; pointer-events: auto; }
@@ -651,31 +658,31 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
   content: "";
   width: 44px;
   height: 4px;
-  border-radius: 3px;
-  background: var(--background-modifier-border);
+  border-radius: var(--nx-r-pill);
+  background: var(--nx-sf-2);
   transition: background 0.12s ease;
 }
 .nx-sketch-resize:hover::before { background: var(--interactive-accent); }
 
 /* ⋯ overflow menu (compact bar): background · auto-grow · palettes · clear · done. */
 .nx-sk-menu { min-width: 210px; padding: 6px; }
+/* Legacy alias of .nx-row (00-tokens.css) — one entry of the ⋯ menu. */
 .nx-sk-menuitem {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 8px;
-  border-radius: 6px;
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  border-radius: var(--nx-r-tile);
   cursor: pointer;
-  color: var(--text-normal);
+  color: var(--nx-fg, var(--text-normal));
   font-size: 13px;
 }
-.nx-sk-menuitem:hover { background: var(--background-modifier-hover); }
+.nx-sk-menuitem:hover { background: var(--nx-sf-1); }
 .nx-sk-menuitem.is-active { color: var(--interactive-accent); }
 .nx-sk-menuitem-ic { display: flex; color: var(--text-muted); }
 .nx-sk-menuitem.is-active .nx-sk-menuitem-ic { color: var(--interactive-accent); }
 .nx-sk-menuitem-ic .svg-icon { width: 16px; height: 16px; }
 .nx-sk-menuitem-lbl { flex: 1 1 auto; min-width: 0; }
-.nx-sk-menu-sep { height: 1px; margin: 5px 4px; background: var(--background-modifier-border); }
+.nx-sk-menu-sep { height: var(--nx-bw); margin: var(--nx-sp-1); background: var(--nx-border, var(--background-modifier-border)); }
 
 /* ── FULL-SIZE EDITOR ──────────────────────────────────────────────────────
    The whole window becomes the canvas. The SAME NexusSketchSurface is
@@ -729,8 +736,8 @@ body.is-mobile .nx-sketch-fs { padding-top: max(env(safe-area-inset-top, 0px), 3
   bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   z-index: 5;
   padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--nx-r-pill);
+  border: var(--nx-hairline);
   background: var(--background-secondary);
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
@@ -760,7 +767,7 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
 .nx-cp-ring {
   position: absolute;
   inset: 0;
-  border-radius: 50%;
+  border-radius: var(--nx-r-circle);
   background: conic-gradient(hsl(0,100%,50%), hsl(60,100%,50%), hsl(120,100%,50%), hsl(180,100%,50%), hsl(240,100%,50%), hsl(300,100%,50%), hsl(360,100%,50%));
   -webkit-mask: radial-gradient(circle at center, transparent 0 71px, #000 72px);
           mask: radial-gradient(circle at center, transparent 0 71px, #000 72px);
@@ -772,7 +779,7 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
   top: 50%; left: 50%;
   width: 104px; height: 104px;
   transform: translate(-50%, -50%);
-  border-radius: 8px;
+  border-radius: var(--nx-r-tile);
   cursor: crosshair;
   touch-action: none;
   background:
@@ -784,15 +791,15 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
   position: absolute;
   width: 14px; height: 14px;
   margin: -7px 0 0 -7px;
-  border-radius: 50%;
-  border: 2px solid #fff;
+  border-radius: var(--nx-r-circle);
+  border: calc(var(--nx-bw) * 2) solid #fff;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 1px 3px rgba(0,0,0,0.5);
   pointer-events: none;
 }
 .nx-cp-alpha {
   position: relative;
   height: 16px;
-  border-radius: 8px;
+  border-radius: var(--nx-r-pill);
   margin: 0 2px 10px;
   touch-action: none;
   cursor: pointer;
@@ -809,23 +816,32 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
   position: absolute;
   top: 50%; width: 6px; height: 22px;
   margin-top: -11px; margin-left: -3px;
-  border-radius: 3px;
+  border-radius: var(--nx-r-pill);
   background: #fff;
   box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
   pointer-events: none;
 }
-.nx-cp-foot { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-.nx-cp-preview { width: 26px; height: 26px; border-radius: 6px; box-shadow: 0 0 0 1px var(--background-modifier-border) inset; flex: 0 0 auto; }
-.nx-cp-hex { flex: 1 1 auto; min-width: 0; font-family: var(--font-monospace); font-size: 12px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 6px; color: var(--text-normal); padding: 4px 6px; }
+.nx-cp-foot { display: flex; align-items: center; gap: var(--nx-sp-2); margin-top: 2px; }
+.nx-cp-preview { width: 26px; height: 26px; border-radius: var(--nx-r-tile); box-shadow: 0 0 0 1px var(--background-modifier-border) inset; flex: 0 0 auto; }
+/* Legacy alias of .nx-input.is-grow (00-tokens.css). */
+.nx-cp-hex {
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--background-modifier-form-field);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); box-shadow: none;
+  flex: 1 1 auto; min-width: 0;
+  font-family: var(--font-monospace);
+}
 
 /* ── SKETCH PANE ──
    One sketch as its own tab (views/sketchpane.js): a roomy toolbar on top, the
    paper below in its own scroller so it can grow downward without end. */
 .nx-skpane { position: relative; display: flex; flex-direction: column; height: 100%; padding: 0; }   /* relative → the zoom pill anchors here */
-.nx-skpane-bar { flex: 0 0 auto; border-bottom: 1px solid var(--nx-border, var(--background-modifier-border)); border-radius: 0; }
+.nx-skpane-bar { flex: 0 0 auto; border-bottom: var(--nx-hairline); border-radius: 0; }
 .nx-skpane-stage { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 .nx-skpane-stage .nx-sketch-pad { width: 100%; }
-.nx-skpane-back { margin-left: 4px; }
+.nx-skpane-back { margin-left: var(--nx-sp-1); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    RECOVERED 2026-08-24. The rules below were written together with
@@ -842,9 +858,9 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
 .nx-skpick-title { margin: 0 0 14px; }
 .nx-skpick-new {
   display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto;
-  column-gap: 12px; align-items: center;
-  padding: 12px 14px; border-radius: var(--radius-m, 10px); cursor: pointer;
-  border: 1px dashed var(--background-modifier-border);
+  column-gap: var(--nx-sp-3); align-items: center;
+  padding: 12px 14px; border-radius: var(--nx-radius); cursor: pointer;
+  border: var(--nx-bw) dashed var(--nx-border, var(--background-modifier-border));
   background: var(--background-secondary);
 }
 .nx-skpick-new:hover, .nx-skpick-new:focus-visible {
@@ -867,37 +883,45 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
   display: flex; flex-wrap: wrap; gap: 6px;
   max-height: 116px; overflow-y: auto;
 }
+/* Legacy alias of .nx-btn (00-tokens.css) — one scribble note to open. */
 .nx-skpick-note {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 6px 12px 6px 9px; border-radius: 999px; cursor: pointer;
-  font-size: .86em; color: var(--text-normal);
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-secondary);
+  display: inline-flex; align-items: center; justify-content: center;
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  gap: var(--nx-sp-2);
   max-width: 100%;
 }
 .nx-skpick-note:hover { border-color: var(--interactive-accent); }
-.nx-skpick-note:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.nx-skpick-note:focus-visible { outline: calc(var(--nx-bw) * 2) solid var(--interactive-accent); outline-offset: 2px; }
 .nx-skpick-note-ic { display: inline-flex; flex: 0 0 auto; color: var(--text-accent); }
 .nx-skpick-note-ic .svg-icon { width: 15px; height: 15px; }
 .nx-skpick-note-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Legacy alias of .nx-input.is-grow (00-tokens.css). */
 .nx-skpick-search {
-  width: 100%; margin-bottom: 12px; padding: 8px 12px;
-  border: 1px solid var(--background-modifier-border); border-radius: 8px;
-  background: var(--background-modifier-form-field); color: var(--text-normal);
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--background-modifier-form-field);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); box-shadow: none;
+  width: 100%; margin-bottom: var(--nx-sp-3);
 }
-.nx-skpick-search:focus { outline: none; border-color: var(--interactive-accent); }
+.nx-skpick-search:focus { outline: none; border-color: var(--nx-accent, var(--interactive-accent)); }
 .nx-skpick-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 12px; max-height: 52vh; overflow-y: auto; padding: 2px;
+  gap: var(--nx-sp-3); max-height: 52vh; overflow-y: auto; padding: 2px;
 }
 .nx-skpick-card {
-  border-radius: var(--radius-m, 10px); overflow: hidden; cursor: pointer;
-  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--nx-radius); overflow: hidden; cursor: pointer;
+  border: var(--nx-hairline);
   background: var(--background-secondary);
   transition: transform .1s, border-color .1s;
 }
 .nx-skpick-card:hover { transform: translateY(-2px); border-color: var(--interactive-accent); }
-.nx-skpick-card:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.nx-skpick-card:focus-visible { outline: calc(var(--nx-bw) * 2) solid var(--interactive-accent); outline-offset: 2px; }
 /* Sketches are ink on light paper — a white mat keeps them readable in a dark
    theme instead of drowning them in the modal's own surface. */
 .nx-skpick-thumb {

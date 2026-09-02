@@ -18,6 +18,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 (async () => {
 try {
 const K = window.kanbanLib;
+const B = window.boardLib;
 const TFile = window.obsidianStub.TFile;
 
 const NOTE = [
@@ -318,6 +319,512 @@ async function addCard(el, columnIndex, title) {
   eq('card editor · nothing typed is no tags', KC.parseTags('   '), []);
   eq('card editor · a blank line cannot survive the block, so it is dropped',
      KC.cleanDescription('one\n\n  \ntwo  '), 'one\ntwo');
+}
+
+/* ══ ONE BLOCK, TWO SOURCES ═══════════════════════════════════════════════
+   The block source is what every board written so far silently is, so its
+   text has to survive the merge untouched; the folder source is the new one
+   and has to write its moves into the NOTES, not into the fence. */
+
+// ── the block source is unchanged ──────────────────────────────────────────
+{
+  const full = [
+    'title: Roadmap',
+    'notes: Projects/Roadmap',
+    'template: Templates/Card',
+    'compact: true',
+    'due: false',
+    'tags: false',
+    'counts: false',
+    '## Backlog @2',
+    '- [ ] First card',
+    '  a description line',
+    '## Done',
+    '- [x] Shipped',
+  ].join('\n');
+  const cfg = K.parseKanban(full);
+  eq('block · every key still round trips byte for byte', K.stringifyKanban(cfg), full);
+  eq('block · and a board with no source line is a block board', cfg.source, 'block');
+  eq('block · the WIP limit survives the merge', cfg.buckets[0].limit, 2);
+  eq('block · so does the description', cfg.buckets[0].cards[0].desc, 'a description line');
+  // `folder:` was the old spelling of `notes:` and boards in the wild use it.
+  eq('block · “folder:” still means where new notes go', K.parseKanban('folder: Projects').notes, 'Projects');
+  eq('block · and never becomes a query', K.parseKanban('folder: Projects').folder, '');
+}
+
+// ── one column kind vocabulary, both boards ───────────────────────────────
+{
+  const cases = [
+    ['Backlog', 'open'], ['Offen', 'open'], ['Ideas', 'open'],
+    ['In Arbeit', 'doing'], ['Doing', 'doing'], ['In progress', 'doing'],
+    ['Aktiv', 'doing'], ['WIP', 'doing'], ['Lernen', 'doing'],
+    ['Wartet', 'wait'], ['Blocked', 'wait'], ['Review', 'wait'],
+    ['Pausiert', 'wait'], ['Prüfen', 'wait'],
+    // Every German word the merge kept has to answer in English too — the
+    // board is bilingual or it is a trap.
+    ['Waiting', 'wait'], ['Later', 'wait'], ['Später', 'wait'],
+    ['Active', 'doing'], ['Running', 'doing'],
+    // The folder board's own words, which the block board never knew.
+    ['Ausbessern', 'wait'], ['Fixing', 'wait'], ['Wiederholen', 'wait'], ['Repeat', 'wait'],
+    ['Erledigt', 'done'], ['Done', 'done'], ['Fertig', 'done'],
+    ['Abgeschlossen', 'done'], ['Ship it', 'done'],
+    // …and “gelernt” is finished, not “lernen” — the done test runs first.
+    ['Gelernt', 'done'],
+  ];
+  cases.forEach(([title, want]) => eq('kind · ' + title, K.bucketKind(title), want));
+  eq('kind · four kinds and no more', Object.keys(K.KIND_SLOT), ['open', 'doing', 'wait', 'done']);
+}
+
+/* A vault of notes with frontmatter — what a folder board reads. */
+function makeVault(specs) {
+  const front = new Map();
+  const files = specs.map(sp => {
+    const f = new TFile();
+    f.path = sp.path;
+    f.basename = sp.path.split('/').pop().replace(/\.md$/, '');
+    f.stat = { mtime: sp.mtime || 0, ctime: sp.ctime || 0 };
+    f.parent = { path: sp.path.split('/').slice(0, -1).join('/') || '/' };
+    front.set(f.path, sp.status == null ? {} : { status: sp.status });
+    return f;
+  });
+  return {
+    _files: files,
+    _front: front,
+    vault: {
+      getMarkdownFiles: () => files.slice(),
+      getAbstractFileByPath: (p) => files.find(f => f.path === p) || null,
+      async cachedRead(f) { return (specs.find(s => s.path === f.path) || {}).body || ''; },
+      on() { return {}; },
+    },
+    metadataCache: {
+      resolvedLinks: {},
+      getFileCache: (f) => ({ frontmatter: front.get(f.path) }),
+      getFirstLinkpathDest: () => null,
+      on() { return {}; },
+    },
+    fileManager: {
+      async processFrontMatter(f, fn) { const fm = front.get(f.path) || {}; fn(fm); front.set(f.path, fm); },
+    },
+    workspace: { getLeaf: () => ({ openFile() {} }) },
+  };
+}
+const SCHOOL = [
+  { path: 'School/Photosynthese.md' },                       // nothing set
+  { path: 'School/Zellteilung.md', status: 'In Arbeit' },
+  { path: 'School/Osmose.md', status: 'In Arbeit' },
+  { path: 'School/Enzyme.md', status: 'Erledigt' },
+  { path: 'School/Genetik.md', status: 'Blockiert' },        // nobody configured this
+];
+const FOLDER_SRC = ['source: folder', 'folder: School', '## Offen', '## In Arbeit @2', '## Erledigt'].join('\n');
+function folderBoard(app, src) {
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const cfg = K.parseKanban(src == null ? FOLDER_SRC : src);
+  const el = document.getElementById('stage').createDiv();
+  return { kb, cfg, el, source: B.folderSource(kb, cfg, el, { sourcePath: 'Board.md' }) };
+}
+
+// ── the folder source groups by the note's own frontmatter ────────────────
+{
+  const app = makeVault(SCHOOL);
+  const { source } = folderBoard(app);
+  const cols = source.columns();
+  eq('folder · the headings are the columns, plus one nobody configured',
+     cols.map(c => c.title), ['Offen', 'In Arbeit', 'Erledigt', 'Blockiert']);
+  // The unconfigured column is named the way the NOTES name it: dropping a
+  // card into it has to write those words back, not a slugged version of them.
+  eq('folder · and it is named the way the notes name it', cols[3].title, 'Blockiert');
+  eq('folder · a note with no value lands in the first column',
+     cols[0].items.map(f => f.basename), ['Photosynthese']);
+  eq('folder · a value lands in its own column',
+     cols[1].items.map(f => f.basename), ['Osmose', 'Zellteilung']);
+  eq('folder · and so does the last one', cols[2].items.map(f => f.basename), ['Enzyme']);
+  eq('folder · a value nobody configured still gets a column, never the floor',
+     cols[3].items.map(f => f.basename), ['Genetik']);
+  eq('folder · the WIP limit is read off the heading, same as a block board', cols[1].limit, 2);
+  eq('folder · and the count says so', cols[1].count.text, '2/2');
+  eq('folder · the column kind comes from its name', cols.map(c => c.kind),
+     ['open', 'doing', 'done', 'wait']);
+  eq('folder · the head counts notes, not cards', source.total(), '5 notes');
+}
+
+// ── a move is written into the NOTE ───────────────────────────────────────
+{
+  const app = makeVault(SCHOOL);
+  const { source } = folderBoard(app);
+  source.columns();
+  await source.move(0, 0, 2);                       // Photosynthese → Erledigt
+  eq('move · the new column is written into the note as its label',
+     app._front.get('School/Photosynthese.md').status, 'Erledigt');
+  ok('move · and nothing else in the note is touched',
+     Object.keys(app._front.get('School/Photosynthese.md')).length === 1);
+  await sleep(0);
+  const back = folderBoard(app).source;
+  back.columns();
+  await back.move(2, 1, 0);                         // …and back to the first column
+  eq('move · the first column is the ABSENCE of a value, not the word “open”',
+     Object.prototype.hasOwnProperty.call(app._front.get('School/Photosynthese.md'), 'status'), false);
+}
+{
+  // Dropping a card back where it already is must not rewrite the note.
+  const app = makeVault(SCHOOL);
+  const { source } = folderBoard(app);
+  source.columns();
+  await source.move(1, 0, 1);
+  eq('move · a drop into its own column changes nothing',
+     app._front.get('School/Osmose.md').status, 'In Arbeit');
+}
+
+// ── the folder board renders as the same component ────────────────────────
+{
+  const app = makeVault(SCHOOL);
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const el = document.getElementById('stage').createDiv();
+  kb.render(FOLDER_SRC, el, { sourcePath: 'Board.md' }, { fence: 'nexus-kanban' });
+  ok('render · a folder board is a kanban board', el.hasClass('nx-kb') && el.hasClass('is-folder'));
+  eq('render · with the same column strip', el.querySelectorAll('.nx-kb-col').length, 4);
+  eq('render · and the same cards', el.querySelectorAll('.nx-kb-card').length, 5);
+  eq('render · the WIP limit is on the column', el.querySelectorAll('.nx-kb-col-count')[1].textContent, '2/2');
+  ok('render · a card carries a state dot instead of a checkbox',
+     !!el.querySelector('.nx-kb-card-dot') && !el.querySelector('.nx-kb-check'));
+  ok('render · the filter field is there', !!el.querySelector('.nx-kb-search'));
+  eq('render · and a tally chip per used column', el.querySelectorAll('.nx-kb-tally-chip').length, 4);
+  // …and a block board in the same page is still the block board.
+  const el2 = document.getElementById('stage').createDiv();
+  kb.render('## A\n- [ ] one', el2, { sourcePath: 'Board.md' }, { fence: 'nexus-kanban' });
+  ok('render · a block board still has its checkbox and its add row',
+     !!el2.querySelector('.nx-kb-check') && !!el2.querySelector('.nx-kb-add'));
+  ok('render · and a folder board has no add row', !el.querySelector('.nx-kb-add'));
+}
+
+// ── the ```nexus-board``` fence is an alias, not a second board ────────────
+{
+  const ALIAS = { source: 'folder', mode: 'grid', statusProp: 'status' };
+  const old = [
+    'folder: SCHOOL/Biology',
+    'mode: board',
+    'statusproperty: phase',
+    'states: Offen, In Arbeit, Ausbessern, Erledigt',
+    'sort: modified',
+    'dir: desc',
+    'size: large',
+    'props: due',
+    'show: excerpt, tags, links, orphans, state',
+  ].join('\n');
+  const now = [
+    'source: folder',
+    'folder: SCHOOL/Biology',
+    'mode: board',
+    'status: phase',
+    'sort: modified',
+    'dir: desc',
+    'size: large',
+    'props: due',
+    '## Offen',
+    '## In Arbeit',
+    '## Ausbessern',
+    '## Erledigt',
+  ].join('\n');
+  const a = K.parseKanban(old, ALIAS);
+  const b = K.parseKanban(now);
+  // `given` is not configuration — it is a record of HOW the block was written,
+  // so the two boards are the same board written two ways.
+  const same = (c) => { const x = Object.assign({}, c); delete x.given; return JSON.stringify(x); };
+  eq('alias · the old syntax and the new one are the same configuration', same(a), same(b));
+  eq('alias · what differs is only how it was written',
+     [!!a.given.source, a.given.status, !!a.given.states, !!a.given.show],
+     [false, 'statusproperty', true, false ? 1 : true]);
+  eq('alias · the new syntax says so in its own way',
+     [!!b.given.source, b.given.status, !!b.given.states, !!b.given.headings],
+     [true, 'status', false, true]);
+
+  /* THE property: a block that arrived in the old syntax is written back in the
+     old syntax, byte for byte. A writer that picks its own favourite spelling
+     reshapes text somebody typed by hand — `states:` into four headings, a
+     `source: folder` line into a fence that never needed one. */
+  eq('alias · an old fence is written back exactly as it was', K.stringifyKanban(a), old);
+  eq('alias · including a fence with nothing but a folder and a mode',
+     K.stringifyKanban(K.parseKanban('folder: SCHOOL/Biology\nmode: grid\nshow: excerpt, tags, links, state', ALIAS)),
+     'folder: SCHOOL/Biology\nmode: grid\nshow: excerpt, tags, links, state');
+  eq('alias · and the “columns:”/“direction:” spellings',
+     K.stringifyKanban(K.parseKanban('folder: X\ncolumns: A, B\ndirection: desc', ALIAS)),
+     'folder: X\ncolumns: A, B\ndirection: desc');
+  eq('alias · a fence that never said “source:” never grows one',
+     K.stringifyKanban(a).indexOf('source:'), -1);
+  eq('alias · and its columns stay one line, not four headings',
+     K.stringifyKanban(a).indexOf('## '), -1);
+  eq('alias · what it writes back parses back to the same board',
+     same(K.parseKanban(K.stringifyKanban(a), ALIAS)), same(a));
+  // A WIP limit has no spelling in a `states:` line, so adding one moves the
+  // columns to headings — the one shape change, and it is forced.
+  const limited = K.parseKanban(old, ALIAS);
+  limited.buckets[1].limit = 2;
+  ok('alias · a WIP limit moves the columns to headings, because a list has no room for it',
+     K.stringifyKanban(limited).indexOf('## In Arbeit @2') >= 0, K.stringifyKanban(limited));
+  ok('alias · and then the states line is gone, not doubled',
+     K.stringifyKanban(limited).indexOf('states:') < 0, K.stringifyKanban(limited));
+  eq('alias · a bare fence is a folder board', K.parseKanban('folder: X', ALIAS).source, 'folder');
+  eq('alias · showing the grid, as it always did', K.parseKanban('folder: X', ALIAS).mode, 'grid');
+  eq('alias · “show:” switches parts off, not only on', K.parseKanban('show: state', ALIAS).excerpt, false);
+  eq('alias · and the graph is one of them', K.parseKanban('show: state, graph', ALIAS).graph, true);
+}
+{
+  // Same fence, same notes, same board: the alias renders the columns the new
+  // syntax renders, card for card.
+  const app = makeVault(SCHOOL);
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const ALIAS = { source: 'folder', mode: 'grid', statusProp: 'status' };
+  const stage = document.getElementById('stage');
+  const a = stage.createDiv(), b = stage.createDiv();
+  kb.render('folder: School\nmode: board\nstates: Offen, In Arbeit, Erledigt', a,
+            { sourcePath: 'Board.md' }, { fence: 'nexus-board', defaults: ALIAS });
+  kb.render(FOLDER_SRC, b, { sourcePath: 'Board.md' }, { fence: 'nexus-kanban' });
+  eq('alias · the old fence draws the same columns',
+     [...a.querySelectorAll('.nx-kb-col-title')].map(x => x.textContent),
+     [...b.querySelectorAll('.nx-kb-col-title')].map(x => x.textContent));
+  eq('alias · holding the same cards',
+     [...a.querySelectorAll('.nx-kb-card-t')].map(x => x.textContent),
+     [...b.querySelectorAll('.nx-kb-card-t')].map(x => x.textContent));
+  eq('alias · and a save goes back into ITS fence, not the kanban one', a._nxFence, 'nexus-board');
+}
+
+// ── the grid and the graph moved out, and are not lost ────────────────────
+{
+  const app = makeVault(SCHOOL);
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const ALIAS = { source: 'folder', mode: 'grid', statusProp: 'status' };
+  const el = document.getElementById('stage').createDiv();
+  kb.render('folder: School\nshow: excerpt, tags, links, state, graph', el,
+            { sourcePath: 'Board.md' }, { fence: 'nexus-board', defaults: ALIAS });
+  ok('grid · the old default mode lands in the graph block', el.hasClass('nx-graph'));
+  eq('grid · every note once, as a card', el.querySelectorAll('.nx-graph-grid .nx-kb-card').length, 5);
+  ok('grid · drawn with the SAME card as the board', !!el.querySelector('.nx-graph-grid .nx-kb-card-t'));
+  ok('grid · and “show: graph” still draws the web', !!el.querySelector('.nx-graph-canvas canvas'));
+
+  const g = document.getElementById('stage').createDiv();
+  kb.render('folder: School', g, { sourcePath: 'Board.md' },
+            { fence: 'nexus-graph', defaults: { source: 'folder', mode: 'graph' } });
+  ok('graph · its own block defaults to the web', !!g.querySelector('.nx-graph-canvas canvas'));
+  eq('graph · and shows no grid beside it', g.querySelectorAll('.nx-graph-grid').length, 0);
+  eq('graph · “view: grid” is the other arrangement',
+     K.parseKanban('view: grid', { source: 'folder', mode: 'graph' }).mode, 'grid');
+  eq('graph · and “view: board” hands it back to the columns',
+     K.parseKanban('view: board', { source: 'folder', mode: 'graph' }).mode, 'board');
+}
+
+// ── the edges of a folder board ───────────────────────────────────────────
+{
+  const app = makeVault(SCHOOL);
+  // No headings at all: the board still has columns, and they are written into
+  // its own config so the ⋮ menu edits the same list the fence holds.
+  const { cfg, source } = folderBoard(app, 'source: folder\nfolder: School');
+  const cols = source.columns();
+  eq('edges · a board that names no columns gets the default ones',
+     cols.map(c => c.title), ['Offen', 'In Arbeit', 'Ausbessern', 'Erledigt', 'Blockiert']);
+  eq('edges · and the config knows them too', cfg.buckets.map(b => b.title),
+     ['Offen', 'In Arbeit', 'Ausbessern', 'Erledigt']);
+}
+{
+  const app = makeVault(SCHOOL);
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const el = document.getElementById('stage').createDiv();
+  kb.render(FOLDER_SRC, el, { sourcePath: 'Board.md' }, { fence: 'nexus-kanban' });
+  const cols = el.querySelectorAll('.nx-kb-col');
+  eq('edges · a configured column can be renamed from the board',
+     cols[0].querySelectorAll('.nx-kb-col-menu').length, 1);
+  eq('edges · a column that only exists because a note says so cannot',
+     cols[3].querySelectorAll('.nx-kb-col-menu').length, 0);
+}
+{
+  const app = makeVault([]);
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const el = document.getElementById('stage').createDiv();
+  kb.render('source: folder\nfolder: Nowhere\n## Offen\n## Erledigt', el,
+            { sourcePath: 'Board.md' }, { fence: 'nexus-kanban' });
+  ok('edges · an empty folder says so above its columns',
+     (el.querySelector('.nx-kb-empty') || {}).textContent === 'No notes in "Nowhere" yet.',
+     el.textContent);
+  eq('edges · and the columns are still there to drop into', el.querySelectorAll('.nx-kb-col').length, 2);
+}
+
+// ── the Board module's one setting has to survive its removal ─────────────
+{
+  /* DEFAULT_SETTINGS is merged in before the migration runs, so "untouched"
+     is the default value and not a missing key — getting that wrong silently
+     drops whatever the user had chosen. */
+  const load = async (saved) => {
+    const p = new window.NexusSuite({ workspace: {}, vault: {} }, {});
+    p.loadData = async () => saved;
+    await p.loadSettings();
+    return p.settings;
+  };
+  const moved = await load({ board: { enabled: true, statusProperty: 'phase' } });
+  eq('migrate · a chosen state property moves to the kanban module',
+     moved.kanban.statusProperty, 'phase');
+  eq('migrate · and the board key is gone', moved.board, undefined);
+  const kept = await load({ board: { statusProperty: 'phase' }, kanban: { statusProperty: 'phase2' } });
+  eq('migrate · a property already set on the kanban side wins',
+     kept.kanban.statusProperty, 'phase2');
+  const fresh = await load({});
+  eq('migrate · a vault that never had one keeps the default',
+     fresh.kanban.statusProperty, 'status');
+}
+
+// ── a key this source does not have is somebody's line, not ours ──────────
+/* The parser reads both sources' keys out of one block. A key it consumes but
+   cannot write back is a line deleted from the user's note on the next save,
+   so a block board has to leave every folder key exactly where it found it. */
+{
+  const src = 'title: Roadmap\nsort: modified\nsize: large\nstatus: phase\n## A\n- [ ] one';
+  eq('keep · a block board writes a folder key back untouched',
+     K.stringifyKanban(K.parseKanban(src)), src);
+  eq('keep · and does not act on it', K.parseKanban(src).sort, 'name');
+  const withStates = K.parseKanban('states: Alpha, Beta\n## Backlog\n- [ ] one');
+  eq('keep · “states:” makes no phantom columns on a block board',
+     withStates.buckets.map(b => b.title), ['Backlog']);
+  ok('keep · it is kept as a line instead',
+     withStates.extra.join('|').indexOf('states: Alpha, Beta') >= 0, withStates.extra.join('|'));
+  eq('keep · an unknown key is still kept', K.parseKanban('wibble: 3').extra, ['wibble: 3']);
+}
+{
+  // `notes:` and `folder:` are the same key on a block board, and always were:
+  // whichever comes last wins, and neither line disappears.
+  eq('keep · folder: after notes: wins', K.parseKanban('notes: A\nfolder: B').notes, 'B');
+  eq('keep · notes: after folder: wins', K.parseKanban('folder: B\nnotes: A').notes, 'A');
+  eq('keep · written back in the spelling it was typed in',
+     K.stringifyKanban(K.parseKanban('notes: A\nfolder: B')), 'folder: B');
+  eq('keep · so “folder:” on a block board round trips as itself',
+     K.stringifyKanban(K.parseKanban('folder: Projects\n## A')), 'folder: Projects\n## A');
+  eq('keep · and an explicit “source: block” is not swallowed',
+     K.stringifyKanban(K.parseKanban('source: block\n## A')), 'source: block\n## A');
+}
+{
+  // `source:` decides which keys the block has, and it does not have to be the
+  // first line for that to be true.
+  const late = K.parseKanban('folder: School\nsort: modified\nsource: folder');
+  eq('keep · source: read even when it is written last', late.source, 'folder');
+  eq('keep · so the keys above it are its own', late.folder, 'School');
+  eq('keep · all of them', late.sort, 'modified');
+}
+{
+  // The status property must survive a settings default changing under it —
+  // which it only does if the board names it in its own block.
+  const cfg = K.parseKanban('source: folder\nfolder: School\nstatus: status\n## Offen',
+                            { source: 'folder', statusProp: 'phase' });
+  eq('keep · a named status property beats the settings default', cfg.statusProp, 'status');
+  ok('keep · and is written back, so the default can never take it over',
+     K.stringifyKanban(cfg).indexOf('status: status') >= 0, K.stringifyKanban(cfg));
+}
+{
+  const src = 'source: folder\nfolder: School\nmode: graph\nstatus: status\nheight: 400\nnotes: Cards\ntemplate: T\n## Offen';
+  eq('keep · a folder board keeps its height, notes and template',
+     K.stringifyKanban(K.parseKanban(src)), src);
+}
+
+// ── the folder a board is asking about ────────────────────────────────────
+{
+  const app = makeVault(SCHOOL);
+  // Empty "folder:" means the folder this note is in. A note at the vault root
+  // has none, and the board must then show nothing — not the whole vault.
+  const rootless = folderBoard(app, 'source: folder\n## Offen');
+  const rootSrc = B.folderSource(rootless.kb, rootless.cfg, rootless.el, { sourcePath: 'Board.md' });
+  eq('folder · a board at the vault root claims no folder', rootSrc.root, '');
+  eq('folder · and therefore no notes', rootSrc.total(), '0 notes');
+  eq('folder · without writing a folder into the block', rootless.cfg.folder, '');
+
+  const withIndex = makeVault(SCHOOL.concat([{ path: 'School/Index.md' }]));
+  const inside = folderBoard(withIndex, 'source: folder\n## Offen');
+  const insideSrc = B.folderSource(inside.kb, inside.cfg, inside.el, { sourcePath: 'School/Index.md' });
+  eq('folder · inside a folder it is that folder', insideSrc.root, 'School');
+  eq('folder · still without pinning it into the block', inside.cfg.folder, '');
+  eq('folder · and the board is the folder minus itself', insideSrc.total(), '5 notes');
+}
+
+// ── renaming a column renames what the notes say ──────────────────────────
+{
+  const app = makeVault(SCHOOL);
+  const { kb, cfg, source } = folderBoard(app);
+  kb.save = async () => {};              // the fence is not what is under test
+  source.columns();
+  await source.renameColumn(1, 'Läuft');
+  eq('rename · the column carries its notes with it',
+     app._front.get('School/Osmose.md').status, 'Läuft');
+  eq('rename · all of them', app._front.get('School/Zellteilung.md').status, 'Läuft');
+  eq('rename · and the block says the same', cfg.buckets[1].title, 'Läuft');
+  ok('rename · a column it does not hold is left alone',
+     app._front.get('School/Enzyme.md').status === 'Erledigt');
+  await source.renameColumn(0, 'Neu');
+  eq('rename · the first column names nothing, so nothing is written',
+     Object.prototype.hasOwnProperty.call(app._front.get('School/Photosynthese.md'), 'status'), false);
+}
+{
+  // A rename that never reached the fence must not touch the notes either, or
+  // they would say something no column claims.
+  const app = makeVault(SCHOOL);
+  const { kb, cfg, source } = folderBoard(app);
+  kb.save = async () => false;
+  source.columns();
+  await source.renameColumn(1, 'Läuft');
+  eq('rename · a block that could not be written leaves the notes alone',
+     app._front.get('School/Osmose.md').status, 'In Arbeit');
+  eq('rename · and the column keeps its name', cfg.buckets[1].title, 'In Arbeit');
+}
+
+// ── the state dot walks the configured columns only ───────────────────────
+{
+  const app = makeVault(SCHOOL);
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const el = document.getElementById('stage').createDiv();
+  kb.render(FOLDER_SRC, el, { sourcePath: 'Board.md' }, { fence: 'nexus-kanban' });
+  const cols = el.querySelectorAll('.nx-kb-col');
+  ok('stray · the column no one configured is marked as such', cols[3].hasClass('is-stray'));
+  ok('stray · the configured ones are not', !cols[0].hasClass('is-stray'));
+  // Genetik sits in the stray column; one click has to put it back on the board.
+  cols[3].querySelector('.nx-kb-card-dot').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  await sleep(0);
+  eq('stray · clicking its dot walks to a configured column, never to another stray',
+     app._front.get('School/Genetik.md').status, undefined);
+}
+
+{
+  // A value nobody configured must survive a round trip through the board: the
+  // column is named after it, and moving a note there writes the same words.
+  const app = makeVault(SCHOOL);
+  const { source } = folderBoard(app);
+  const cols = source.columns();
+  await source.move(0, 0, 3);
+  eq('stray · a move into it writes the notes' + String.fromCharCode(39) + ' own wording back',
+     app._front.get('School/Photosynthese.md').status, 'Blockiert');
+  void cols;
+}
+
+{
+  // The graph block's fence says what it is, so it does not need the line
+  // either — and its default view is not something it has to write down.
+  const G = { source: 'folder', mode: 'graph', statusProp: 'status' };
+  eq('graph · its fence writes no source line',
+     K.stringifyKanban(K.parseKanban('folder: School', G)), 'folder: School');
+  eq('graph · nor its default view',
+     K.stringifyKanban(K.parseKanban('folder: School', G)).indexOf('mode:'), -1);
+  eq('graph · a view the user chose IS written',
+     K.stringifyKanban(K.parseKanban('folder: School\nview: grid', G)), 'folder: School\nview: grid');
+}
+
+
+// ── `tags` must not be written twice ───────────────────────────────────────
+// It is a card flag on a block board and a `show:` flag on a folder board.
+// Emitting it in both places gave a folder board a line nobody typed.
+{
+  const shapes = [
+    ['a folder board with a partial show', 'folder: Notes\nshow: excerpt, links', { source: 'folder' }],
+    ['one that lists every flag', 'folder: Notes\nshow: excerpt, tags, links, orphans, state', { source: 'folder' }],
+    ['one with no show line at all', 'folder: Notes', { source: 'folder' }],
+    ['and a block board hiding its tags', '## Backlog\ntags: false', { source: 'block' }],
+  ];
+  shapes.forEach(([name, src, opt]) => {
+    eq('write-back · ' + name + ' comes back unchanged', K.stringifyKanban(K.parseKanban(src, opt)), src);
+  });
+  const folder = K.stringifyKanban(K.parseKanban('folder: Notes\nshow: excerpt', { source: 'folder' }));
+  eq('write-back · and never grows a second tags line', (folder.match(/^tags:/gm) || []).length, 0);
 }
 
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }

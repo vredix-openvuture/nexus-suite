@@ -2,14 +2,13 @@
 
 /* ============================================================================
  *  NEXUS SUITE · modals · event
- *  Create / edit a VEVENT in a LOCAL calendar (offline, any device) or a REMOTE
- *  CalDAV calendar (write-through PUT/DELETE, desktop only). Editing keeps the
- *  event in its calendar; moving between calendars is not offered here.
+ *  Create / edit a VEVENT in a local calendar (offline, any device). Editing
+ *  keeps the event in its calendar; moving between calendars is not offered
+ *  here.
  * ========================================================================== */
 
 const { Modal, Setting, moment, Notice } = require('obsidian');
 const calstore = require('../lib/calstore.js');
-const { CalDavClient } = require('../lib/caldav.js');
 
 function whenToInputs(when) {
   if (!when) return { date: moment().format('YYYY-MM-DD'), time: '09:00', allDay: false };
@@ -21,17 +20,17 @@ function inputsToWhen(dateStr, timeStr, allDay) {
   if (allDay) return { d: dateStr };
   return { dt: dateStr + 'T' + (timeStr || '00:00') + ':00', utc: false, tzid: null };
 }
-function calTok(c) { return c.kind === 'local' ? 'local:' + c.calendarId : 'remote:' + c.accountId + ':' + c.calendarId; }
+function calTok(c) { return 'local:' + c.calendarId; }
 
 class NexusEventModal extends Modal {
   /* event = normalized event (edit) or seed {start} (new). calendars = loaded
-     list (local + remote). calRef = the calendar the event belongs to (edit). */
+     list. calRef = the calendar the event belongs to (edit). */
   constructor(plugin, event, onSave, calendars, calRef) {
     super(plugin.app);
     this.plugin = plugin;
     this.ev = Object.assign({}, event || {});
     this.onSave = onSave;
-    this.calendars = (calendars || []).filter(c => c && (c.kind === 'local' || c.kind === 'remote'));
+    this.calendars = (calendars || []).filter(c => c && c.kind === 'local');
     this.calRef = calRef || null;
     this.isNew = !this.ev.uid;
   }
@@ -41,7 +40,7 @@ class NexusEventModal extends Modal {
     contentEl.addClass('nx-event-modal');
     contentEl.createEl('h3', { text: this.isNew ? 'New event' : 'Edit event' });
 
-    if (!this.calendars.length) { contentEl.createEl('p', { text: 'No calendars available — add a local calendar or sync a CalDAV account first.' }); return; }
+    if (!this.calendars.length) { contentEl.createEl('p', { text: 'No calendars available — add a local calendar in settings first.' }); return; }
 
     const s = whenToInputs(this.ev.start);
     const eEnd = this.ev.end ? whenToInputs(this.ev.end) : { date: s.date, time: '10:00', allDay: s.allDay };
@@ -55,7 +54,7 @@ class NexusEventModal extends Modal {
     new Setting(contentEl).setName('Title').addText(t => { t.setValue(this.state.summary).onChange(v => this.state.summary = v); t.inputEl.style.width = '100%'; window.setTimeout(() => t.inputEl.focus(), 0); });
 
     new Setting(contentEl).setName('Calendar').addDropdown(d => {
-      this.calendars.forEach(c => d.addOption(calTok(c), c.display + (c.kind === 'remote' ? '  (server)' : '')));
+      this.calendars.forEach(c => d.addOption(calTok(c), c.display));
       d.setValue(this.state.calTok).onChange(v => this.state.calTok = v);
       if (!this.isNew) d.setDisabled(true);   // editing stays in its calendar
     });
@@ -91,16 +90,6 @@ class NexusEventModal extends Modal {
 
   _targetCal() { return this.calRef || this.calendars.find(c => calTok(c) === this.state.calTok); }
 
-  _remoteClient(cal) {
-    let fsOk = false; try { require('fs'); fsOk = true; } catch (e) {}
-    if (!fsOk) { new Notice('Nexus: editing server events is desktop-only (the tablet reads the synced cache).'); return null; }
-    const acc = (this.plugin.settings.tasksCalendar.accounts || []).find(a => a.id === cal.accountId);
-    if (!acc) { new Notice('Nexus: account not found.'); return null; }
-    const cred = this.plugin.getCredential(acc.id);
-    if (!cred.secret) { new Notice('Nexus: no credential on this device.'); return null; }
-    return new CalDavClient({ serverUrl: acc.serverUrl, username: acc.username || cred.username, password: cred.secret });
-  }
-
   async _save() {
     if (!this.state.summary.trim()) { new Notice('Nexus: title required.'); return; }
     const cal = this._targetCal();
@@ -113,13 +102,7 @@ class NexusEventModal extends Modal {
     ev.location = this.state.location; ev.description = this.state.description;
     ev.rrule = this.state.rrule || null; ev.status = ev.status || 'CONFIRMED';
     try {
-      if (cal.kind === 'local') { await calstore.saveLocalEvent(this.plugin, cal.calendarId, ev); }
-      else {
-        const client = this._remoteClient(cal); if (!client) return;
-        const res = await calstore.writeRemoteEvent(this.plugin, cal, ev, client);
-        if (res.conflict) { new Notice('Nexus: the server copy changed — sync first, then retry.'); return; }
-        if (res.error) { new Notice('Nexus: save failed (' + res.error + ')'); return; }
-      }
+      await calstore.saveLocalEvent(this.plugin, cal.calendarId, ev);
       new Notice('Event saved.');
       if (this.onSave) this.onSave();
       this.close();
@@ -129,8 +112,7 @@ class NexusEventModal extends Modal {
   async _delete() {
     const cal = this._targetCal();
     try {
-      if (cal && cal.kind === 'local') await calstore.deleteLocalEvent(this.plugin, cal.calendarId, this.ev.uid);
-      else if (cal) { const client = this._remoteClient(cal); if (!client) return; await calstore.deleteRemoteEvent(this.plugin, cal, this.ev, client); }
+      if (cal) await calstore.deleteLocalEvent(this.plugin, cal.calendarId, this.ev.uid);
       if (this.onSave) this.onSave();
       this.close();
     } catch (e) { new Notice('Nexus: delete failed (' + (e && e.message || e) + ')'); }

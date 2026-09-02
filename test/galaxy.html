@@ -1,0 +1,124 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>galaxy harness</title>
+<style>body{margin:0;background:#141414;color:#ddd;font:13px/1.5 system-ui;padding:20px}</style>
+</head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+const finite = (v) => typeof v === 'number' && isFinite(v);
+
+try {
+const F = window.force3d;
+const spec = (n, links) => ({ nodes: Array.from({ length: n }, (_, i) => ({ id: 'n' + i })), links: links || [] });
+const settle = (sim, max) => { sim.run(max || 400); return sim; };
+const pos = (sim) => sim.nodes.map(p => [p.x, p.y, p.z]);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+
+// ── deterministic ──────────────────────────────────────────────────────────
+{
+  const a = settle(F.createLayout(spec(20, [['n0','n1'],['n1','n2'],['n3','n4']]), { seed: 7 }));
+  const b = settle(F.createLayout(spec(20, [['n0','n1'],['n1','n2'],['n3','n4']]), { seed: 7 }));
+  eq('seed · the same seed lays out the same map twice', pos(a), pos(b));
+  const c = settle(F.createLayout(spec(20, [['n0','n1'],['n1','n2'],['n3','n4']]), { seed: 8 }));
+  ok('seed · a different seed lays out a different one', JSON.stringify(pos(a)) !== JSON.stringify(pos(c)));
+  ok('seed · and it is genuinely three-dimensional',
+     new Set(a.nodes.map(p => Math.round(p.z))).size > 1);
+}
+
+// ── links pull ─────────────────────────────────────────────────────────────
+{
+  const sim = settle(F.createLayout(spec(12, [['n0','n1'],['n0','n2'],['n1','n2']]), { seed: 3 }), 600);
+  const byId = {}; sim.nodes.forEach(n => { byId[n.id] = n; });
+  const linked = dist(byId.n0, byId.n1);
+  let far = 0, pairs = 0;
+  for (const a of ['n5','n6','n7','n8']) for (const b of ['n9','n10','n11']) { far += dist(byId[a], byId[b]); pairs++; }
+  ok('force · two linked notes end closer than two unlinked ones',
+     linked < far / pairs, 'linked ' + linked.toFixed(1) + ' vs unlinked ' + (far / pairs).toFixed(1));
+}
+
+// ── it stops ───────────────────────────────────────────────────────────────
+{
+  const sim = F.createLayout(spec(60, [['n0','n1'],['n2','n3'],['n4','n5']]), { seed: 1 });
+  let steps = 0;
+  while (steps < 2000 && !sim.settled) { sim.step(); steps++; }
+  ok('settle · the simulation stops instead of running forever', sim.settled === true, 'after ' + steps + ' steps');
+  ok('settle · and it does not take all night', steps < 2000, steps + ' steps');
+  const frozen = pos(sim);
+  sim.step();
+  eq('settle · a step after it is done changes nothing', pos(sim), frozen);
+}
+
+// ── nothing may become NaN ─────────────────────────────────────────────────
+{
+  const cases = {
+    'a node with no links at all': spec(5, [['n0','n1']]),
+    'every node alone': spec(6, []),
+    'one node': spec(1, []),
+    'an empty graph': spec(0, []),
+    'a link naming a node that is not there': spec(3, [['n0','ghost']]),
+    'a node linked to itself': spec(3, [['n0','n0']]),
+    'the same link twice': spec(3, [['n0','n1'],['n0','n1']]),
+  };
+  for (const [name, s] of Object.entries(cases)) {
+    let sim = null, threw = null;
+    try { sim = settle(F.createLayout(s, { seed: 5 }), 200); } catch (e) { threw = e; }
+    ok('safe · ' + name + ' does not throw', !threw, threw && String(threw));
+    if (sim) ok('safe · ' + name + ' produces no NaN',
+      sim.nodes.every(p => finite(p.x) && finite(p.y) && finite(p.z)));
+  }
+  // Two nodes at the very same point: the repulsion divides by their distance.
+  const same = F.createLayout(spec(2, []), { seed: 2 });
+  same.nodes.forEach(p => { p.x = 0; p.y = 0; p.z = 0; });
+  same.run(50);
+  ok('safe · two nodes on the exact same spot push apart instead of exploding',
+     same.nodes.every(p => finite(p.x) && finite(p.y) && finite(p.z)) &&
+     dist(same.nodes[0], same.nodes[1]) > 0);
+}
+
+// ── the projection is what makes it read as depth ──────────────────────────
+{
+  // pitch, so the depth axis is not exactly perpendicular to the lens
+  const cam = { yaw: 0, pitch: 0.4, distance: 400, zoom: 1, flatten: 0 };
+  const near = F.project({ x: 0, y: 0, z: 60 }, cam, 800, 600);
+  const far  = F.project({ x: 0, y: 0, z: -60 }, cam, 800, 600);
+  ok('depth · a nearer node is drawn larger than the same node further away',
+     near.k > far.k, near.k + ' vs ' + far.k);
+  const origin = F.project({ x: 0, y: 0, z: 0 }, cam, 800, 600);
+  ok('depth · the centre of the map is the centre of the screen',
+     Math.abs(origin.x - 400) < 1e-6 && Math.abs(origin.y - 300) < 1e-6);
+
+  const sorted = F.sortByDepth([{ z: 10 }, { z: -30 }, { z: 5 }]);
+  eq('depth · they are painted back to front, or the illusion collapses',
+     sorted.map(p => p.z), [-30, 5, 10]);
+
+  // 0 at the front of the cloud, 1 at the back — how far it has receded.
+  const front = F.depthFade(90, 100), middle = F.depthFade(0, 100), back = F.depthFade(-90, 100);
+  ok('depth · a far node recedes and a near one does not', back > middle && middle > front);
+  ok('depth · the front of the cloud is not faded at all', front < 0.05);
+  ok('depth · and the back never fades past invisible', back <= 1);
+  eq('depth · a cloud with no size fades nothing', F.depthFade(50, 0), 0);
+
+  // Flattened, the two Z values have to land on the same size — that is what
+  // makes the 2D switch a switch and not just a slower spin.
+  const flat = { yaw: 0.6, pitch: 0.4, distance: 400, zoom: 1, flatten: 1 };
+  const a = F.project({ x: 0, y: 0, z: 60 }, flat, 800, 600);
+  const b = F.project({ x: 0, y: 0, z: -60 }, flat, 800, 600);
+  ok('depth · flattened, depth stops changing the size', Math.abs(a.k - b.k) < 1e-9);
+  ok('depth · and stops moving things sideways too', Math.abs(a.x - b.x) < 1e-9);
+  eq('depth · so the two land on the same point', [Math.round(a.x), Math.round(a.y)], [400, 300]);
+
+  // Framing: a cloud has to fit the viewport it is given.
+  ok('frame · a wider cloud is zoomed out further', F.fitZoom(200, 800, 600) < F.fitZoom(100, 800, 600));
+  eq('frame · a cloud with no size is left at 1', F.fitZoom(0, 800, 600), 1);
+}
+
+} catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
+if (window.__err.length) { fail++; out.push('FAIL  window error: ' + window.__err.join('\n')); }
+out.push('');
+out.push(fail ? (fail + ' FAILED, ' + pass + ' passed') : ('ALL GREEN — ' + pass + ' checks'));
+document.getElementById('out').textContent = out.join('\n');
+</script></body></html>

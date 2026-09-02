@@ -188,7 +188,7 @@ function nxPropValues(app, key) {
 }
 
 /* ── Week start ──────────────────────────────────────────────────────────────
-   One vault-wide setting (Settings → CalDAV → "Week starts on") decides where a
+   One vault-wide setting (Settings → Calendar → "Week starts on") decides where a
    week begins for EVERY calendar surface: month grids, the week view, the
    agenda's "this week" bucket. moment's own startOf('week') follows the app
    locale, which is why these wrappers exist — they take the setting when it has

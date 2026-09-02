@@ -2,42 +2,53 @@
 .modal.nx-ws-modal-el { width: min(880px, 94vw); }
 .nx-ws-empty { color: var(--text-muted); padding: 10px 0; }
 .nx-ws-strip {
-  display: flex; flex-wrap: wrap; gap: 12px;
+  display: flex; flex-wrap: wrap; gap: var(--nx-sp-3);
   padding: 6px 2px 2px; max-height: 62vh; overflow-y: auto;
 }
 .nx-ws-tile {
   width: 200px; position: relative; overflow: hidden; cursor: pointer;
-  border-radius: var(--radius-m, 8px); background: var(--background-secondary);
-  border: 2px solid transparent; transition: border-color .1s, transform .1s;
+  border-radius: var(--nx-radius); background: var(--background-secondary);
+  border: calc(var(--nx-bw) * 2) solid transparent; transition: border-color .1s, transform .1s;
 }
 .nx-ws-tile:hover { transform: translateY(-2px); }
 .nx-ws-tile.is-active { border-color: color-mix(in srgb, var(--interactive-accent) 55%, transparent); }
 .nx-ws-tile.is-selected { border-color: var(--interactive-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 35%, transparent); }
 
-/* Preview = mini schematic of the panel layout */
+/* Preview = mini schematic of the panel layout. Radius 0 on purpose (the one
+   literal the contract allows): these are wireframe panes, not controls, and at
+   2–9px the control radius clamps every one of them into a lozenge. */
 .nx-ws-preview { height: 132px; padding: 10px; background: var(--background-primary); }
 .nx-ws-preview-row { display: flex; gap: 5px; width: 100%; height: 100%; }
 .nx-ws-side { flex: 0 0 32px; display: flex; flex-direction: column; gap: 3px; min-height: 0; }
 .nx-ws-side-content { flex: 1; display: flex; min-height: 0; }
-.nx-ws-vault { flex: 0 0 9px; border-radius: 2px; background: color-mix(in srgb, var(--interactive-accent) 45%, transparent); }
+.nx-ws-vault { flex: 0 0 9px; border-radius: 0; background: color-mix(in srgb, var(--interactive-accent) 45%, transparent); }
 .nx-ws-main { flex: 1; display: flex; min-width: 0; }
-.nx-ws-mini-box { flex: 1; display: flex; gap: 4px; min-width: 0; min-height: 0; }
-.nx-ws-mini-leaf { border-radius: 3px; background: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-secondary)); }
+.nx-ws-mini-box { flex: 1; display: flex; gap: var(--nx-sp-1); min-width: 0; min-height: 0; }
+.nx-ws-mini-leaf { border-radius: 0; background: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-secondary)); }
 /* One pane with multiple tabs → stacked segments (number of cards) */
 .nx-ws-mini-tabs { flex: 1; display: flex; flex-direction: column; gap: 2px; min-height: 0; }
-.nx-ws-mini-tab { flex: 1; min-height: 2px; border-radius: 2px; background: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-secondary)); }
+.nx-ws-mini-tab { flex: 1; min-height: 2px; border-radius: 0; background: color-mix(in srgb, var(--interactive-accent) 24%, var(--background-secondary)); }
 .nx-ws-tile.is-active .nx-ws-mini-leaf,
 .nx-ws-tile.is-active .nx-ws-mini-tab { background: color-mix(in srgb, var(--interactive-accent) 55%, transparent); }
 
 .nx-ws-tile-name { padding: 7px 9px; font-size: .82em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nx-ws-tile-actions { position: absolute; top: 5px; right: 5px; display: flex; gap: 2px; opacity: 0; transition: opacity .1s; }
 .nx-ws-tile:hover .nx-ws-tile-actions { opacity: 1; }
+/* Legacy alias of .nx-btn.is-icon.is-sm — floats over the tile preview, so it
+   keeps a scrim instead of the flat surface token. */
 .nx-ws-act {
-  display: flex; align-items: center; justify-content: center; width: 22px; height: 22px;
-  border-radius: var(--radius-s, 6px); color: var(--text-muted);
-  background: color-mix(in srgb, var(--background-primary) 70%, transparent); backdrop-filter: blur(3px);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
+  background: color-mix(in srgb, var(--background-primary) 70%, transparent);
+  backdrop-filter: blur(3px);
 }
-.nx-ws-act:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+.nx-ws-act:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-3); }
 .nx-ws-act .svg-icon { width: 13px; height: 13px; }
 
 .nx-ws-tile-add .nx-ws-add-icon { display: flex; align-items: center; justify-content: center; height: 132px; color: var(--text-muted); background: var(--background-primary); }

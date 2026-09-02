@@ -31,7 +31,7 @@ body.nx-fn-italic .nav-folder-title.nx-fn-has-note .nav-folder-title-content { f
 .nx-fo { margin: 0.4em 0; }
 .nx-fo-title { font-weight: 600; font-size: 1.05em; margin-bottom: 6px; color: var(--text-normal); }
 .nx-fo-list { list-style: none; margin: 0; padding-left: 0; }
-.nx-fo-list .nx-fo-list { padding-left: 18px; }
+.nx-fo-list .nx-fo-list { padding-left: var(--nx-sp-4); }
 .nx-fo-list.is-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 14px;
 }
@@ -57,26 +57,67 @@ body.nx-fn-italic .nav-folder-title.nx-fn-has-note .nav-folder-title-content { f
 .nav-folder-title.is-active .nx-icon,
 .nav-file-title.is-active .nx-icon { color: inherit; }
 
-/* Settings: the icon assignment list */
-.nx-iconlist-row { display: flex; align-items: center; gap: 9px; }
+/* ── Settings: the icon assignment list ────────────────────────────────────
+   One assignment is ONE line: an icon, the path it is on, and the two buttons
+   that change or drop it. The row is an Obsidian .setting-item (settings.js ·
+   tIcons), which stacks a name over a description and pads for a full-width
+   preference — so a hundred single-line assignments used to run to several
+   lines each and the page could not be scanned. Same geometry as .nx-row in
+   00-tokens.css; the markup moves to .nx-row in a later pass. */
+.nx-settings-root .setting-item:has(.nx-iconlist-row) {
+  align-items: center;
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  border-top: none;
+  gap: var(--nx-ctl-gap);
+}
+.nx-settings-root .setting-item:has(.nx-iconlist-row) + .setting-item:has(.nx-iconlist-row) {
+  margin-top: var(--nx-sp-1);
+}
+/* The description carries "which icon · path gone · unknown icon" — one line,
+   beside the path rather than under it. */
+.nx-settings-root .setting-item:has(.nx-iconlist-row) .setting-item-info {
+  display: flex; align-items: baseline; gap: var(--nx-sp-2);
+  min-width: 0; margin-right: auto;
+}
+.nx-settings-root .setting-item:has(.nx-iconlist-row) .setting-item-name { min-width: 0; flex: 0 1 auto; }
+.nx-settings-root .setting-item:has(.nx-iconlist-row) .setting-item-description {
+  padding-top: 0; flex: 0 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nx-iconlist-row { display: flex; align-items: center; gap: var(--nx-sp-2); min-width: 0; }
 .nx-iconlist-icon {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; flex-shrink: 0; font-size: 15px;
-  color: var(--text-accent);
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); flex-shrink: 0; font-size: 15px;
+  color: var(--nx-accent-fg, var(--text-accent));
 }
 .nx-iconlist-icon .svg-icon { width: 17px; height: 17px; }
 .nx-iconlist-path {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: .88em; color: var(--text-muted);
+  font-size: .88em; color: var(--nx-fg-muted, var(--text-muted));
 }
 
 /* ── TAG RENAME DIALOG ── */
+/* Legacy alias of .nx-input.is-grow (00-tokens.css). */
 .nx-tagren-input {
-  width: 100%; margin: 4px 0 8px; padding: 8px 11px;
-  border-radius: 8px; border: 1px solid var(--background-modifier-border);
-  background: var(--background-modifier-form-field); color: var(--text-normal);
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--background-modifier-form-field);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); box-shadow: none;
+  width: 100%; margin: var(--nx-sp-1) 0 var(--nx-sp-2);
 }
+.nx-tagren-input:focus { outline: none; border-color: var(--nx-accent, var(--interactive-accent)); }
 .nx-tagren-hint { font-size: .84em; color: var(--text-muted); min-height: 1.3em; }
-.nx-tagren-hint.is-warn { color: #d9a521; }
-.nx-tagren-bar { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
-.nx-tagren-bar button { padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+.nx-tagren-hint.is-warn { color: var(--text-warning); }
+.nx-tagren-bar { display: flex; justify-content: flex-end; gap: var(--nx-sp-2); margin-top: 16px; }
+/* Legacy alias of .nx-btn (00-tokens.css). */
+.nx-tagren-bar button {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}

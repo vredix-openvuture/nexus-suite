@@ -2,23 +2,24 @@
 
 /* ============================================================================
  *  NEXUS SUITE · views · calendar page
- *  Full-page calendar (month / week / day) over CalDAV + local calendars.
+ *  Full-page calendar (month / week / day) over the local calendars.
  *  Renders purely from the vault cache (calstore) → works offline / on mobile.
  *  Overlays the existing daily-note behaviour (dot + click-through) so the
  *  "daily note calendar" lives on as a standalone page.
  * ========================================================================== */
 
-const { ItemView, moment, setIcon, Notice } = require('obsidian');
+const { ItemView, TFile, moment, setIcon, Notice } = require('obsidian');
 const { CAL_PAGE_VIEW, NX_MODULES } = require('../constants.js');
 const { getDailyNoteSettings, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxStartOfWeek, nxWeekdayLabels, openDailyNote } = require('../lib/helpers.js');
 const calstore = require('../lib/calstore.js');
+const planner = require('../lib/planner.js');
 const tasks = require('../lib/tasks.js');
 const { NexusEventModal } = require('../modals/event.js');
 
 const MAX_CHIPS = 4;   // per day cell in month view before "+N"
 
 /* stable per-calendar key for the visibility toggle (matches the event modal) */
-function calKey(c) { return c.kind === 'tasks' ? 'tasks:due' : c.kind === 'local' ? 'local:' + c.calendarId : 'remote:' + c.accountId + ':' + c.calendarId; }
+function calKey(c) { return c.kind === 'tasks' ? 'tasks:due' : 'local:' + c.calendarId; }
 
 class NexusCalendarPageView extends ItemView {
   constructor(leaf, plugin) {
@@ -27,6 +28,9 @@ class NexusCalendarPageView extends ItemView {
     this.mode = (plugin.settings.tasksCalendar && plugin.settings.tasksCalendar.defaultView) || 'month';
     this.cursor = moment().startOf('day');
     this.calendars = [];
+    this.plannerLines = {};      // date → the planner's one line for that day
+    this.plannerPaths = new Set();
+    this._planGen = 0;           // a slow read of an old range must not win
   }
   getViewType() { return CAL_PAGE_VIEW; }
   getDisplayText() { return NX_MODULES.tasksCalendar.name; }
@@ -40,7 +44,12 @@ class NexusCalendarPageView extends ItemView {
     await this.reload();
     const dir = calstore.dataDir(this.plugin) + '/calendar';
     const items = tasks.itemsFolder(this.plugin) + '/';
-    const touch = (f) => { if (f && f.path && (f.path.startsWith(dir) || f.path.startsWith(items))) this.reload(); };
+    // The planner notes are ordinary notes anywhere in the vault, so they are
+    // matched by path against what the current grid actually reads.
+    const touch = (f) => {
+      if (!f || !f.path) return;
+      if (f.path.startsWith(dir) || f.path.startsWith(items) || this.plannerPaths.has(f.path)) this.reload();
+    };
     this.registerEvent(this.app.vault.on('modify', touch));
     this.registerEvent(this.app.vault.on('create', touch));
     this.registerEvent(this.app.vault.on('delete', touch));
@@ -49,7 +58,38 @@ class NexusCalendarPageView extends ItemView {
   async reload() {
     try { this.calendars = await calstore.loadCalendars(this.plugin); } catch (e) { this.calendars = []; }
     try { const t = this._loadDueTasks(); if (t) this.calendars.push(t); } catch (e) {}
+    await this.loadPlanner();
     this.render();
+  }
+
+  get plannerStore() { return (this.plugin.settings.tasksCalendar || {}).planner || {}; }
+  /* The planner module owns this line — with it off the calendar neither shows
+     one nor creates a month note, the same way the block refuses to render. */
+  get plannerOn() { const p = this.plugin.settings.planner; return !p || p.enabled !== false; }
+
+  /* Its own step because paging does not reload the calendars — the occurrences
+     are already in memory, the month notes are not. */
+  async loadPlanner() {
+    const gen = ++this._planGen;
+    if (!this.plannerOn) { this.plannerLines = {}; this.plannerPaths = new Set(); return; }
+    const [rs, re] = this.range();
+    const months = planner.monthsInRange(rs.format('YYYY-MM-DD'), re.format('YYYY-MM-DD'));
+    const paths = new Set(months.map(m => planner.monthNotePath(this.plannerStore, m)).filter(Boolean));
+    let lines = {};
+    try { lines = await planner.readMonthPlans(this.app, TFile, this.plannerStore, months); }
+    catch (e) { console.error('[Nexus] planner: could not read ' + months.join(', '), e); }
+    // Two fast steps: the older read must not paint the range that left.
+    if (gen !== this._planGen) return;
+    this.plannerPaths = paths;
+    this.plannerLines = lines;
+  }
+
+  /* Paint now, read the month notes after — the grid must not wait on a file
+     read to appear. */
+  repaint() {
+    if (this.editingPlan) return;
+    this.render();
+    this.loadPlanner().then(() => { if (!this.editingPlan) this.render(); });
   }
 
   /* Tasks with a due date → a synthetic "Tasks" calendar so they show on their
@@ -86,10 +126,15 @@ class NexusCalendarPageView extends ItemView {
   step(dir) {
     const unit = this.mode === 'day' ? 'day' : this.mode === 'week' ? 'week' : 'month';
     this.cursor.add(dir, unit);
-    this.render();
+    this.repaint();
   }
 
   render() {
+    this._repainting = true;
+    try { this._render(); } finally { this._repainting = false; }
+  }
+
+  _render() {
     const root = this.contentEl;
     root.empty();
     root.addClass('nx-calpage');
@@ -121,7 +166,7 @@ class NexusCalendarPageView extends ItemView {
       const cb = row.createEl('input', { type: 'checkbox' });
       cb.checked = !hidden.has(calKey(c));
       const dot = row.createSpan('nx-cp-caldot'); if (c.color) dot.style.background = c.color;
-      row.createSpan({ cls: 'nx-cp-calname', text: c.display + (c.kind === 'remote' ? '' : '  ·  local') });
+      row.createSpan({ cls: 'nx-cp-calname', text: c.display });
       const toggle = async () => {
         const h = new Set(this.plugin.settings.tasksCalendar.hiddenCalendars || []);
         if (cb.checked) h.delete(calKey(c)); else h.add(calKey(c));
@@ -134,18 +179,17 @@ class NexusCalendarPageView extends ItemView {
     });
   }
 
+  /* Only reachable with no local calendar AND no task carrying a due date:
+     loadCalendars() returns an entry for every configured calendar, empty file
+     or not, and _loadDueTasks() adds one more when any task has a due date. */
   _emptyHint(inner) {
     const s = this.plugin.settings.tasksCalendar;
     const box = inner.createDiv('nx-cp-empty-hint');
-    let msg, action;
-    if (!s.enabled) { msg = 'The Tasks & Calendar module is off — turn on “Enabled” in settings.'; action = 'settings'; }
-    else if (!(s.accounts || []).length && !(s.localCalendars || []).length) { msg = 'No calendars yet. Add a CalDAV account or a local calendar in settings, then sync.'; action = 'settings'; }
-    else { msg = 'No calendar data yet — run a sync (desktop).'; action = 'sync'; }
-    box.createDiv({ cls: 'nx-cp-empty-msg', text: msg });
-    const b = box.createEl('button', { cls: 'nx-cp-btn nx-cp-primary', text: action === 'sync' ? 'Sync now' : 'Open settings' });
-    b.onclick = async () => {
-      if (action === 'sync') { await this.plugin.syncTaskCal(); this.reload(); }
-      else { try { this.app.setting.open(); this.app.setting.openTabById('nexus-suite'); } catch (e) {} }
+    box.createDiv({ cls: 'nx-cp-empty-msg', text: s.enabled
+      ? 'No calendars yet. Add a local calendar in settings.'
+      : 'The Tasks & Calendar module is off — turn on “Enabled” in settings.' });
+    box.createEl('button', { cls: 'nx-cp-btn nx-cp-primary', text: 'Open settings' }).onclick = () => {
+      try { this.app.setting.open(); this.app.setting.openTabById('nexus-suite'); } catch (e) {}
     };
   }
 
@@ -162,14 +206,14 @@ class NexusCalendarPageView extends ItemView {
     const nb = (icon, fn, label) => { const b = nav.createEl('button', { cls: 'nx-cp-btn', attr: { 'aria-label': label } }); setIcon(b, icon); b.onclick = fn; return b; };
     nb('chevron-left', () => this.step(-1), 'Previous');
     const today = nav.createEl('button', { cls: 'nx-cp-btn nx-cp-today', text: 'Today' });
-    today.onclick = () => { this.cursor = moment().startOf('day'); this.render(); };
+    today.onclick = () => { this.cursor = moment().startOf('day'); this.repaint(); };
     nb('chevron-right', () => this.step(1), 'Next');
 
     // view switch
     const seg = head.createDiv('nx-cp-seg');
     [['month', 'Month'], ['week', 'Week'], ['day', 'Day']].forEach(([m, lbl]) => {
       const b = seg.createEl('button', { cls: 'nx-cp-segbtn' + (this.mode === m ? ' is-active' : ''), text: lbl });
-      b.onclick = () => { this.mode = m; this.render(); };
+      b.onclick = () => { this.mode = m; this.repaint(); };
     });
 
     // actions
@@ -180,13 +224,15 @@ class NexusCalendarPageView extends ItemView {
     const add = act.createEl('button', { cls: 'nx-cp-btn nx-cp-primary', attr: { 'aria-label': 'New event' } });
     setIcon(add, 'plus'); add.createSpan({ text: ' Event' });
     add.onclick = () => this._newEvent();
-    const sync = act.createEl('button', { cls: 'nx-cp-btn', attr: { 'aria-label': 'Sync now' } });
+    // Tasks only — the calendars themselves are local. It still belongs here:
+    // a synced task with a due date shows up on this page as a chip.
+    const sync = act.createEl('button', { cls: 'nx-cp-btn', attr: { 'aria-label': 'Sync tasks now' } });
     setIcon(sync, 'refresh-cw');
     sync.onclick = async () => { sync.addClass('is-spinning'); await this.plugin.syncTaskCal(); sync.removeClass('is-spinning'); this.reload(); };
   }
 
   _newEvent() {
-    if (!this.calendars.length) { new Notice('Add a local calendar or sync a CalDAV account first (Settings → ' + NX_MODULES.tasksCalendar.name + ').'); return; }
+    if (!this.calendars.length) { new Notice('Add a local calendar first (Settings → ' + NX_MODULES.tasksCalendar.name + ').'); return; }
     new NexusEventModal(this.plugin, { start: { dt: this.cursor.format('YYYY-MM-DD') + 'T09:00:00', utc: false, tzid: null } }, () => this.reload(), this.calendars, null).open();
   }
 
@@ -228,6 +274,7 @@ class NexusCalendarPageView extends ItemView {
       const path = (folder ? folder + '/' : '') + d.format(format) + '.md';
       if (this.app.vault.getAbstractFileByPath(path)) cell.addClass('nx-has-note');
       num.onclick = (e) => { e.stopPropagation(); openDailyNote(this.app, d); };
+      this._planLine(cell, d.format('YYYY-MM-DD'));
 
       const wrap = cell.createDiv('nx-cp-events');
       const list = this._dayEvents(occs, d);
@@ -236,6 +283,75 @@ class NexusCalendarPageView extends ItemView {
       cell.onclick = () => openDailyNote(this.app, d);
       day.add(1, 'day');
     }
+  }
+
+  /* ── the planner's line for a day ──────────────────────────────────────────
+     Under the day number and ABOVE the chips: the line says what the day is
+     for, the chips say what is in it, and a cell clips from the bottom, so
+     below them a busy day would hide the sentence worth reading. The row is
+     there empty or not, so no cell changes shape when a line is added. */
+  _planLine(cell, iso) {
+    if (!this.plannerOn) return;
+    const line = this.plannerLines[iso] || '';
+    const row = cell.createDiv({ cls: 'nx-cp-plan' + (line ? '' : ' is-empty'),
+      attr: { role: 'button', tabindex: '0',
+        'aria-label': (line ? 'Edit' : 'Write') + ' the planner line for ' + iso } });
+    row.setText(line || 'Plan…');
+    const edit = (e) => { e.preventDefault(); e.stopPropagation(); this._editPlan(row, iso, line); };
+    row.onclick = edit;
+    row.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') edit(e); };
+  }
+
+  _editPlan(row, iso, line, prefill) {
+    if (row.hasClass('is-editing')) return;
+    row.addClass('is-editing');
+    row.empty();
+    const input = row.createEl('input', { cls: 'nx-cp-plan-input',
+      attr: { type: 'text', placeholder: 'One line for this day', 'aria-label': 'The one line for ' + iso } });
+    input.value = prefill != null ? prefill : line;
+    input.onclick = (e) => e.stopPropagation();
+    this.editingPlan = iso;
+    let closed = false;
+    const close = (save) => {
+      if (closed) return;
+      closed = true;
+      this.editingPlan = null;
+      // A repaint removes the input and the browser fires blur synchronously on
+      // removal, so without this a background refresh would commit a half-typed
+      // line as if the field had been left.
+      if (this._repainting) return;
+      if (save && input.value.trim() !== line) { this._savePlan(iso, input.value, row, line); return; }
+      // Nothing changed, so put the row back instead of rebuilding the month:
+      // blur fires before the click that caused it lands, and a full render
+      // would destroy the element that click is still travelling to.
+      row.removeClass('is-editing');
+      row.toggleClass('is-empty', !line);
+      row.setText(line || 'Plan…');   // setText replaces the input with the text
+    };
+    input.onblur = () => close(true);
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      // Escape puts back what was there, which is what every text field does.
+      if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    };
+    input.focus();
+    input.select();
+  }
+
+  async _savePlan(iso, text, row, previous) {
+    const res = await planner.writeMonthEntry(this.app, TFile, this.plannerStore,
+      planner.monthOf(iso), iso, text);
+    if (!res.ok) {
+      new Notice('Nexus: ' + res.reason + ' — the line was not saved.');
+      // Hand the text back rather than repainting it away: it is the only copy.
+      if (row && row.isConnected) { row.removeClass('is-editing'); this._editPlan(row, iso, previous || '', text); }
+      return;
+    }
+    // One store, two surfaces: the block in the note re-renders itself when the
+    // file changes, the sidebar month and this page have to be told.
+    if (typeof this.plugin.refreshCalendarViews === 'function') this.plugin.refreshCalendarViews();
+    else { await this.loadPlanner(); this.render(); }
   }
 
   /* ── WEEK ── */

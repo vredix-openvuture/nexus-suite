@@ -2,9 +2,8 @@
 
 /* ============================================================================
  *  NEXUS SUITE · lib · WebDAV client
- *  Files over HTTP. This is the sibling of lib/caldav.js: same transport, same
- *  auth, different verbs — CalDAV moves calendar objects, WebDAV moves files,
- *  and a vault is files.
+ *  Files over HTTP: PROPFIND to list, GET/PUT to move a file, MKCOL to make a
+ *  folder. A vault is files, so this is all a vault sync needs.
  *
  *  Everything goes through Obsidian's `requestUrl`, which has no CORS to argue
  *  with and works on MOBILE as well as on the desktop. That matters more than

@@ -1,29 +1,47 @@
 /* ── CALENDAR ── */
 .nx-cal { user-select: none; font-size: 0.85em; }
 .nx-cal-inner { padding: 18px 18px 22px; }  /* eigener Wrapper: Theme neutralisiert .view-content */
-.nx-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.nx-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--nx-sp-3); }
 .nx-cal-title { font-weight: 600; font-size: 1.15em; }
 .nx-cal-title .nx-cal-year { color: var(--text-accent); margin-left: .3em; }
 .nx-cal-nav { display: flex; gap: 2px; }
+/* Legacy alias of .nx-btn.is-quiet.is-sm (00-tokens.css). */
 .nx-cal-nav button {
-  background: transparent; border: none; color: var(--text-muted);
-  cursor: pointer; padding: 3px 8px; border-radius: var(--radius-s, 6px); line-height: 1.2;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  height: var(--nx-ctl-h-sm); padding: 0 var(--nx-sp-2);
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted));
 }
-.nx-cal-nav button:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.nx-cal-nav button:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 .nx-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
 .nx-cal-grid .nx-cal-dow { text-align: center; color: var(--text-faint); font-size: .8em; padding: 2px 0 6px; }
 .nx-cal-day {
   height: 2.4em; display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-m, 8px); cursor: pointer; position: relative;
+  border-radius: var(--nx-r-tile); cursor: pointer; position: relative;
   color: var(--text-normal);
 }
-.nx-cal-day:hover { background: var(--background-modifier-hover); }
+.nx-cal-day:hover { background: var(--nx-sf-1); }
 .nx-cal-day.nx-adjacent { color: var(--text-faint); }
 .nx-cal-day.nx-today { color: var(--text-on-accent); background: var(--interactive-accent); font-weight: 700; }
 .nx-cal-day.nx-has-note::after {
   content: ""; position: absolute; bottom: 2px; width: 3px; height: 3px;
-  border-radius: 50%; background: var(--text-accent);
+  border-radius: var(--nx-r-circle); background: var(--text-accent);
 }
 .nx-cal-day.nx-today.nx-has-note::after { background: var(--text-on-accent); }
+/* A day with a planner line is marked, never written out: a sidebar column is
+   too narrow for a sentence and this view is for navigating, not reading. */
+.nx-cal-day.nx-has-plan::before {
+  content: ""; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+  width: 3px; height: 3px; border-radius: var(--nx-r-circle); background: var(--text-muted);
+}
+/* Both marks on one day: they split around the centre with a gap, or they read
+   as one 6px smear. */
+.nx-cal-day.nx-has-note.nx-has-plan::after  { left: 50%; transform: translateX(2px); }
+.nx-cal-day.nx-has-note.nx-has-plan::before { left: 50%; transform: translateX(-5px); }
+.nx-cal-day.nx-today.nx-has-plan::before { background: var(--text-on-accent); opacity: .7; }
 
 

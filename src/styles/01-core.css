@@ -50,7 +50,7 @@ body.nx-hide-explorer-buttons .workspace-leaf-content[data-type="file-explorer"]
 body.nx-pin-home,
 body.nx-pin-cal,
 body.nx-pin-tasks {
-  --nx-pin-size: calc(var(--nx-bar-h, 38px) - 2 * var(--nx-tab-gap, 5px));
+  --nx-pin-size: calc(var(--nx-bar-h) - 2 * var(--nx-tab-gap));
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"],
 body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"],

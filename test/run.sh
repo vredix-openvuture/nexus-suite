@@ -24,7 +24,12 @@ trap 'kill $SERVER 2>/dev/null || true; rm -f test/plugin' EXIT
 sleep 1
 
 fail=0
-for page in test measure select canvas objects gestures export search kanban tasks planner sync quicknote; do
+
+# The token blocks are two files, not a DOM — compared here rather than in a page.
+echo "── tokens ──"
+"$(dirname "$0")/tokens.sh" || fail=1
+
+for page in test measure select canvas objects gestures export search kanban tasks planner sync quicknote startup settings capture inkvault galaxy; do
   result=$(chromium --headless --disable-gpu --no-sandbox --virtual-time-budget=6000 \
     --dump-dom "http://localhost:$PORT/$page.html" 2>/dev/null |
     python3 -c "

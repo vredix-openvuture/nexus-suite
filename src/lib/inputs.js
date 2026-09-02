@@ -10,6 +10,94 @@ const { NexusIconPickerModal } = require('../modals/pickers.js');
 
 /* Live suggestion list under an input. suggestFn() returns all candidates,
    filtered by the current input value. Pick via click/arrows/Enter. */
+/* A copyable example of the code block a feature is driven by, shown on the
+   feature's own settings page. The review asked for it in as many words: the
+   syntax has to be visible where the settings for it are, instead of only in a
+   README nobody has open while configuring.
+
+   `lines` is the block WITHOUT the fence — the fence is added here so no call
+   site can get it wrong, and so the copied text is something you can paste
+   straight into a note. */
+/* Fold a long settings page into its own sections.
+
+   Written for Quick Sketch, which is eight sections and roughly three screens
+   of controls — the review called it "hilarious, the pure amount of
+   informations". Nothing is removed: the headings the page already writes
+   become the handles, everything between two headings becomes the body, and
+   what you are not working on is out of the way. Applied only past a
+   threshold, so a page with two settings is not turned into a filing cabinet.
+
+   Open state is per section and per device (localStorage): a page you keep
+   open should stay open, and that is not a decision worth syncing. */
+function nxCollapseSections(root, key, minSections) {
+  const heads = Array.from(root.querySelectorAll('.nx-cardcfg-sec'));
+  if (heads.length < (minSections || 4)) return 0;
+  const store = 'nexus-suite-sections-' + key;
+  let open = {};
+  try { open = JSON.parse(window.localStorage.getItem(store) || '{}') || {}; } catch (e) { open = {}; }
+
+  heads.forEach((head, i) => {
+    const name = head.textContent.trim();
+    const box = document.createElement('div');
+    box.className = 'nx-sec-body';
+    let node = head.nextSibling;
+    while (node && !(node.classList && node.classList.contains('nx-cardcfg-sec'))) {
+      const next = node.nextSibling;
+      box.appendChild(node);
+      node = next;
+    }
+    head.parentNode.insertBefore(box, head.nextSibling);
+
+    head.addClass('is-foldable');
+    head.setAttribute('role', 'button');
+    head.setAttribute('tabindex', '0');
+    // The first section is what you came for; the rest wait to be asked.
+    const start = open[name] !== undefined ? !!open[name] : i === 0;
+    const paint = (on) => {
+      box.toggleClass('is-open', on);
+      head.toggleClass('is-open', on);
+      head.setAttribute('aria-expanded', String(on));
+    };
+    paint(start);
+    const toggle = () => {
+      const on = !box.hasClass('is-open');
+      paint(on);
+      open[name] = on;
+      try { window.localStorage.setItem(store, JSON.stringify(open)); } catch (e) { /* private mode */ }
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      ev.preventDefault(); toggle();
+    });
+  });
+  return heads.length;
+}
+
+function nxBlockExample(parent, language, lines) {
+  const body = Array.isArray(lines) ? lines.join('\n') : String(lines || '');
+  const text = '```' + language + '\n' + body + '\n```';
+  const wrap = parent.createDiv('nx-example');
+  wrap.createEl('pre').createEl('code', { text });
+  const btn = wrap.createEl('button', { cls: 'nx-btn is-sm', text: 'Copy' });
+  btn.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copied';
+    } catch (err) {
+      // A denied clipboard is not a failure worth a notice — select it instead
+      // so the keyboard can finish the job.
+      const range = document.createRange();
+      range.selectNodeContents(wrap.querySelector('code'));
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      btn.textContent = 'Select & copy';
+    }
+    window.setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+  };
+  return wrap;
+}
+
 function nxAutocomplete(inputEl, suggestFn, onPick) {
   let dd = null, items = [], sel = -1;
   const close = () => { if (dd) { dd.remove(); dd = null; } sel = -1; };
@@ -122,8 +210,6 @@ function nxMultiRow(parent, name, desc, initial, sepChar, placeholder, onChange,
   addRow('');
   return wrap;
 }
-
-/* Old props strings ("key: v; key2: v2") → structured rules (all AND). */
 
 /* Old props strings ("key: v; key2: v2") → structured rules (all AND). */
 function nxPropsToRules(str) {
@@ -335,4 +421,4 @@ function nxFoldDescriptions(root) {
   });
 }
 
-module.exports = { nxAutocomplete, nxFoldDescriptions, nxMultiRow, nxPropsToRules, nxPropRows, nxPropRulesToGroups, nxPropGroups, nxIconField };
+module.exports = { nxCollapseSections, nxBlockExample, nxAutocomplete, nxFoldDescriptions, nxMultiRow, nxPropsToRules, nxPropRows, nxPropRulesToGroups, nxPropGroups, nxIconField };
