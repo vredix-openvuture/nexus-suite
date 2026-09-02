@@ -62,7 +62,7 @@ agenda, banner), so the app changes as a whole and not just around the edges.
 **Style and palette are the whole tab.** Corner radius and card gap used to be
 sliders here; they are geometry, and geometry comes from one token block that
 the theme and the plugin share — see `themes/Nexus/docs/style-guide.md` and
-`.claude/token-spec.md`. A slider competing with that block is how the same
+`docs/tokens.md`. A slider competing with that block is how the same
 element ended up with a different corner on every page. The dashboard's own grid
 sliders moved to Settings → Dashboard, where the thing they size lives.
 Card gap and corner radius are Mirobo settings — "Almost nothing" has no cards
@@ -739,7 +739,7 @@ src/
 **Styling rule:** every radius, border, surface, control height and spacing step
 comes from `styles/00-tokens.css`. A literal `border-radius`, a written-out
 `1px solid` or a bare `opacity:` that means "a lifted surface" is a defect — the
-contract is `.claude/token-spec.md` in the vault root. New UI uses the shared
+contract is `docs/tokens.md`. New UI uses the shared
 `.nx-btn` / `.nx-input` / `.nx-row` / `.nx-card` classes; a button that has to
 look different gets a modifier, not a new class. The `.nx-*-btn` classes that
 still exist are legacy aliases waiting on a JS rename —

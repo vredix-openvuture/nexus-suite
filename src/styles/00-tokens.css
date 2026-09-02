@@ -4,7 +4,7 @@
  *  The single source of every shared number in this plugin: radii, border,
  *  surfaces, control geometry, spacing. Nothing below this file writes a
  *  literal radius, a literal `1px solid`, or a bare `opacity:` that means "a
- *  surface". See .claude/token-spec.md for the contract and why it exists.
+ *  surface". See docs/tokens.md for the contract and why it exists.
  *
  *  The block between the NX TOKENS markers is duplicated verbatim into
  *  themes/Nexus/theme.css section 1, on `.theme-dark, .theme-light` — a higher
