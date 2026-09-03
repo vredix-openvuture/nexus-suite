@@ -177,8 +177,6 @@ const DEFAULT_SETTINGS = {
     ocr: { enabled: false, command: 'tesseract {in} {out} -l eng', onSave: false },
     penProfile: 'generic',
     penMap: {},
-    hideFrontmatter: false,   // slate notes: hide the properties block above the paper
-    immersive: false,         // slate notes: hide tab bar, status bar and ribbon while one is open
     toolColors: {},     // toolId → the ink last used with that tool
     toolPalettes: {} },  // toolId → index into `palettes` (unset = the active one)
   ribbon:     { mode: 'hover' },   // 'hover' | 'always' | 'hidden'
@@ -410,9 +408,9 @@ const PEN_LABELS = { fountain: 'Fountain', ballpoint: 'Ballpoint', pencil: 'Penc
    another group by hand.
 
    Only these are movable between the bar and the ⋯ menu. The buttons that LEAVE
-   the sketch — save & close, full-size, open beside the note — are never
-   movable: burying "Save & close" in a menu is the exact bug that put it back
-   into the bar, and a user cannot be allowed to re-create it. */
+   the sketch — save & close, open in a Sketch tab — are never movable: burying
+   "Save & close" in a menu is the exact bug that put it back into the bar, and a
+   user cannot be allowed to re-create it. */
 const BAR_ITEMS = [
   { id: 'pen',        kind: 'tool',   label: 'Pen',          icon: 'pen-tool' },
   { id: 'marker',     kind: 'tool',   label: 'Highlighter',  icon: 'highlighter' },
@@ -425,17 +423,18 @@ const BAR_ITEMS = [
   { id: 'export',     kind: 'action', label: 'Export',       icon: 'download' },
   { id: 'undo',       kind: 'action', label: 'Undo',         icon: 'undo-2' },
   { id: 'redo',       kind: 'action', label: 'Redo',         icon: 'redo-2' },
+  { id: 'zoom',       kind: 'action', label: 'Zoom',         icon: 'zoom-in' },
   { id: 'background', kind: 'action', label: 'Background',   icon: 'layout-grid' },
   { id: 'grow',       kind: 'action', label: 'Auto-extend',  icon: 'chevrons-down' },
   { id: 'clear',      kind: 'action', label: 'Clear',        icon: 'trash-2' },
 ];
 const BAR_ITEM_IDS = BAR_ITEMS.map(i => i.id);
 /* What sits in the bar out of the box. The code block has room for the tools
-   and the two everyone reaches for; the full-size editor has room for all of
-   it. Anything missing here starts in the ⋯ menu. */
+   and the two everyone reaches for; the Sketch tab has room for all of it.
+   Anything missing here starts in the ⋯ menu. */
 const BAR_DEFAULTS = {
   compact: ['pen', 'marker', 'eraser', 'select', 'undo', 'redo'],
-  full:    ['pen', 'marker', 'eraser', 'select', 'space', 'insert', 'ruler', 'outline', 'export', 'undo', 'redo', 'background', 'grow', 'clear'],
+  full:    ['pen', 'marker', 'eraser', 'select', 'space', 'insert', 'ruler', 'outline', 'export', 'undo', 'redo', 'zoom', 'background', 'grow', 'clear'],
 };
 const BAR_MODES = { pinned: 'Always open', reveal: 'Opens when you pick a tool' };
 

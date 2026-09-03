@@ -430,7 +430,7 @@ class NexusSketchConfigModal extends Modal {
       it.folders, ',', this.plugin.settings.quicksketch.folder || 'Inbox/Quicksketch',
       v => { it.folders = v; save(); }, () => this.plugin._allFolders());
     new Setting(contentEl).setName('Also list sketches inside notes')
-      .setDesc('Notes that carry a drawing of their own (slate notes and note sketches), not just standalone files.')
+      .setDesc('Notes that carry a drawing of their own (frontmatter `sketch:`), not just standalone files.')
       .addToggle(t => t.setValue(!!it.includeNotes).onChange(async v => { it.includeNotes = v; await save(); }));
 
     contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Display' });

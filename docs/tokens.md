@@ -105,7 +105,7 @@ Declared once in `src/styles/00-tokens.css`, used everywhere:
 
 | Class | Replaces |
 |---|---|
-| `.nx-btn` (+ `.is-primary`, `.is-quiet`, `.is-danger`, `.is-icon`) | `.nx-banner-btn`, `.nx-bg-btn`, `.nx-cp-btn`, `.nx-home-btn`, `.nx-kb-add`, `.nx-sk-btn`, `.nx-slate-btn`, `.nx-tb-add`, `.nx-timer-btn`, `.nx-ws-add`, `.nx-propconn-btn`, `.nx-propgroup-add`, `.nx-propgroup-or`, `.nx-iconfield-btn`, `.nx-home-stat-add`, … |
+| `.nx-btn` (+ `.is-primary`, `.is-quiet`, `.is-danger`, `.is-icon`) | `.nx-banner-btn`, `.nx-bg-btn`, `.nx-cp-btn`, `.nx-home-btn`, `.nx-kb-add`, `.nx-sk-btn`, `.nx-sketch-open`, `.nx-tb-add`, `.nx-timer-btn`, `.nx-ws-add`, `.nx-propconn-btn`, `.nx-propgroup-add`, `.nx-propgroup-or`, `.nx-iconfield-btn`, `.nx-home-stat-add`, … |
 | `.nx-input` | `.nx-multirow-input`, `.nx-proprow-key`, `.nx-proprow-val`, … |
 | `.nx-row` (+ `.nx-row-main`, `.nx-row-aside`) | `.nx-multirow-row`, `.nx-proprow`, `.nx-set-list`, and every ad-hoc list row |
 | `.nx-card` | every bespoke tile that is really a surface with a radius |

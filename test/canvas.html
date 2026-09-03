@@ -140,25 +140,25 @@ function stroke(pts) {
 }
 
 {
-  /* The gesture gate is (pageZoom || !fixedViewport). A slate note sets
-     fixedViewport, so without pageZoom the pinch was never entered at all and
-     the page could not be zoomed by any means — which is what was reported. */
-  const slate = makeSurface([], { pageZoom: true, fixedViewport: true });
-  slate._touches = new Map([[1, { x: 100, y: 100 }], [2, { x: 200, y: 100 }]]);
-  slate._gestMode = 'pending';
-  slate._pending = { d: 100, cx: 150, cy: 100 };
-  slate._touches.set(2, { x: 260, y: 100 });   // pinch open by 60px
-  slate._applyGesture();
-  eq('zoom · a fixed viewport still pinches, it just does not pan', slate._gestMode, 'zoom');
+  // Two fingers moving apart is a pinch, and a pinch is a zoom — the reported
+  // bug was a gate in front of this that a whole surface kind never got past.
+  const s = makeSurface([], { pageZoom: true });
+  s._touches = new Map([[1, { x: 100, y: 100 }], [2, { x: 200, y: 100 }]]);
+  s._gestMode = 'pending';
+  s._pending = { d: 100, cx: 150, cy: 100 };
+  s._touches.set(2, { x: 260, y: 100 });   // pinch open by 60px
+  s._applyGesture();
+  eq('zoom · fingers moving apart enter the pinch', s._gestMode, 'zoom');
 
-  const noZoom = makeSurface([], { fixedViewport: true });
-  noZoom._touches = new Map([[1, { x: 100, y: 100 }], [2, { x: 200, y: 100 }]]);
-  noZoom._gestMode = 'pending';
-  noZoom._pending = { d: 100, cx: 150, cy: 100 };
-  noZoom._touches.set(2, { x: 260, y: 100 });
-  noZoom._applyGesture();
-  ok('zoom · without page zoom a fixed viewport cannot zoom at all',
-     noZoom._gestMode !== 'zoom', 'mode ' + noZoom._gestMode);
+  // …and two fingers travelling together is the page scrolling, not a zoom.
+  const pan = makeSurface([], { pageZoom: true });
+  pan._touches = new Map([[1, { x: 100, y: 100 }], [2, { x: 200, y: 100 }]]);
+  pan._gestMode = 'pending';
+  pan._pending = { d: 100, cx: 150, cy: 100 };
+  pan._touches.set(1, { x: 100, y: 160 });
+  pan._touches.set(2, { x: 200, y: 160 });
+  pan._applyGesture();
+  eq('zoom · two fingers moving together scroll instead', pan._gestMode, 'scroll');
 }
 
 {
@@ -188,9 +188,128 @@ function stroke(pts) {
 }
 
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
-if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
-out.push('');
-out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
-document.getElementById('out').textContent = out.join('\n');
+
+/* ── Finger taps ───────────────────────────────────────────────────────────
+   The engine sees taps as pointer events, so they are driven as pointer events
+   here: down/up with no travel in between. `wait` is real time; the page is
+   rendered with a virtual-time budget, so the multi-tap window actually
+   elapses instead of being skipped. */
+function tap(s, fingers, x, y) {
+  const ids = [];
+  for (let i = 0; i < fingers; i++) {
+    const id = 100 + i;
+    ids.push(id);
+    const e = new PointerEvent('pointerdown', { bubbles: true, pointerId: id, pointerType: 'touch' });
+    Object.defineProperty(e, 'clientX', { value: (x || 100) + i * 30 });
+    Object.defineProperty(e, 'clientY', { value: y || 100 });
+    s._onDown(e);
+  }
+  for (const id of ids) {
+    const e = new PointerEvent('pointerup', { bubbles: true, pointerId: id, pointerType: 'touch' });
+    s._onUp(e);
+  }
+}
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+const MULTI_WAIT = 400;   // comfortably past the engine's multi-tap window
+
+/* A surface with real undo history: the initial `strokes` option is the state
+   BEFORE the first edit, so there is nothing to undo about it. */
+function drawn(count, opts) {
+  const s = makeSurface([], opts);
+  for (let i = 0; i < count; i++) drag(s, [[100, 40 + i * 60], [160, 60 + i * 60], [220, 40 + i * 60]]);
+  return s;
+}
+
+async function tapTests() {
+  {
+    // Three fingers is the way out of any zoom, and it must not need repeating.
+    const s = makeSurface([], { pageZoom: true });
+    s.setPageZoom(2.5);
+    tap(s, 3);
+    near('tap · three fingers put the sheet back to page width', s.getPageZoom(), 1, 0.001);
+  }
+  {
+    const s = drawn(1);
+    tap(s, 1);
+    tap(s, 1);
+    eq('tap · undo waits out the multi-tap window', s.strokes.length, 1);
+    await wait(MULTI_WAIT);
+    eq('tap · then a double tap undoes', s.strokes.length, 0);
+  }
+  {
+    // Two strokes, one undone: a triple tap must land on 2, not on 0-then-1 —
+    // which is what would happen if the double tap's undo fired on the way.
+    const s = drawn(2);
+    s.undo();
+    tap(s, 1); tap(s, 1); tap(s, 1);
+    eq('tap · a triple tap redoes instead of undoing on its way there', s.strokes.length, 2);
+    await wait(MULTI_WAIT);
+    eq('tap · and the pending undo was cancelled, not merely delayed', s.strokes.length, 2);
+  }
+  {
+    // A drag is not a tap, or scrolling the page would undo the drawing.
+    const s = drawn(1);
+    for (let round = 0; round < 2; round++) {
+      const down = new PointerEvent('pointerdown', { bubbles: true, pointerId: 7, pointerType: 'touch' });
+      Object.defineProperty(down, 'clientX', { value: 100 });
+      Object.defineProperty(down, 'clientY', { value: 100 });
+      s._onDown(down);
+      const move = new PointerEvent('pointermove', { bubbles: true, pointerId: 7, pointerType: 'touch' });
+      Object.defineProperty(move, 'clientX', { value: 100 });
+      Object.defineProperty(move, 'clientY', { value: 260 });
+      s._onMove(move);
+      s._onUp(new PointerEvent('pointerup', { bubbles: true, pointerId: 7, pointerType: 'touch' }));
+    }
+    await wait(MULTI_WAIT);
+    eq('tap · a drag is never a tap', s.strokes.length, 1);
+  }
+  {
+    // A palm landing while the pen writes must not undo the sentence.
+    const s = drawn(1);
+    s._lastPen = performance.now();
+    tap(s, 1); tap(s, 1);
+    await wait(MULTI_WAIT);
+    eq('tap · a touch right after the pen is a palm, not a tap', s.strokes.length, 1);
+  }
+  {
+    // View mode: the drawing is read-only, so a stray tap must not edit it.
+    const s = drawn(1, { pageZoom: true });
+    s.setLocked(true);
+    tap(s, 1); tap(s, 1);
+    await wait(MULTI_WAIT);
+    eq('tap · a locked surface is not undone by a double tap', s.strokes.length, 1);
+    // …but coming back to page width has to work even there.
+    s.setPageZoom(2);
+    tap(s, 3);
+    near('tap · three fingers still work while locked', s.getPageZoom(), 1, 0.001);
+  }
+  {
+    // ctrl+wheel is the desktop's pinch; a plain wheel belongs to the page.
+    const s = makeSurface([], { pageZoom: true });
+    s.svg.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -300 }));
+    near('wheel · a plain wheel is left to the page', s.getPageZoom(), 1, 0.001);
+    s.svg.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: -300, ctrlKey: true }));
+    ok('wheel · ctrl + wheel zooms in', s.getPageZoom() > 1.1, 'got ' + s.getPageZoom());
+    s.svg.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 300, ctrlKey: true }));
+    near('wheel · and back out again', s.getPageZoom(), 1, 0.02);
+  }
+  {
+    // A new note’s sidecar is written before anything is drawn on it, so the
+    // Sketch tab opens on a real file instead of on "not found".
+    const back = window.parseSketchSVG(window.emptySketchSVG());
+    ok('empty sidecar · parses back', !!back, 'got ' + back);
+    eq('empty sidecar · with no strokes in it', back.strokes.length, 0);
+    ok('empty sidecar · and a usable page size', back.w > 0 && back.h > 0, back.w + 'x' + back.h);
+  }
+}
+
+
+const finish = () => {
+  if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+  out.push('');
+  out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+  document.getElementById('out').textContent = out.join('\n');
+};
+tapTests().catch(e => { out.push('THREW: ' + (e && e.stack || e)); fail++; }).then(finish);
 </script>
 </body></html>

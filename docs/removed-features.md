@@ -373,3 +373,103 @@ vault holds live user data.
 `tTasksCalendar` kept "Sync on startup", "Sync interval" and "Conflict policy" —
 Vikunja uses all three. The accounts section is still there; only its heading,
 its empty-state text and the CalDAV-specific fallback label changed.
+
+---
+
+## 5. Slate mode and the full-size editor
+
+Two ways of drawing that both did what the Sketch tab does, in a worse place.
+
+**Slate mode** turned a whole markdown note into endless paper: a note with
+`nexus: slate` in its frontmatter kept its title, properties and banner, and the
+plugin injected a drawing surface below them, into the note's own scroll
+container. **The full-size editor** was a full-window overlay reached from a
+`quicksketch` block's `⛶` button; it re-parented the block's live pad into
+itself so no drawing state had to be copied.
+
+**Why they went:** in a slate note the toolbar was sticky but the options row
+under it was not, so changing colour meant scrolling back to the top of the
+note; and a magnified sheet had nowhere to go sideways, because the note's own
+scroller was pinned to `overflow-x: hidden` to stop the full-bleed strip
+spilling. Both are structural, and both are answered for free by a drawing that
+lives in its own tab. Two big canvases with two sets of geometry bugs became
+one.
+
+**What replaced them:** frontmatter `sketch: <id>` on any note, a corner button
+(`.nx-sketch-open`) that opens that drawing in the Sketch tab, and the tab's own
+`file-text` button as the way back. **No data migration:** the sidecar store,
+the ids and the `sketch:` frontmatter key are unchanged, so every drawing made
+in a slate note opens in the tab. A leftover `nexus: slate` line is inert.
+
+The last commit in which all of this still existed in full:
+
+```
+d5cf931
+```
+
+### `src/main.js` — removed
+
+| Removed | What it did |
+|---|---|
+| `updateProtokoll(view)` | per-view driver off the `refreshBanner()` wiring: set `nx-pk-note`, picked the reading-view sizer or the CM sizer, and injected/removed `.nx-pk-inline` |
+| `_pkObserve(view)` | a `MutationObserver` on `view.contentEl` that re-injected the surface after Obsidian re-rendered, debounced 300 ms |
+| `mountProtokollSurface(host, file, scroller)` | built the bar and pad, assigned the sidecar id up front (a mid-draw frontmatter write would have interrupted the stroke), resolved the paper from `sketch-bg`, and ran `syncGeom()` |
+| `syncGeom()` (inside it) | published `--nx-pk-w`, `--nx-pk-off`, `--nx-pk-top` and `--nx-pk-barh` on `.view-content`, measured off the note's scroll container, under a `ResizeObserver` |
+| `toggleSlate(file)` | flipped the `nexus: slate` frontmatter |
+| `mountSlateControl(view)` | the corner button, as an on/off toggle |
+| `_openSketchFullscreen(surface, pad, wrap, s, rebuildInlineBar)` | the overlay: moved the pad into `.nx-sketch-fs`, gave it a `full` toolbar, endless paper, a zoom pill and an Escape key handler, then moved the pad back and rebuilt the inline bar |
+
+Commands `nexus-toggle-slate` ("Toggle slate mode") went with them.
+`nexus-new-protokoll` kept its id — renaming it would have dropped anyone's
+hotkey — but is now "New sketch note" and calls `createSketchNote()`.
+
+`_activeSketchSurface()` looked for `.nx-sketch-fs .nx-sketch-pad` first and
+`.nx-pk-inline` last; it now asks the workspace for an open Sketch tab.
+
+`_buildSketchBar` lost `opts.slate` (which skipped the auto-extend toggle,
+because a slate note grew on its own) and `opts.onFullscreen`.
+
+### `src/views/sketch.js` — `fixedViewport` removed
+
+`opts.fixedViewport` existed for slate paper only: no viewBox pan, no sideways
+scroll and no sideways fling, because the note's scroller owned the vertical and
+nothing owned the horizontal. Nothing sets it any more. It gated four places:
+the fling's `vx`, the fling step's `scrollLeft`, the pinch/scroll decision in
+`_applyGesture`, and the drag's `scrollLeft`.
+
+### `src/constants.js` — settings removed
+
+```js
+hideFrontmatter: false,   // slate notes: hide the properties block above the paper
+immersive: false,         // slate notes: hide tab bar, status bar and ribbon while one is open
+```
+
+Both sat in `DEFAULT_SETTINGS.quicksketch`. **Left in `data.json` they are
+dead but harmless.** Their two settings toggles came out of `src/settings.js`
+("Slate notes: hide properties", "Slate notes: hide the app chrome").
+
+Frontmatter `sketch-bg: black` — a per-note paper override, read by
+`mountProtokollSurface` and written back by the paper picker — is no longer read
+by anything. The paper now travels in the sidecar, where it always also was.
+
+### `src/styles/12-sketch.css` — removed
+
+The whole `PROTOKOLL` block at the head of the file (about 60 lines): the
+`.nx-pk-note` content-collapse and text-hiding rules, `.nx-pk-inline` with its
+measured full-bleed width, the sticky `.nx-pk-bar` docked at
+`calc(-1 * var(--nx-pk-top))`, the corner-button offset derived from
+`--nx-pk-barh`, `.nx-pk-pad`, and the `overflow-x: hidden` on the note's
+scrollers. Plus the `FULL-SIZE EDITOR` block (`.nx-sketch-fs`,
+`.nx-sketch-fs-bar`, `.nx-sketch-fs-stage` and its mobile padding), and the two
+chrome switches `.nx-pk-hide-fm` / `body.nx-sk-immersive`.
+
+`.nx-slate-btn` was renamed `.nx-sketch-open` — same slot, same look, different
+job. `src/styles/02-banner.css` lost its `.nx-pk-note >` variants of the
+three-corner-button rules; the `.nx-has-banner >` ones stayed.
+
+### To bring Slate mode back
+
+It needs the CSS block, `updateProtokoll` + `_pkObserve` +
+`mountProtokollSurface`, the `refreshBanner()` call, `fixedViewport` in the
+engine, and the two settings. What it would still not have is a sticky options
+row or a reachable zoom — those were never solved there, which is why it went.

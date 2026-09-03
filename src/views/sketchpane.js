@@ -69,7 +69,7 @@ class NexusSketchPaneView extends ItemView {
       bgOpacity: data.bgOpacity != null ? data.bgOpacity : s.bgOpacity,
       bgColor: s.bgColor,
       autoGrow: true,                       // a pane is a workbench, not a preview
-      pageZoom: true,                       // pinch magnifies the sheet; out stops at 1× = normal
+      pageZoom: true,                       // pinch / ctrl+wheel / the Zoom button magnify the sheet
       strokes: data.strokes || [],
       objects: data.objects || [],
       sections: data.sections || [],
@@ -79,8 +79,8 @@ class NexusSketchPaneView extends ItemView {
     });
     this.surface = surface;
 
-    // Endless paper, same deal as the full-size overlay: keep blank canvas below
-    // the last stroke so there is always room to keep writing.
+    // Endless paper: keep blank canvas below the last stroke so there is always
+    // room to keep writing.
     const onScroll = () => {
       if (surface._resizing) return;
       if (stage.scrollTop + stage.clientHeight > stage.scrollHeight - 260)
@@ -95,10 +95,14 @@ class NexusSketchPaneView extends ItemView {
     };
     requestAnimationFrame(ensurePaper);
 
+    // Always on screen: the read-out answers "what zoom am I at" before you
+    // notice anything is off, and one tap is the way back to page width.
     const zoomPill = root.createDiv({ cls: 'nx-sk-zoompill', text: '100%' });
     zoomPill.onclick = () => surface.setPageZoom(1);
     surface.onZoom = (z) => {
-      root.toggleClass('is-zoomed', z > 1.01);
+      // Shrunk counts as zoomed too — |z-1|, not z>1. The old test left the pill
+      // dim and the stage un-scrollable for the whole 0.3–1 range.
+      root.toggleClass('is-zoomed', Math.abs(z - 1) > 0.01);
       zoomPill.setText(Math.round(z * 100) + '%');
     };
 

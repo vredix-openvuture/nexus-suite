@@ -31,7 +31,7 @@ A rename is finished when the module file has no rule left that sets `height`,
 |---|---|---|
 | `.nx-banner-btn` | `is-icon` (+ absolute position) | `02-banner.css` |
 | `.nx-bg-btn` | `is-icon` (+ absolute position) | `02-banner.css` / `06-note-decor.css` |
-| `.nx-slate-btn` | `is-icon` (+ absolute position) | `02-banner.css` / `12-sketch.css` |
+| `.nx-sketch-open` | `is-icon` (+ absolute position) | `02-banner.css` / `12-sketch.css` |
 | `.nx-sep-toggle` | `is-sm` | `02-banner.css` |
 | `.nx-cal-nav button` | `is-quiet is-sm` | `03-calendar.css` |
 | `.nx-home-btn` | — (keeps the hero's accent tint) | `04-homepage.css` |

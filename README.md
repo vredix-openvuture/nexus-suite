@@ -406,6 +406,26 @@ Each drawing is a standalone `.svg` sidecar: an image any tool can open, with th
 raw stroke data (points and pressure) kept in its `<metadata>` so it stays
 editable.
 
+### Where a drawing lives
+
+Two places, and they are the same engine over the same sidecar.
+
+A **code block** is a sketch inside the text: small, in the flow of the note,
+with a compact toolbar. A **Sketch tab** is the drawing on its own, with the full
+toolbar, the options row permanently in reach and room to zoom. Anything longer
+than a doodle belongs in the tab.
+
+Every markdown note can own **one** drawing. The corner button at the top right
+of a note is the way in: tap it to switch to the drawing, press and hold (or
+right-click) to choose between *Switch to sketch*, *Open to the left*, *Open to
+the right* and *Open in a new tab*. The button is hollow on a note that has none
+yet and filled once there is one. The tab's `file-text` button is the way back to
+the text.
+
+The note holds nothing but the id (`sketch: sk-…` in its frontmatter). It is
+written the first time you open the drawing, together with an empty sidecar, so
+the tab always opens on a real file. `New sketch note` does both in one step.
+
 ### The toolbar
 
 Two rows. The top one holds the tools, the one under it holds the options of
@@ -420,9 +440,9 @@ collapses instead of sitting there empty.
 | Just this device | off | Keeps a separate toolbar on this device in `localStorage`. Never synced, so a phone can hold three buttons while the desktop holds all of them. |
 
 Which buttons live in the bar is yours to set, separately for a note and for the
-full-size editor. Anything you leave out moves into the bar's `⋯` menu. Save,
-full size and "open beside the note" are not in that list: they always stay in
-the bar, because hiding the way out of an editor is not a preference.
+Sketch tab. Anything you leave out moves into the bar's `⋯` menu. Save and "open
+in a Sketch tab" are not in that list: they always stay in the bar, because
+hiding the way out of an editor is not a preference.
 
 At least one tool has to stay in the bar. Turning the last one off is refused.
 
@@ -448,9 +468,36 @@ its own control points appear.
 
 The sheet has a **fixed width** (settings, default 1100 px) and grows downward
 for as long as you keep writing. That cap is what stops a tablet turned to
-landscape from rendering the same note at a bigger ink size. Zoom runs from 0.3×
-for an overview to 5×, and a one-finger drag scrolls with the same throw as the
-note around it.
+landscape from rendering the same note at a bigger ink size. A one-finger drag
+scrolls with the same throw as the note around it.
+
+### Zoom
+
+From 0.3× for an overview of a long page to 5×. Four ways in, because a pinch is
+not available to everyone and is not visible to anyone:
+
+| | |
+|---|---|
+| Pinch | Two fingers on the canvas |
+| `ctrl` / `⌘` + wheel | The desktop's pinch. A plain wheel still scrolls the page |
+| The **Zoom** button | `−`, the level, `+`, and *Page width (100 %)* |
+| The pill, bottom right | Always shows the level; tap it for page width |
+
+### Finger shortcuts
+
+Fingers never draw — the pen does — so a tap is free to mean something:
+
+| Gesture | Does |
+|---|---|
+| Three fingers, one tap | Back to page width |
+| Double tap | Undo |
+| Triple tap | Redo |
+
+Undo waits out the multi-tap window (about a quarter second) before it fires;
+otherwise every triple tap would undo something on its way to the redo. A tap
+that lands within 600 ms of the pen touching or hovering is a palm and is
+ignored, so a hand resting mid-sentence cannot undo anything. In a code block in
+view mode only the zoom reset works — the drawing is read-only there.
 
 ### Pen buttons
 

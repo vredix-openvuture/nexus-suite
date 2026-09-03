@@ -2,7 +2,57 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
-## Unreleased
+## 0.28.0 — 2026-09-03
+
+### Added
+
+- **A drawing for every note, in its own tab.** The corner button at the top
+  right of a markdown note opens that note's drawing in a Sketch tab; press and
+  hold it to pick where — switch to it, put it to the left or right, or open a
+  new tab. The tab's `file-text` button is the way back to the text. The note
+  carries nothing but the id, so nothing about the drawings themselves changed.
+- **Zoom you can see.** A **Zoom** button in the toolbar (`−`, the level, `+`,
+  and *page width*), `ctrl`/`⌘` + wheel on the desktop, and a percentage pill in
+  the bottom right that is now always on screen instead of appearing only once
+  you were already lost. Tapping the pill goes back to page width.
+- **Finger shortcuts on the canvas.** Three fingers, one tap = back to page
+  width. Double tap = undo, triple tap = redo. Both in a code block and in the
+  Sketch tab. Undo waits out the multi-tap window first, so a triple tap does
+  not undo on its way to the redo, and a touch within 600 ms of the pen is still
+  treated as a palm and ignored.
+
+### Removed
+
+- **Slate mode and the full-size editor.** Two more places to draw a big
+  drawing, both worse than the Sketch tab: in a slate note the options row did
+  not follow the scroll, so changing colour meant scrolling to the top of the
+  note, and a magnified sheet had nowhere to go sideways. Neither is fixable
+  where they lived. **Nothing was lost:** the sidecars, the ids and the
+  `sketch:` frontmatter are untouched, so every drawing made in a slate note
+  opens in the tab. A leftover `nexus: slate` line does nothing.
+
+  Gone with them: the *Toggle slate mode* command, the two slate settings
+  ("hide properties", "hide the app chrome") and the `sketch-bg` frontmatter
+  override. `docs/removed-features.md` §5 has the full account.
+
+### Fixed
+
+- **The zoom pill never appeared while zoomed OUT.** The Sketch tab tested
+  `z > 1.01`, so the whole 0.3–1 range left the read-out dim and the stage
+  un-scrollable. It tests the distance from 1 now.
+- **A touch in the app's first 600 ms was always read as a palm.** Palm
+  rejection compared against `this._lastPen || 0`, and 0 is inside the window
+  when the page has only just loaded. It starts at `-Infinity`.
+- **A press-and-hold on a toolbar button could still fire the button.**
+  `stopPropagation` does not reach another listener on the same element;
+  `stopImmediatePropagation` does.
+
+## 0.27.1 — 2026-09-02
+
+The design-token contract moved into the repo (`docs/tokens.md`,
+`docs/token-migration.md`). Nothing changed for anyone using the plugin.
+
+## 0.27.0 — 2026-09-02
 
 ### Added
 

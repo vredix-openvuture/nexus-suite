@@ -28,12 +28,20 @@ const ERASE_R = 16;              // eraser hit radius, viewBox units
 const AUTOGROW_MARGIN = 60;      // auto-grow: start extending when the pen is this close to the bottom
 const AUTOGROW_LOOKAHEAD = 460;  // ...and keep this much blank space below it (big → grows rarely, see _onMove)
 const PREDICT_MAX = 34;          // pen prediction: never draw further than this (viewBox units) past the real tip
-const PAGE_ZOOM_MAX = 5;         // page zoom: how far a full-size sheet may be magnified (1 = normal)
+const PAGE_ZOOM_MAX = 5;         // page zoom: how far a sheet may be magnified (1 = page width)
 const PAGE_ZOOM_MIN = 0.3;       // …and how far out, for an overview of a long page (1 = fits the pane)
 const TAP_TRAVEL = 6;          // units a stroke may wander and still count as a tap
 const HANDLE_PX = 11;          // selection handle radius, ON SCREEN — converted to units per pad size
 const SEL_DRAG_PX = 3;         // pointer travel before a press counts as a drag and not a tap
 const PALM_MS = 600;             // palm rejection: ignore touches this soon after any pen contact/hover
+/* Finger TAPS are a second gesture vocabulary next to pan/scroll/pinch: a tap is
+   a touch burst that lifts quickly and never travelled. How many fingers were
+   down at once picks the meaning, how many taps followed each other picks the
+   rest. See _registerTap. */
+const TAP_MS = 300;              // a touch burst longer than this is a hold, not a tap
+const TAP_SLOP_PX = 10;          // …and one that travels further than this is a drag
+const MULTITAP_MS = 260;         // taps closer together than this belong to the same run
+const MULTITAP_R = 44;           // …and no further apart on screen than this
 const HOLD_MS = 650;             // shape snap: hold the pen still this long after drawing …
 const HOLD_R = 7;                // … within this radius (viewBox units) to trigger recognition
 
@@ -341,7 +349,7 @@ function bgPatternTile(type, size, color, opacity) {
 
 /* Subtle paper grain/crinkle for the "paper style" toggle. A small stitched
    feTurbulence tile overlaid in multiply → very light fibre + soft fold mottling.
-   Tiled (not a full-canvas filter) so an endless slate stays cheap and flat in
+   Tiled (not a full-canvas filter) so an endless sheet stays cheap and flat in
    memory; lives in the SVG so the export looks the same. */
 const PAPER_TEX_TILE = 240;
 function paperTexDefsStr(filtId, patId) {
@@ -411,6 +419,17 @@ function parseSketchSVG(text) {
   } catch (e) { return null; }
 }
 
+/* A brand-new, empty sidecar. Written the moment a note is given a sketch id so
+   the Sketch tab always opens on a real file instead of on "not found" — the
+   same envelope toSVGString emits, with nothing in it. */
+function emptySketchSVG(w, h) {
+  const W = w || LOGICAL_W;
+  const H = h || Math.round(W * 3 / 4);
+  const meta = JSON.stringify({ v: 1, w: W, h: H, bg: '', paper: 'paper', strokes: [] });
+  return `<svg xmlns="${SVGNS}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`
+    + `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${meta}]]></nx-sketch></metadata></svg>`;
+}
+
 /* Named paper backgrounds. `bg` = solid fill colour ('' = transparent, so the
    host note's own background shows through = "native"). `grid` = the pattern
    colour that reads well on that fill. Lives here in the engine (Obsidian-free)
@@ -477,12 +496,10 @@ class NexusSketchSurface {
     this.title = opts.title || '';
     this.locked = !!opts.locked;                         // view mode: gestures work, drawing doesn't (see setLocked)
     this.autoGrow = !!opts.autoGrow;                     // extend the canvas down while drawing near the bottom
-    this.fixedViewport = !!opts.fixedViewport;           // protokoll paper: no pan, no zoom — only the outer container scrolls
-    // Page zoom (full-size sheets): a pinch magnifies the PAPER — the pad element
-    // gets wider, the SVG re-lays out crisply at that size and the surrounding
-    // scroller handles the rest. That is a different thing from the viewBox zoom
-    // below: an endless sheet must stay scrollable while zoomed, and zooming out
-    // has to stop at 1 = exactly the normal, full-width state.
+    // Page zoom: a pinch magnifies the PAPER — the pad element gets wider, the
+    // SVG re-lays out crisply at that size and the surrounding scroller handles
+    // the rest. A different thing from the viewBox zoom below, which changes
+    // what is visible rather than how big the sheet is drawn.
     this.pageZoom = !!opts.pageZoom;
     this.pageScale = 1;
     // Pan/zoom viewport = the visible sub-rect of the canvas (viewBox). Aspect is
@@ -490,6 +507,9 @@ class NexusSketchSurface {
     // mouse draw; fingers pan (1) / pinch-zoom (2). See _touch* below.
     this.viewX = 0; this.viewY = 0; this.viewW = this.W;
     this._touches = new Map();                           // active touch pointers → client coords
+    // -Infinity, not 0: with 0 every touch in the app's first PALM_MS counts as
+    // landing right after a pen and is dropped.
+    this._lastPen = -Infinity;
     this.onCommit = opts.onCommit || null;
     this.onZoom = opts.onZoom || null;                   // page-zoom level changed (see setPageZoom)
     this.resizable = !!opts.resizable;
@@ -585,6 +605,9 @@ class NexusSketchSurface {
     svg.addEventListener('pointermove', (e) => this._onMove(e));
     svg.addEventListener('pointerup', (e) => this._onUp(e));
     svg.addEventListener('pointercancel', (e) => this._onUp(e));
+    // Desktop's pinch: ctrl/⌘ + wheel is what every canvas app binds, and it is
+    // the ONLY zoom a mouse has — fingers are the tablet's way in.
+    svg.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
 
     if (this.resizable) this._buildResizeHandle();
   }
@@ -728,29 +751,39 @@ class NexusSketchSurface {
         2 fingers parallel = scroll the PAGE (the note's scroller — the whole
                              code block moves, like normal note scrolling)
         2 fingers pinching = zoom the canvas
+        A burst that lifts without travelling is a TAP instead — see
+        _registerTap for what one, two and three of them mean.
         Palm rejection: any touch arriving within PALM_MS of pen contact/hover
         is ignored outright, and a pen-down clears any finger gesture. ── */
   _touchDown(e) {
     this._stopFling();   // a finger down means "stop", always
     if (this._active || this._erasing) return;                          // pen is drawing → ignore stray finger
-    if (performance.now() - (this._lastPen || 0) < PALM_MS) return;     // palm rejection
+    if (performance.now() - this._lastPen < PALM_MS) return;            // palm rejection
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
-    this._touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // sx/sy is where this finger LANDED — a tap is judged against it, x/y follows the move.
+    this._touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
     if (this._touches.size === 1) {
+      // A fresh burst. `max` is how many fingers were EVER down at once in it,
+      // which is what gives a 3-finger tap its meaning after two have lifted.
+      this._tap = { t0: performance.now(), max: 1, moved: false, x: e.clientX, y: e.clientY };
       this._startOneFinger();
     } else if (this._touches.size === 2) {
+      if (this._tap) this._tap.max = Math.max(this._tap.max, 2);
       // Undecided until the fingers move: distance change → zoom, parallel → page scroll.
       const [a, b] = [...this._touches.values()];
       this._gestMode = 'pending';
       this._pending = { d: Math.hypot(b.x - a.x, b.y - a.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
       this._scroller = this._findScroller();
       this._scrollStart = this._scroller ? { top: this._scroller.scrollTop, left: this._scroller.scrollLeft } : null;
+    } else if (this._tap) {
+      this._tap.max = Math.max(this._tap.max, this._touches.size);
     }
   }
   _touchMove(e) {
     const t = this._touches.get(e.pointerId);
     if (!t) return;
     t.x = e.clientX; t.y = e.clientY;
+    if (this._tap && !this._tap.moved && Math.hypot(t.x - t.sx, t.y - t.sy) > TAP_SLOP_PX) this._tap.moved = true;
     if (this._gestRaf) return;
     this._gestRaf = requestAnimationFrame(() => { this._gestRaf = null; this._applyGesture(); });
   }
@@ -760,8 +793,51 @@ class NexusSketchSurface {
     if (this._touches.size === 1) this._startOneFinger();
     else if (!this._touches.size) {
       this._gestMode = null;
+      const tap = this._tap;
+      this._tap = null;
+      if (tap && !tap.moved && performance.now() - tap.t0 < TAP_MS) this._registerTap(tap.max, tap.x, tap.y);
       if (wasScroll) this._fling();
     }
+  }
+
+  /* ── Finger taps ────────────────────────────────────────────────────────────
+     Three fingers at once = back to page width; that one is deliberately not a
+     multi-tap, because the way out of a zoom must work on the first try.
+     One finger twice = undo, three times = redo. Undo waits out the multi-tap
+     window before it fires — otherwise every triple tap would undo on its way
+     to the redo. The delay is the price of having both on the same finger.
+     Palm rejection guards all of this: a tap within PALM_MS of the pen never
+     reaches _touchDown, so a hand resting mid-sentence cannot undo anything. */
+  _clearTapSeq() {
+    if (this._tapSeq && this._tapSeq.timer) window.clearTimeout(this._tapSeq.timer);
+    this._tapSeq = null;
+  }
+  _registerTap(fingers, x, y) {
+    if (fingers >= 3) { this._clearTapSeq(); this.setPageZoom(1); return; }
+    // Two fingers at once is the pinch/scroll gesture's resting state — no meaning.
+    if (fingers !== 1 || this.locked) { this._clearTapSeq(); return; }
+    const now = performance.now();
+    const prev = this._tapSeq;
+    const runs = prev && (now - prev.t) < MULTITAP_MS && Math.hypot(x - prev.x, y - prev.y) < MULTITAP_R;
+    const n = runs ? prev.n + 1 : 1;
+    this._clearTapSeq();
+    if (n >= 3) { this.redo(); return; }
+    this._tapSeq = { n, t: now, x, y, timer: null };
+    if (n === 2) {
+      const seq = this._tapSeq;
+      seq.timer = window.setTimeout(() => {
+        if (this._tapSeq === seq) this._tapSeq = null;
+        this.undo();
+      }, MULTITAP_MS);
+    }
+  }
+
+  /* ctrl/⌘ + wheel = page zoom. Without the modifier the wheel stays the page's,
+     so scrolling a note that contains a sketch is never hijacked. */
+  _onWheel(e) {
+    if (!this.pageZoom || !(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    this.setPageZoom(this.pageScale * Math.exp(-e.deltaY / 300), e.clientX, e.clientY);
   }
   /* A drag-scroll that stops the moment the finger lifts is what made this feel
      slower than the note around it — every native scroller coasts. Same input,
@@ -773,7 +849,7 @@ class NexusSketchSurface {
     const sc = this._scroller;
     if (!sc || !samples) return;
     let vy = -canvas.flingVelocity(samples, 'y');
-    let vx = this.fixedViewport ? 0 : -canvas.flingVelocity(samples, 'x');
+    let vx = -canvas.flingVelocity(samples, 'x');
     if (!vy && !vx) return;
     let last = performance.now();
     const step = () => {
@@ -783,7 +859,7 @@ class NexusSketchSurface {
       const sy = canvas.flingStep(vy, dt);
       const sx = canvas.flingStep(vx, dt);
       sc.scrollTop += sy.move;
-      if (!this.fixedViewport) sc.scrollLeft += sx.move;
+      sc.scrollLeft += sx.move;
       vy = sy.v; vx = sx.v;
       this._flingRaf = (vy || vx) ? requestAnimationFrame(step) : null;
     };
@@ -794,7 +870,7 @@ class NexusSketchSurface {
   }
   /* One finger: pans the canvas ONLY while zoomed in; otherwise it scrolls the
      page/stage. An un-zoomed pan is a no-op, so a one-finger drag should scroll
-     the note (reading) or the full-size editor's stage (editing) — the pen
+     the note (reading) or the Sketch tab's stage (editing) — the pen
      draws, the finger navigates. */
   _startOneFinger() {
     const f = [...this._touches.values()][0];
@@ -851,12 +927,12 @@ class NexusSketchSurface {
       const f0 = live[0], f1 = live[1];
       const d = Math.hypot(f1.x - f0.x, f1.y - f0.y) || 1;
       if (this._gestMode === 'pending') {
-        if (Math.abs(d - this._pending.d) > 24 && (this.pageZoom || !this.fixedViewport)) {
+        if (Math.abs(d - this._pending.d) > 24) {
           this._gestMode = 'zoom';
           if (this.pageZoom) this._pzStart = { s: this.pageScale, d: this._pending.d || d };
           else this._gestureRef();
         }
-        else if (this.fixedViewport || Math.hypot(cx - this._pending.cx, cy - this._pending.cy) > 12) this._gestMode = 'scroll';
+        else if (Math.hypot(cx - this._pending.cx, cy - this._pending.cy) > 12) this._gestMode = 'scroll';
         else return;   // not decided yet
       }
       if (this._gestMode === 'zoom') {
@@ -877,16 +953,16 @@ class NexusSketchSurface {
     }
     if (this._gestMode === 'scroll' && this._scroller && this._scrollStart) {
       this._scroller.scrollTop = this._scrollStart.top - (cy - this._pending.cy);
-      // Fixed viewport (protokoll/slate paper) never scrolls sideways.
-      if (!this.fixedViewport) this._scroller.scrollLeft = this._scrollStart.left - (cx - this._pending.cx);
+      this._scroller.scrollLeft = this._scrollStart.left - (cx - this._pending.cx);
       // Keep the tail of the drag: on lift it becomes the throw (see _fling).
       (this._scrollSamples = this._scrollSamples || []).push({ t: performance.now(), x: cx, y: cy });
       if (this._scrollSamples.length > 12) this._scrollSamples.shift();
     }
   }
-  /* Magnify the sheet itself. `s` is clamped to [1 … PAGE_ZOOM_MAX]: zooming
-     OUT can never go past 1, which is the normal full-width state — beyond that
-     there is nothing to show, only empty stage. The pad is sized in real pixels
+  /* Magnify the sheet itself. `s` is clamped to [PAGE_ZOOM_MIN … PAGE_ZOOM_MAX]:
+     out shrinks the sheet inside the pane for an overview of a long page, in
+     widens it past the pane and the surrounding scroller takes over. 1 is the
+     normal, exactly-page-width state. The pad is sized in real pixels
      off its own width at scale 1, so the result is identical on every screen,
      and the SVG re-renders sharp at the new size instead of being upscaled.
      (ax, ay) is the point on screen to hold still — the pinch centroid. */
@@ -1973,7 +2049,7 @@ class NexusSketchSurface {
   /* Write a pending change out now. Safe to call when nothing is pending. */
   flush() { if (this._commitT || this._commitMaxT) this._fire(); }
   /* Call when the pad goes away for good (view closed, overlay torn down). */
-  destroy() { this.flush(); this._disarmFlushGuard(); this._stopFling(); }
+  destroy() { this.flush(); this._disarmFlushGuard(); this._stopFling(); this._clearTapSeq(); }
 
   /* Dark-paper ink inversion. `_inkColor` is applied everywhere a stroke colour
      is painted (live canvas, committed DOM, export) so the flip is consistent and
@@ -2143,4 +2219,4 @@ class NexusSketchSurface {
   }
 }
 
-module.exports = { NexusSketchSurface, parseSketchSVG, sketchStrokePath, recognizeShape, shapeToPoints, ratioWH, LOGICAL_W, PEN_TYPES };
+module.exports = { NexusSketchSurface, parseSketchSVG, emptySketchSVG, sketchStrokePath, recognizeShape, shapeToPoints, ratioWH, LOGICAL_W, PEN_TYPES };

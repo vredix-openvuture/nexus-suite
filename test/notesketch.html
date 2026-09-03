@@ -1,0 +1,160 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>note sketch harness</title>
+<style>
+:root { --background-primary:#1e1e1e; --interactive-accent:#fb6734; }
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+</style></head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+(async () => {
+try {
+const Suite = window.NexusSuite;
+const SKETCH = window.SKETCH_VIEW;
+const makeWorkspace = window.obsidianStub.makeWorkspace;
+
+/* A note is its frontmatter plus a path; the vault is the files that exist.
+   Everything the entry path touches and nothing else. */
+function makeApp(frontmatter) {
+  const file = { path: 'Meeting.md', extension: 'md', name: 'Meeting.md' };
+  const written = {};
+  const vault = {
+    files: {},
+    getAbstractFileByPath(path) { return vault.files[path] || null; },
+    async create(path, body) { vault.files[path] = { path, body, extension: path.split('.').pop() }; return vault.files[path]; },
+    async modify(f, body) { f.body = body; },
+    async createFolder() {},
+    async read(f) { return f.body; },
+  };
+  const app = {
+    workspace: makeWorkspace(['markdown']),
+    vault,
+    metadataCache: { getFileCache: () => ({ frontmatter: Object.assign({}, frontmatter) }) },
+    fileManager: {
+      async processFrontMatter(f, fn) {
+        const fm = Object.assign({}, frontmatter);
+        fn(fm);
+        Object.assign(frontmatter, fm);
+        written.calls = (written.calls || 0) + 1;
+      },
+    },
+  };
+  const plugin = new Suite(app, {});
+  plugin.app = app;
+  plugin.settings = JSON.parse(JSON.stringify(window.DEFAULT_SETTINGS));
+  plugin.saveSettings = () => {};
+  return { plugin, app, file, frontmatter, written, vault };
+}
+
+// ── A note with no drawing yet gets one, sidecar included ──────────────────
+{
+  const t = makeApp({});
+  const id = await t.plugin.ensureNoteSketch(t.file);
+  ok('new · an id was written into the note', !!id && t.frontmatter.sketch === id, JSON.stringify(t.frontmatter));
+  const path = t.plugin._sketchPath(id);
+  ok('new · and the sidecar exists before anything is drawn', !!t.vault.files[path], Object.keys(t.vault.files).join(','));
+  const back = window.parseSketchSVG(t.vault.files[path].body);
+  ok('new · which is a readable, empty sketch', !!back && back.strokes.length === 0);
+}
+
+// ── An existing drawing is opened, never replaced ──────────────────────────
+{
+  const t = makeApp({ sketch: 'sk-old' });
+  const id = await t.plugin.ensureNoteSketch(t.file);
+  eq('existing · the id in the note is the one used', id, 'sk-old');
+  eq('existing · and the note was not rewritten', t.written.calls || 0, 0);
+  ok('existing · a missing sidecar is created rather than reported missing',
+     !!t.vault.files[t.plugin._sketchPath('sk-old')]);
+}
+
+// ── Where it opens ─────────────────────────────────────────────────────────
+{
+  const t = makeApp({ sketch: 'sk-1' });
+  await t.plugin.openNoteSketch(t.file, 'same');
+  eq('switch · no new tab is opened', t.app.workspace.newTabs, 0);
+  eq('switch · the note’s own leaf now holds the sketch', t.app.workspace.leaves[0].viewType, SKETCH);
+  eq('switch · and it knows which note to go back to',
+     t.app.workspace.leaves[0].stateCalls[0].state.notePath, 'Meeting.md');
+}
+{
+  const t = makeApp({ sketch: 'sk-2' });
+  await t.plugin.openNoteSketch(t.file, 'right');
+  eq('beside · the note stays where it is', t.app.workspace.leaves[0].viewType, 'markdown');
+  eq('beside · the sketch goes into a split', t.app.workspace.splits.length, 1);
+  eq('beside · on the side that was asked for', t.app.workspace.splits[0].before, false);
+}
+{
+  const t = makeApp({ sketch: 'sk-3' });
+  await t.plugin.openNoteSketch(t.file, 'left');
+  eq('beside · left really means left', t.app.workspace.splits[0].before, true);
+}
+{
+  const t = makeApp({ sketch: 'sk-4' });
+  await t.plugin.openNoteSketch(t.file, 'tab');
+  eq('tab · a new tab is what was asked for', t.app.workspace.newTabs, 1);
+}
+
+// ── The same sketch is never opened twice ──────────────────────────────────
+{
+  const t = makeApp({ sketch: 'sk-5' });
+  await t.plugin.openNoteSketch(t.file, 'tab');
+  const opened = t.app.workspace.getLeavesOfType(SKETCH)[0];
+  opened.view = { getViewType: () => SKETCH, id: 'sk-5' };
+  opened.view.id = 'sk-5';
+  await t.plugin.openNoteSketch(t.file, 'tab');
+  eq('reuse · the second call opens nothing new', t.app.workspace.newTabs, 1);
+  ok('reuse · it reveals the tab that is already there',
+     t.app.workspace.revealed[t.app.workspace.revealed.length - 1] === opened);
+}
+
+// ── The corner button ──────────────────────────────────────────────────────
+function viewFor(plugin, file) {
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  return { file, contentEl: stage.createDiv('view-content') };
+}
+{
+  const t = makeApp({});
+  const view = viewFor(t.plugin, t.file);
+  t.plugin.mountSketchControl(view);
+  const btn = view.contentEl.querySelector('.nx-sketch-open');
+  ok('button · every note carries it', !!btn);
+  eq('button · a note with no drawing invites one', btn.dataset.icon, 'pen-line');
+  ok('button · and says so', /Start a sketch/.test(btn.getAttribute('aria-label')));
+  ok('button · nothing marks it as carrying a drawing', !btn.classList.contains('is-active'));
+}
+{
+  const t = makeApp({ sketch: 'sk-6' });
+  const view = viewFor(t.plugin, t.file);
+  t.plugin.mountSketchControl(view);
+  const btn = view.contentEl.querySelector('.nx-sketch-open');
+  eq('button · a note that has one shows it', btn.dataset.icon, 'pencil-line');
+  ok('button · and is marked', btn.classList.contains('is-active'));
+  t.plugin.mountSketchControl(view);
+  eq('button · mounting again does not stack a second one',
+     view.contentEl.querySelectorAll('.nx-sketch-open').length, 1);
+}
+{
+  // Quick Sketch off means no button at all, not a button that says no.
+  const t = makeApp({ sketch: 'sk-7' });
+  const view = viewFor(t.plugin, t.file);
+  t.plugin.mountSketchControl(view);
+  t.plugin.settings.quicksketch.enabled = false;
+  t.plugin.mountSketchControl(view);
+  eq('button · switching the module off takes it away',
+     view.contentEl.querySelectorAll('.nx-sketch-open').length, 0);
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

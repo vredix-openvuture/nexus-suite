@@ -1082,7 +1082,7 @@ class NexusSettingsTab extends PluginSettingTab {
         .onChange(async v => { s.folder = v || 'Inbox/Quicksketch'; await this.save(); await this.plugin.ensureSketchFolder(); }));
     new Setting(e).setName('Default aspect ratio').setDesc('New pads use this (e.g. 16:9, 4:3, 1:1). Existing sketches keep their own.')
       .addText(t => t.setPlaceholder('16:9').setValue(s.ratio).onChange(async v => { s.ratio = v || '16:9'; await this.save(); }));
-    new Setting(e).setName('Default paper').setDesc('Fill behind the ink on new pads. Native = the note\'s own background; Paper = slightly yellowish off-white; White / Black = solid. Change live per sketch in the toolbar (background button), or override a slate note with frontmatter `sketch-bg: black`.')
+    new Setting(e).setName('Default paper').setDesc('Fill behind the ink on new pads. Native = the note\'s own background; Paper = slightly yellowish off-white; White / Black = solid. Change live per sketch in the toolbar (background button).')
       .addDropdown(dd => dd
         .addOption('native', 'Native (note background)')
         .addOption('paper', 'Paper (off-white)')
@@ -1159,14 +1159,6 @@ class NexusSettingsTab extends PluginSettingTab {
         });
     });
 
-    new Setting(e).setName('Slate notes: hide properties').setDesc('A `nexus: slate` note is a whole page of paper. This takes the frontmatter block above it out of the way, so the note opens on the paper and nothing else.')
-      .addToggle(t => t.setValue(!!s.hideFrontmatter).onChange(async v => { s.hideFrontmatter = v; await this.save(); }));
-    new Setting(e).setName('Slate notes: hide the app chrome').setDesc('While a slate note is open, hide the tab bar, the status bar and the left ribbon. Everything comes back the moment you leave the note. (The full-size editor already covers the window on its own.)')
-      .addToggle(t => t.setValue(!!s.immersive).onChange(async v => {
-        s.immersive = v;
-        if (!v) document.body.removeClass('nx-sk-immersive');
-        await this.save();
-      }));
     new Setting(e).setName('Paper texture').setDesc('Lay a subtle paper grain over the pad. Works on any paper colour; toggle live per sketch via the background button.')
       .addToggle(t => t.setValue(s.paperStyle !== false).onChange(async v => { s.paperStyle = v; await this.save(); }));
     new Setting(e).setName('Invert ink on dark paper').setDesc('On a dark paper (Black), lift ONLY near-black ink so dark drawings stay readable — vivid colours keep their punch. Non-destructive: colours are only changed for display and export.')
@@ -1209,7 +1201,7 @@ class NexusSettingsTab extends PluginSettingTab {
           .onChange(async v => { barTarget.mode = v; await writeBar(); });
       });
 
-    [['compact', 'Buttons in a note', BAR_DEFAULTS.compact], ['full', 'Buttons in the full-size editor', BAR_DEFAULTS.full]].forEach(([ctx, label, def]) => {
+    [['compact', 'Buttons in a note', BAR_DEFAULTS.compact], ['full', 'Buttons in the Sketch tab', BAR_DEFAULTS.full]].forEach(([ctx, label, def]) => {
       e.createEl('div', { cls: 'nx-cardcfg-sec', text: label });
       e.createEl('p', { cls: 'setting-item-description', text: 'On = in the bar, off = in the ⋯ menu.' });
       BAR_ITEMS.forEach(item => {

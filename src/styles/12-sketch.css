@@ -1,102 +1,16 @@
-/* Slate toggle — a visible corner button on every note (flips nexus: slate).
-   Third slot in the corner row (banner 16 / background 52 → this at 88); the
-   button's own look is one of the three corner buttons in 02-banner.css. */
-.view-content:has(> .nx-slate-btn) { position: relative; }
-.nx-slate-btn { right: 88px; }
-.nx-slate-btn.is-active { opacity: 1; color: var(--nx-accent, var(--interactive-accent)); }
-
-/* ── PROTOKOLL — native note (title/properties/banner) + endless sketch area
-      injected below the content, into the note's SCROLL container
-      (frontmatter nexus: protokoll). ── */
-/* NOTE: title + properties keep Obsidian's normal margins (don't strip the
-   editor width) — only the SKETCH breaks out to full width (see .nx-pk-inline). */
-/* The empty editor body reserves a viewport-tall min-height that pushed the
-   sketch far down — collapse it on protokoll notes. */
-.nx-pk-note .cm-content,
-.nx-pk-note .cm-sizer,
-.nx-pk-note .cm-editor { min-height: 0 !important; }
-/* Empty editor still reserved height — kill its bottom padding + stop it from
-   growing to fill, so the sketch sits right under the properties. */
-.nx-pk-note .cm-content { padding-bottom: 0 !important; flex-grow: 0 !important; }
-
-/* The sketch IS the body → hide the note's markdown TEXT in Slate mode (keep the
-   title, the properties widget, and the sketch). Toggling to plain .md removes
-   the .nx-pk-note class, so the text comes back. */
-/* Hide ALL non-metadata children, not just .cm-line: in Live Preview a fenced
-   block (```columns```, ```quicksketch```, …) renders as a .cm-embed-block that
-   is NOT a .cm-line — the old .cm-line-only rule left it visible, and its
-   reserved height pushed the sketch to the very bottom (the "gap" bug). */
-.nx-pk-note .cm-content > *:not(:has(.metadata-container)):not(:has(.metadata-properties)):not(.nx-pk-inline) { display: none !important; }
-.nx-pk-note .markdown-reading-view .markdown-preview-sizer > *:not(.mod-header):not(.inline-title):not(.metadata-container):not(.markdown-preview-pusher):not(.nx-pk-inline) { display: none !important; }
-
-/* The injected sketch area. It lives INSIDE the (margined) content container,
-   but the sketch should span the full width while title/properties keep their
-   normal margins — so it breaks out sideways.
-   NOT with the classic 100vw full-bleed: 100vw is the WINDOW, and the moment a
-   sidebar opens the editor pane is narrower than that, so the strip ran wider
-   than the pane and its right end (the action buttons) was clipped away.
-   --nx-pk-w / --nx-pk-off are measured off the note's own scroll container
-   (syncGeom() in main.js) → the strip is exactly as wide as the pane, whatever
-   the sidebars do. Without JS they fall back to plain content width. */
-.nx-pk-inline {
-  position: relative;
-  width: var(--nx-pk-w, 100%);
-  max-width: none;
-  margin-left: var(--nx-pk-off, 0px);
-  box-sizing: border-box;
-  padding: 6px 0 40px;   /* canvas goes edge-to-edge; toolbar gets its own inset */
-  z-index: 1;
-  /* NB: no overflow here — it would make this the sticky bar's scroll container
-     (which doesn't scroll) and the toolbar would scroll away with the note.
-     Horizontal spill is clipped on the note scroller instead. */
-}
-.nx-pk-inline .nx-pk-bar {
-  position: sticky;
-  /* Obsidian pads the scroll container itself
-     (.cm-scroller / .markdown-preview-view { padding: var(--file-margins) }),
-     and a sticky element docks at the SCROLLPORT — i.e. at the padding box, not
-     the pane's top edge. With top:0 the note kept scrolling through that padding
-     strip above the bar: the "gap". Pulling the dock up by exactly that padding
-     closes it structurally — no is-it-stuck flag, no box-shadow filler that
-     could go stale. --nx-pk-top is the measured padding-top. */
-  top: calc(-1 * var(--nx-pk-top, 0px));
-  z-index: 5;
-  border-radius: 0;              /* flat strip — the canvas below is borderless/full-page */
-  padding-left: 16px !important;
-  padding-right: 16px !important;
-}
-/* The corner buttons (slate toggle / banner / bg) would otherwise collide with the
-   top-docked bar, so in a slate note they drop just below it — floating over the
-   canvas top-right (well contrasted on the paper). Derived from the bar's MEASURED
-   height: the old hard-coded 52px was less than padding + bar height, so the
-   buttons sat on the bar's right end. */
-.nx-pk-note > .nx-slate-btn,
-.nx-pk-note > .nx-banner-btn,
-.nx-pk-note > .nx-bg-btn {
-  top: calc(var(--nx-pk-top, 20px) + var(--nx-pk-barh, 42px) + 10px);
-}
-/* NO overflow:hidden / border-radius here — a rounded, clipping ancestor kicks
-   the desynchronized live canvas off its fast path (live ink would only appear
-   on pen-up). Plain border only. */
-.nx-pk-inline .nx-pk-pad {
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 360px;
-  /* No border — the canvas IS the page (looks like the whole note is the
-     native writing surface), edge to edge. */
-}
-/* Clip horizontal spill on the actual SCROLL containers only. (Putting
-   overflow-x on .view-content turned it into a scroll container → overflow-y
-   became auto → the fixed corner buttons scrolled with it.) */
-.nx-pk-note .cm-scroller,
-.nx-pk-note .markdown-preview-view { overflow-x: hidden !important; }
+/* Sketch button — a visible corner button on every note. It does not draw:
+   it opens the note's own drawing in a Sketch tab (tap) or picks where to put
+   it (hold). Third slot in the corner row (banner 16 / background 52 → this at
+   88); the look is one of the three corner buttons in 02-banner.css. */
+.view-content:has(> .nx-sketch-open) { position: relative; }
+.nx-sketch-open { right: 88px; }
+.nx-sketch-open.is-active { opacity: 1; color: var(--nx-accent, var(--interactive-accent)); }
 
 /* ── QUICK SKETCH — draw-on-canvas code block (```quicksketch```) ── */
 /* A zoomed sheet is wider than the note column. Without this the extra width is
    simply clipped and the right-hand side of the drawing is unreachable. */
 .nx-sketch.is-zoomed { overflow-x: auto; overflow-y: hidden; }
 .nx-sketch.is-zoomed .nx-sketch-pad { max-width: none; }
-.nx-sketch.is-zoomed .nx-sk-zoompill { opacity: 1; pointer-events: auto; }
 .nx-sketch {
   position: relative;
   margin: 0.6em 0;
@@ -220,7 +134,7 @@
 .nx-sk-subpens { gap: 2px; }
 /* ── Narrow screens: on a phone the tool group alone can be wider than the
       screen, which used to cut off everything on the right — including the
-      button that CLOSES the full-size editor. So the tools scroll sideways and
+      button that CLOSES the Sketch tab. So the tools scroll sideways and
       the actions stay pinned to the right edge. Which buttons are there at all
       is the user's call now (settings → Toolbar); the rest is in the ⋯ menu. ── */
 @media (max-width: 620px) {
@@ -233,7 +147,6 @@
      (Button sizes are left to 19-touch.css, which loads after this.) */
   .nx-sk-color { width: 15px; height: 15px; }
   .nx-sk-colors { gap: 9px; }
-  .nx-sketch-fs-stage { padding: 12px 8px 48px; }
 }
 
 .nx-sk-btn:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
@@ -273,7 +186,7 @@
 .nx-sk-color-custom { background: var(--background-primary); color: var(--text-muted); }
 .nx-sk-color-custom .svg-icon { width: 12px; height: 12px; }
 
-/* Popovers (pen type / custom colour / background). Sit ABOVE the full-size
+/* Popovers (pen type / custom colour / background). Sit ABOVE the full-window
    overlay (which uses --layer-modal) so toolbar popovers stay clickable there. */
 .nx-sk-pop {
   position: fixed;
@@ -404,14 +317,6 @@
 }
 .nx-sk-menuitem-x:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
 .nx-sk-menuitem-x .svg-icon { width: 13px; height: 13px; }
-
-/* Slate notes: the two chrome switches from the settings. Hiding the properties
-   block is per note; immersive reaches the app frame, so it is a body class. */
-.nx-pk-note.nx-pk-hide-fm .metadata-container,
-.nx-pk-note.nx-pk-hide-fm .metadata-properties-heading { display: none !important; }
-body.nx-sk-immersive .workspace-tab-header-container,
-body.nx-sk-immersive .status-bar,
-body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
 
 /* Sketch search results. */
 .nx-sksearch-row { display: flex; align-items: center; gap: 10px; }
@@ -684,52 +589,9 @@ body.nx-sk-immersive .workspace-ribbon.mod-left { display: none !important; }
 .nx-sk-menuitem-lbl { flex: 1 1 auto; min-width: 0; }
 .nx-sk-menu-sep { height: var(--nx-bw); margin: var(--nx-sp-1); background: var(--nx-border, var(--background-modifier-border)); }
 
-/* ── FULL-SIZE EDITOR ──────────────────────────────────────────────────────
-   The whole window becomes the canvas. The SAME NexusSketchSurface is
-   re-parented in here (see _openSketchFullscreen), so nothing about the drawing
-   state changes — only where the pad lives. */
-.nx-sketch-fs {
-  position: fixed;
-  inset: 0;
-  z-index: var(--layer-modal, 100);
-  display: flex;
-  flex-direction: column;
-  background: var(--background-primary);
-  /* Keep the toolbar out from under the phone/tablet status bar + gesture areas
-     (Android/iOS safe-area insets; harmless 0 on desktop). */
-  padding-top: env(safe-area-inset-top, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
-  padding-right: env(safe-area-inset-right, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-/* Android WebView often reports safe-area insets as 0 even under the status
-   bar — guarantee a floor on mobile so the toolbar always clears it. */
-body.is-mobile .nx-sketch-fs { padding-top: max(env(safe-area-inset-top, 0px), 32px); }
-/* The full-size bar reuses .nx-sketch-bar but must stay opaque + visible (it's
-   outside any .nx-sketch is-view/is-edit wrapper). */
-.nx-sketch-fs-bar {
-  flex: 0 0 auto;
-  opacity: 1 !important;
-}
-.nx-sketch-fs-stage {
-  flex: 1 1 auto;
-  overflow: auto;
-  padding: 20px 16px 60px;
-}
-/* Paper sits centred with a comfortable reading width; grows downward via the
-   resize strip / auto-grow and the stage scrolls.
-   NO overflow:hidden / border-radius here — a clipping (rounded) ancestor kicks
-   the desynchronized live canvas off its direct-compositing fast path, so live
-   ink wouldn't appear until the pen lifts. A plain box-shadow is fine. */
-.nx-sketch-fs-stage .nx-sketch-pad {
-  width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
-  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.18);
-}
-
-/* Zoom read-out for a full-size sheet. Hidden at 1× — it only has something to
-   say once the paper has been magnified — and tapping it returns to normal. */
+/* Zoom read-out. Always on screen, because "what zoom am I at" is a question
+   you have BEFORE you notice something is wrong; tapping it returns to page
+   width. Quiet at 100%, fully lit once the paper has been resized. */
 .nx-sk-zoompill {
   position: absolute;
   right: 12px;
@@ -744,13 +606,27 @@ body.is-mobile .nx-sketch-fs { padding-top: max(env(safe-area-inset-top, 0px), 3
   font-variant-numeric: tabular-nums;
   box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
   cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 0.55;
   transition: opacity .12s ease;
 }
-.nx-sketch-fs.is-zoomed .nx-sk-zoompill,
-.nx-skpane.is-zoomed .nx-sk-zoompill { opacity: 1; pointer-events: auto; }
+.nx-sk-zoompill:hover { opacity: 1; }
+.nx-sketch.is-zoomed .nx-sk-zoompill,
+.nx-skpane.is-zoomed .nx-sk-zoompill { opacity: 1; }
 body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
+
+/* Zoom popover — the same two steps a pinch does, for a pen or a mouse. */
+.nx-sk-zoompop { min-width: 190px; }
+.nx-sk-zoomrow {
+  display: flex; align-items: center; gap: var(--nx-sp-1);
+  margin-bottom: var(--nx-sp-2);
+}
+.nx-sk-zoomval {
+  flex: 1 1 auto; text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-ui-small);
+  color: var(--nx-fg, var(--text-normal));
+}
+.nx-sk-zoompop .nx-sk-subnote { margin-top: var(--nx-sp-2); }
 
 /* ── COLOUR PICKER — hue ring + inner saturation/value square + opacity ──────
    Tap a selected swatch again (or the custom "+") to open it. Emits #rrggbb
@@ -839,6 +715,10 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
    paper below in its own scroller so it can grow downward without end. */
 .nx-skpane { position: relative; display: flex; flex-direction: column; height: 100%; padding: 0; }   /* relative → the zoom pill anchors here */
 .nx-skpane-bar { flex: 0 0 auto; border-bottom: var(--nx-hairline); border-radius: 0; }
+/* The options row is a sibling of the bar (see _buildSketchBar), so in this
+   flex column it stays put above the scrolling stage — colours are reachable at
+   any scroll position, which is the whole reason a drawing lives in a tab. */
+.nx-skpane > .nx-sketch-subbar { flex: 0 0 auto; }
 .nx-skpane-stage { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 .nx-skpane-stage .nx-sketch-pad { width: 100%; }
 .nx-skpane-back { margin-left: var(--nx-sp-1); }

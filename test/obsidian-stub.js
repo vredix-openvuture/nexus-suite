@@ -51,7 +51,7 @@ function setIcon(el, name) {
    then opens" can be proven rather than assumed. */
 function makeWorkspace(viewTypes) {
   const workspace = {
-    leaves: [], revealed: [], events: [], newTabs: 0, activeIndex: 0,
+    leaves: [], revealed: [], events: [], splits: [], newTabs: 0, activeIndex: 0,
     addLeaf(type) {
       const leaf = {
         viewType: type, detached: false, pinned: false, stateCalls: [],
@@ -79,6 +79,11 @@ function makeWorkspace(viewTypes) {
       if (newLeaf) { workspace.newTabs++; return workspace.addLeaf('empty'); }
       return workspace.leaves[workspace.activeIndex] || workspace.addLeaf('empty');
     },
+    createLeafBySplit(anchor, dir, before) {
+      workspace.splits.push({ dir, before: !!before });
+      return workspace.addLeaf('empty');
+    },
+    getMostRecentLeaf() { return workspace.leaves[workspace.activeIndex] || null; },
     revealLeaf(leaf) { workspace.revealed.push(leaf); },
     iterateRootLeaves(fn) { workspace.leaves.slice().forEach(fn); },
     onLayoutReady(fn) { fn(); },

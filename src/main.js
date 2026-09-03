@@ -37,7 +37,7 @@ const { NexusInkTagModal } = require('./views/ink.js');
 const { NexusCaptureHubView } = require('./views/capturehub.js');
 const { NexusGalaxyView } = require('./views/galaxy.js');
 const { NexusScratchView } = require('./views/scratch.js');
-const { NexusSketchSurface, parseSketchSVG, ratioWH, PEN_TYPES } = require('./views/sketch.js');
+const { NexusSketchSurface, parseSketchSVG, emptySketchSVG, ratioWH, PEN_TYPES } = require('./views/sketch.js');
 const sketchObjects = require('./lib/sketchobjects.js');
 const penGestures = require('./lib/sketchgestures.js');
 const sketchExport = require('./lib/sketchexport.js');
@@ -237,12 +237,11 @@ module.exports = class NexusSuite extends Plugin {
       if (t.classList.contains('nx-sketch-surface')) e.preventDefault();
     }, { capture: true, passive: false });
 
-    // ── Protokoll (whole-note endless drawing surface) ──
-    // A `nexus: protokoll` note renders 100% NATIVELY (title / properties /
-    // banner) — the plugin just injects the endless sketch surface BELOW the
-    // note content via the refreshBanner() wiring (see updateProtokoll). No
-    // custom view, no code block.
-    this.addCommand({ id: 'nexus-new-protokoll', name: 'New slate (drawing note)', callback: () => this.createProtokollNote() });
+    // ── A note's own drawing ──
+    // The note holds only the sidecar id (frontmatter `sketch`) and a corner
+    // button; the drawing itself lives in the Sketch tab. See the
+    // "A note's own sketch" section below.
+    this.addCommand({ id: 'nexus-new-protokoll', name: 'New sketch note', callback: () => this.createSketchNote() });
     this.addCommand({ id: 'nexus-track-note-as-task', name: 'Track this note as a task',
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
@@ -269,11 +268,18 @@ module.exports = class NexusSuite extends Plugin {
     this.addCommand({ id: 'nexus-search-sketches', name: 'Search sketches', callback: () => this.openSketchSearch() });
     this.addCommand({ id: 'nexus-ocr-sketch', name: 'Read the handwriting in this sketch',
       callback: () => this.ocrActiveSketch() });
-    this.addCommand({ id: 'nexus-toggle-slate', name: 'Toggle slate mode',
+    this.addCommand({ id: 'nexus-open-note-sketch', name: "Open this note's sketch",
       checkCallback: (checking) => {
         const v = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!v || !v.file || v.file.extension !== 'md') return false;
-        if (!checking) this.toggleSlate(v.file);
+        if (!checking) this.openNoteSketch(v.file, 'same');
+        return true;
+      } });
+    this.addCommand({ id: 'nexus-open-note-sketch-beside', name: "Open this note's sketch beside it",
+      checkCallback: (checking) => {
+        const v = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!v || !v.file || v.file.extension !== 'md') return false;
+        if (!checking) this.openNoteSketch(v.file, 'right');
         return true;
       } });
 
@@ -848,8 +854,7 @@ module.exports = class NexusSuite extends Plugin {
       try { this.mountBgControl(view); } catch (e) { console.error('[Nexus] mountBgControl:', e); }
       try { this.updateInkNoteClass(view); } catch (e) { console.error('[Nexus] updateInkNoteClass:', e); }
       try { this.updateInkPdfEmbeds(view); } catch (e) { console.error('[Nexus] updateInkPdfEmbeds:', e); }
-      try { this.updateProtokoll(view); } catch (e) { console.error('[Nexus] updateProtokoll:', e); }
-      try { this.mountSlateControl(view); } catch (e) { console.error('[Nexus] mountSlateControl:', e); }
+      try { this.mountSketchControl(view); } catch (e) { console.error('[Nexus] mountSketchControl:', e); }
     }
   }
 
@@ -2653,15 +2658,15 @@ module.exports = class NexusSuite extends Plugin {
       new Notice('Nexus: ' + (err && err.message ? err.message : 'handwriting recognition failed.'));
     }
   }
-  /* The surface the user is looking at: the full-size editor wins, then any
-     live pad in the note. */
+  /* The surface the user is looking at: an open Sketch tab wins — that is where
+     drawing happens — and otherwise any live pad still in a note. */
   _activeSketchSurface() {
-    const fs = document.body.querySelector('.nx-sketch-fs .nx-sketch-pad');
-    if (fs && fs._surface) return fs._surface;
+    const ws = this.app.workspace;
+    const panes = ws.getLeavesOfType(SKETCH_VIEW).filter(l => l.view && l.view.surface);
+    const focused = panes.find(l => l === ws.activeLeaf) || panes[0];
+    if (focused) return focused.view.surface;
     const live = this._sketchLive ? Object.values(this._sketchLive) : [];
     for (const surface of live) if (surface && document.contains(surface.host)) return surface;
-    const pk = document.querySelector('.nx-pk-inline');
-    if (pk && pk._surface) return pk._surface;
     return null;
   }
 
@@ -2767,7 +2772,7 @@ module.exports = class NexusSuite extends Plugin {
 
     const surface = new NexusSketchSurface(pad, {
       W, H, bg, paper, paperStyle, invertOnDark: s.invertOnDark !== false, ink: s.ink, penSizes: s.penSizes, pen: 'fountain',
-      paperWidth: s.paperWidth,   // the cap also travels into the full-size editor, which reparents this very pad
+      paperWidth: s.paperWidth,
       pageZoom: true,             // pinch magnifies the SHEET here too — the viewBox zoom it used
                                   // to do could go in but never out, which is not a zoom
       penConfig: (s.penConfig = s.penConfig || {}),   // live reference — pen menu edits apply on the next stroke
@@ -2783,7 +2788,7 @@ module.exports = class NexusSuite extends Plugin {
 
     // View ⇄ Edit. View = clean, blended into the note, toolbar collapsed, not
     // drawable. Existing drawings open in View; new/empty pads open in Edit so
-    // you can draw immediately. (Full-size editor comes later.)
+    // you can draw immediately.
     // Remember the mode PER ID across re-renders — the id-writeback on the first
     // stroke re-renders the block, and we must not snap back to View mid-drawing.
     const modes = (this._sketchMode = this._sketchMode || {});
@@ -2806,15 +2811,14 @@ module.exports = class NexusSuite extends Plugin {
     const enterBtn = pad.createDiv({ cls: 'nx-sketch-enter', attr: { 'aria-label': 'Edit sketch' } });
     setIcon(enterBtn, 'pencil');
     enterBtn.onclick = () => setMode('edit');
-    // Compact code-block toolbar. Rebuildable so the full-size editor can resync
-    // it (pen/colour/etc. may have changed there) on close.
+    // Compact code-block toolbar. Rebuildable, so a change made elsewhere in the
+    // same sketch can be reflected back into it.
     const buildInlineBar = () => {
       bar.empty();
       this._buildSketchBar(bar, surface, s, {
         mode: 'compact',
         // Leaving edit → view crops to content (setMode), then persist that height.
         onDone: () => { setMode('view'); if (surface.strokes.length) surface.persist(); },
-        onFullscreen: () => this._openSketchFullscreen(surface, pad, wrap, s, buildInlineBar),
         onSplit: true, sketchId: () => state.id, notePath: ctx && ctx.sourcePath,
       });
     };
@@ -3081,9 +3085,9 @@ module.exports = class NexusSuite extends Plugin {
 
      Which buttons sit in the bar and which fall into the ⋯ menu comes from
      BAR_ITEMS filtered by the user's list (barConfig) — separately for the code
-     block ('compact') and the full-size editor ('full'). The buttons that leave
-     the sketch (save, full size, split) are not in that list: they are always
-     in the bar, because a user cannot be allowed to hide their way out. */
+     block ('compact') and the Sketch tab ('full'). The buttons that leave the
+     sketch (save & close, open in a Sketch tab) are not in that list: they are
+     always in the bar, because a user cannot be allowed to hide their way out. */
   _buildSketchBar(bar, surface, s, opts) {
     opts = opts || {};
     const full = opts.mode === 'full';
@@ -3399,7 +3403,6 @@ module.exports = class NexusSuite extends Plugin {
         b.toggleClass('is-active', surface.paper === id);
         b.onclick = () => {
           surface.setPaper(id); surface.persist();
-          if (opts.onPaper) opts.onPaper(id);
           prow.querySelectorAll('.nx-sk-bgtype').forEach(x => x.removeClass('is-active')); b.addClass('is-active');
         };
       });
@@ -3542,6 +3545,25 @@ module.exports = class NexusSuite extends Plugin {
       row.createEl('button', { cls: 'mod-warning', text: 'Clear' }).onclick = () => { surface.clear(); close(); };
     };
 
+    /* Zoom, for everyone who is not pinching: a tablet with a pen in hand, a
+       mouse, or anyone who never learnt the gesture. Reads the level back so
+       the popover is also the read-out, and "page width" is always one tap. */
+    const zoomBuild = (pop) => {
+      pop.addClass('nx-sk-zoompop');
+      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Zoom' });
+      const row = pop.createDiv('nx-sk-zoomrow');
+      const val = () => Math.round(surface.getPageZoom() * 100) + '%';
+      const minus = iconBtn(row, 'minus', 'Zoom out', null);
+      const read = row.createDiv({ cls: 'nx-sk-zoomval', text: val() });
+      const plus = iconBtn(row, 'plus', 'Zoom in', null);
+      const step = (f) => { surface.setPageZoom(surface.getPageZoom() * f); read.setText(val()); };
+      minus.onclick = () => step(1 / 1.25);
+      plus.onclick = () => step(1.25);
+      const reset = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol', text: 'Page width (100%)' });
+      reset.onclick = () => { surface.setPageZoom(1); read.setText(val()); };
+      pop.createDiv({ cls: 'nx-sk-subnote', text: 'Also: pinch, ctrl + wheel, or a three-finger tap on the canvas for page width.' });
+    };
+
     /* Every movable action, by id. The bar and the ⋯ menu both read this, so a
        button does the same thing wherever the user put it. */
     const ACTIONS = {
@@ -3552,10 +3574,14 @@ module.exports = class NexusSuite extends Plugin {
         active: () => surface.bgType !== 'none',
         popup: (anchor) => (pop) => bgBuild(pop, anchor),
       },
-      // Slate notes grow endlessly on their own — the toggle would be a lie.
-      grow:  { icon: 'chevrons-down', label: 'Auto-extend downward', skip: () => !!opts.slate,
+      grow:  { icon: 'chevrons-down', label: 'Auto-extend downward',
                active: () => surface.autoGrow, run: () => toggleGrow() },
       clear: { icon: 'trash-2', label: 'Clear', popup: () => clearBuild },
+      /* Pinching is the fast way and ctrl+wheel is the desktop's, but neither is
+         visible — and a surface that cannot page-zoom must not advertise it. */
+      zoom: { icon: 'zoom-in', label: 'Zoom', skip: () => !surface.pageZoom,
+              active: () => Math.abs(surface.getPageZoom() - 1) > 0.01,
+              popup: () => zoomBuild },
       /* A straight edge is a constraint on the pen, not a mode of its own: it
          stays on while you keep drawing with whatever pen you had. */
       outline: { icon: 'list-tree', label: 'Outline', popup: () => outlineBuild },
@@ -3786,18 +3812,14 @@ module.exports = class NexusSuite extends Plugin {
     }
 
     // The ways OUT of the sketch — never movable, never hidden.
-    if (opts.onSplit || opts.onFullscreen || opts.onCollapse || opts.onDone) right.createDiv('nx-sk-sep');
-    if (!full && opts.onFullscreen) {
-      const fsBtn = iconBtn(right, 'maximize-2', 'Full-size editor', () => opts.onFullscreen(), 'nx-sk-fs');
-      /* Press and hold (or right-click) the same button to put the sketch in a
-         split instead. Only offered where there is a sketch to open — a pad
-         that was never drawn on has no sidecar yet. */
-      if (opts.onSplit) plugin._attachSplitMenu(fsBtn, opts);
-    } else if (opts.onSplit) {
-      const splitBtn = iconBtn(right, 'columns-2', 'Open beside the note', null, 'nx-sk-split');
+    if (opts.onSplit || opts.onCollapse || opts.onDone) right.createDiv('nx-sk-sep');
+    /* One big canvas, and it is the Sketch tab. The block's button asks where to
+       put it — switch to it, beside the note, or a new tab. */
+    if (opts.onSplit) {
+      const splitBtn = iconBtn(right, 'maximize-2', 'Open in a Sketch tab', null, 'nx-sk-split');
       plugin._attachSplitMenu(splitBtn, opts, true);
     }
-    if (opts.onCollapse) iconBtn(right, 'minimize-2', 'Close full-size editor', () => opts.onCollapse(), 'nx-sk-done');
+    if (opts.onCollapse) iconBtn(right, 'minimize-2', 'Trim the paper & close', () => opts.onCollapse(), 'nx-sk-done');
     if (opts.onDone) iconBtn(right, 'check', 'Save & close', () => opts.onDone(), 'nx-sk-done');
 
     /* ═══ pen gestures ═══ */
@@ -3858,17 +3880,32 @@ module.exports = class NexusSuite extends Plugin {
     syncAll();
   }
 
-  /* Long-press / right-click on the full-size button → open the sketch beside
-     the note. Long press, because a plain click already means "full size" and
-     the tablet has no second mouse button. */
+  /* The code block's "open elsewhere" button. The sketch has to exist first —
+     a pad that was never drawn on has no sidecar yet. */
   _attachSplitMenu(btn, opts, clickOpens) {
     const open = (side) => {
       const id = opts.sketchId && opts.sketchId();
       if (!id) { new Notice('Draw something first — the sketch is saved on the first stroke.'); return; }
       this.openSketchInSplit(id, side, opts.notePath || '');
     };
+    this._attachHoldMenu(btn, open, clickOpens);
+  }
+
+  /* The note's corner button: tap switches to the drawing, hold picks where it
+     goes. Same menu as the code block's, but the id may not exist yet — a note
+     that has never been drawn on gets one (and an empty sidecar) on the way. */
+  _attachSketchOpenMenu(btn, getFile) {
+    this._attachHoldMenu(btn, (side) => { const f = getFile(); if (f) this.openNoteSketch(f, side); }, false);
+    btn.onclick = (e) => { e.stopPropagation(); const f = getFile(); if (f) this.openNoteSketch(f, 'same'); };
+  }
+
+  /* Press-and-hold / right-click → the four ways to open a sketch. Long press,
+     because on a tablet there is no second mouse button, and a plain tap already
+     means the obvious thing. `open(side)` does the work. */
+  _attachHoldMenu(btn, open, clickOpens) {
     const menu = (evt) => {
       const m = new Menu();
+      m.addItem(i => i.setTitle('Switch to sketch').setIcon('pencil-line').onClick(() => open('same')));
       m.addItem(i => i.setTitle('Open to the left').setIcon('panel-left').onClick(() => open('left')));
       m.addItem(i => i.setTitle('Open to the right').setIcon('panel-right').onClick(() => open('right')));
       m.addItem(i => i.setTitle('Open in a new tab').setIcon('file-plus').onClick(() => open('tab')));
@@ -3888,90 +3925,29 @@ module.exports = class NexusSuite extends Plugin {
     btn.addEventListener('pointerup', cancel);
     btn.addEventListener('pointerleave', cancel);
     btn.addEventListener('pointercancel', cancel);
-    // Swallow the click that follows a completed hold, so it doesn't ALSO open
-    // the full-size editor behind the menu.
-    btn.addEventListener('click', (e) => { if (held) { e.preventDefault(); e.stopPropagation(); held = false; } }, true);
+    // Swallow the click that follows a completed hold, so it doesn't ALSO run
+    // the button's plain click behind the menu.
+    // stopPropagation would not do it: the button's own onclick sits on the very
+    // same element, and only stopImmediatePropagation reaches a sibling listener.
+    btn.addEventListener('click', (e) => { if (held) { e.preventDefault(); e.stopImmediatePropagation(); held = false; } }, true);
   }
 
-  /* side: 'left' | 'right' | 'tab' */
+  /* side: 'same' | 'left' | 'right' | 'tab'. 'same' replaces whatever is in the
+     current leaf — that is "switch to the sketch", the note is one tap back via
+     the pane's own file-text button. */
   async openSketchInSplit(id, side, notePath) {
     const ws = this.app.workspace;
     const existing = ws.getLeavesOfType(SKETCH_VIEW).find(l => l.view && l.view.id === id);
     if (existing) { ws.revealLeaf(existing); return; }
     let leaf;
-    if (side === 'tab') leaf = ws.getLeaf('tab');
+    if (side === 'same') leaf = ws.getLeaf(false);
+    else if (side === 'tab') leaf = ws.getLeaf('tab');
     else {
       const anchor = ws.getMostRecentLeaf() || ws.getLeaf(false);
       leaf = ws.createLeafBySplit(anchor, 'vertical', side === 'left');
     }
     await leaf.setViewState({ type: SKETCH_VIEW, active: true, state: { id, notePath: notePath || '' } });
     ws.revealLeaf(leaf);
-  }
-
-  /* Full-size editor: re-parent the SAME surface into a full-window overlay
-     with its own roomy toolbar. The engine only knows its host element, so
-     moving the pad carries every stroke, undo step and the low-latency live
-     canvas across intact — no second canvas, no state to sync. Closing moves
-     the pad back inline and rebuilds the compact bar to reflect any changes. */
-  _openSketchFullscreen(surface, pad, wrap, s, rebuildInlineBar) {
-    if (document.body.querySelector('.nx-sketch-fs')) return;   // one editor at a time
-    const wasLocked = surface.locked, wasGrow = surface.autoGrow, wasZoom = surface.pageZoom;
-    surface.setLocked(false);                                   // full-size editor always draws
-    surface.autoGrow = true;                                    // endless downward while writing
-    surface.pageZoom = true;                                    // pinch magnifies the sheet (out stops at 1× = normal)
-    const overlay = document.body.createDiv('nx-sketch-fs');
-    overlay.dataset.ignoreSwipe = 'true';   // full-size pad: same reason as the inline one
-    const barEl = overlay.createDiv('nx-sketch-bar nx-sketch-fs-bar');
-    const stage = overlay.createDiv('nx-sketch-fs-stage');
-    stage.appendChild(pad);                                     // move the live surface in
-
-    // Endless paper: keep blank canvas below, and extend as the user scrolls
-    // toward the bottom (units ↔ px via the pad's on-screen width).
-    const unitsPerPx = () => surface.W / (pad.clientWidth || surface.W);
-    const onScroll = () => {
-      if (surface._resizing) return;
-      if (stage.scrollTop + stage.clientHeight > stage.scrollHeight - 260)
-        surface.setHeight(surface.H + Math.round(stage.clientHeight * 0.9 * unitsPerPx()));
-    };
-    stage.addEventListener('scroll', onScroll, { passive: true });
-    // Start with ~1.6 screens of paper so the stage is scrollable immediately.
-    // Retry until the pad has a real measured width (a 0-width first frame would
-    // under-grow and leave nothing to scroll — the "can't scroll" bug).
-    const ensurePaper = () => {
-      const padW = pad.clientWidth;
-      if (!padW) { requestAnimationFrame(ensurePaper); return; }
-      const want = Math.round(stage.clientHeight * 1.6 * (surface.W / padW));
-      if (surface.H < want) surface.setHeight(want);
-    };
-    requestAnimationFrame(ensurePaper);
-
-    // Zoom read-out: only visible above 1×, and tapping it goes straight back to
-    // the normal state — the gesture is discoverable, the way out is obvious.
-    const zoomPill = overlay.createDiv({ cls: 'nx-sk-zoompill', text: '100%' });
-    zoomPill.onclick = () => surface.setPageZoom(1);
-    surface.onZoom = (z) => {
-      overlay.toggleClass('is-zoomed', z > 1.01);
-      zoomPill.setText(Math.round(z * 100) + '%');
-    };
-
-    const close = () => {
-      document.removeEventListener('keydown', onKey, true);
-      stage.removeEventListener('scroll', onScroll);
-      surface.setPageZoom(1);                                   // back to normal before the pad returns inline
-      surface.onZoom = null;
-      surface.pageZoom = wasZoom;
-      surface.autoGrow = wasGrow;
-      surface.setHeight(0);                                     // trim empty bottom back to content (clamps up to content min)
-      wrap.appendChild(pad);                                    // …and back inline
-      overlay.remove();
-      surface.setLocked(wasLocked);
-      if (surface.strokes.length) surface.persist();            // save trimmed height (+strokes already auto-saved); skip empty→no premature id
-      else surface.flush();                                     // …but never drop a pending write on the way out
-      if (rebuildInlineBar) rebuildInlineBar();
-    };
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
-    document.addEventListener('keydown', onKey, true);
-    this._buildSketchBar(barEl, surface, s, { mode: 'full', onCollapse: close });
   }
 
   async _persistSketch(state, surface, ctx, el) {
@@ -4055,225 +4031,72 @@ module.exports = class NexusSuite extends Plugin {
     return done;
   }
 
-  /* ---- Slate (drawing note) ----
-     A `nexus: slate` note renders 100% natively (title / properties / banner).
-     We only INJECT an endless sketch surface below its content (into the
-     reading-view / live-preview sizer). Driven by refreshBanner()'s per-view
-     loop; re-injects after Obsidian re-renders. Drawing saves to the SAME .svg
-     sidecar store as the quicksketch block (id in frontmatter `sketch`). */
-  updateProtokoll(view) {
-    if (!view || !view.file || view.file.extension !== 'md') return;
-    if (!this.settings.quicksketch || this.settings.quicksketch.enabled === false) return;
-    const fm = (this.app.metadataCache.getFileCache(view.file) || {}).frontmatter;
-    const nx = fm ? String(fm.nexus).toLowerCase() : '';
-    const isPk = nx === 'slate' || nx === 'protokoll';   // 'protokoll' = legacy
-    view.contentEl.toggleClass('nx-pk-note', isPk);
-    const sk = this.settings.quicksketch;
-    view.contentEl.toggleClass('nx-pk-hide-fm', isPk && !!sk.hideFrontmatter);
-    /* Immersive is a body class because the chrome it hides lives outside this
-       view. It is cleared whenever a slate note is not the one on screen. */
-    document.body.toggleClass('nx-sk-immersive', isPk && !!sk.immersive);
-    if (!isPk) {
-      const h = view.contentEl.querySelector('.nx-pk-inline'); if (h) h.remove();
-      if (view._nxPkObs) { view._nxPkObs.disconnect(); view._nxPkObs = null; }
-      return;
-    }
+  /* ---- A note's own sketch ----
+     Every markdown note can own ONE drawing, kept in the same .svg sidecar
+     store as the code block (id in frontmatter `sketch`). The note never draws
+     it — that is the Sketch tab's job (views/sketchpane.js), which has the room,
+     the full toolbar and the zoom. What lives in the note is the way in:
+     mountSketchControl's corner button. See docs/removed-features.md for the
+     Slate mode this replaced. */
 
-    // Inject into the CURRENTLY VISIBLE mode's container. Obsidian keeps the
-    // inactive view in the DOM as display:none — blindly preferring reading
-    // dropped the surface into a hidden 0×0 tree. Reading → the sizer (before
-    // the pusher); live preview/source → the CM scroller (CM wipes sizer kids).
-    const mode = view.getMode ? view.getMode() : 'source';
-    let container, scroller, before = null;
-    if (mode === 'preview') {
-      const sizer = view.contentEl.querySelector('.markdown-reading-view .markdown-preview-sizer');
-      if (sizer) { container = sizer; scroller = view.contentEl.querySelector('.markdown-reading-view .markdown-preview-view'); before = sizer.querySelector(':scope > .markdown-preview-pusher'); }
-    } else {
-      // Into the .cm-sizer (block flow → below the content), NOT the .cm-scroller
-      // (a flex row → the surface would sit BESIDE the content).
-      const cmSizer = view.contentEl.querySelector('.markdown-source-view .cm-sizer');
-      if (cmSizer) { container = cmSizer; scroller = view.contentEl.querySelector('.markdown-source-view .cm-scroller'); }
-    }
-    if (!container) return;
-    // Remove any host stranded in the other (now-hidden) mode container.
-    view.contentEl.querySelectorAll('.nx-pk-inline').forEach(h => { if (h.parentElement !== container) h.remove(); });
-
-    let host = container.querySelector(':scope > .nx-pk-inline');
-    if (host) {
-      if (host.dataset.file === view.file.path && (host._surface || host.dataset.mounting)) { this._pkObserve(view); return; }
-      host.remove();
-    }
-    host = container.createDiv('nx-pk-inline');
-    if (before && before.parentElement === container) container.insertBefore(host, before);
-    host.dataset.file = view.file.path;
-    host.dataset.mounting = '1';
-    this.mountProtokollSurface(host, view.file, scroller);
-    this._pkObserve(view);
-  }
-
-  _pkObserve(view) {
-    if (view._nxPkObs) return;
-    const obs = new MutationObserver(() => {
-      if (view._nxPkT) return;
-      view._nxPkT = window.setTimeout(() => { view._nxPkT = null; try { this.updateProtokoll(view); } catch (e) {} }, 300);
-    });
-    obs.observe(view.contentEl, { childList: true, subtree: true });
-    view._nxPkObs = obs;
-    this.register(() => obs.disconnect());
-  }
-
-  async mountProtokollSurface(host, file, scroller) {
-    const s = this.settings.quicksketch;
+  /* The note's sketch id, created on demand together with an empty sidecar so
+     the tab always opens on something rather than on "not found". */
+  async ensureNoteSketch(file) {
+    if (!file || file.extension !== 'md') return '';
     const fm = (this.app.metadataCache.getFileCache(file) || {}).frontmatter || {};
-    let id = fm.sketch || null;
+    let id = fm.sketch ? String(fm.sketch) : '';
     if (!id) {
-      // Assign the sidecar id ONCE, up front (not on first stroke) — a mid-draw
-      // frontmatter write would re-render and interrupt the stroke.
       id = 'sk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      try { await this.app.fileManager.processFrontMatter(file, f => { if (f.sketch) id = f.sketch; else f.sketch = id; }); } catch (e) {}
+      try { await this.app.fileManager.processFrontMatter(file, f => { if (f.sketch) id = f.sketch; else f.sketch = id; }); }
+      catch (e) { return ''; }
     }
-    if (!host.isConnected) return;
-    const data = await this.loadSketch(id);
-    if (!host.isConnected) return;
-
-    // Paper for a slate note: the note's own `sketch-bg` frontmatter is the
-    // per-note override, else the sketch's stored preset, else the global default.
-    let paper = (fm['sketch-bg'] || (data && data.paper) || s.paper || 'paper').toLowerCase();
-    if (paper === 'paperlike') paper = 'paper';   // legacy preset → the off-white "paper" colour
-    const paperStyle = this._resolvePaperStyle(data, s);
-
-    const bar = host.createDiv('nx-sketch-bar nx-pk-bar');
-    const pad = host.createDiv('nx-sketch-pad nx-pk-pad');
-    const surface = new NexusSketchSurface(pad, {
-      W: 1600, H: data ? data.h : 1200,
-      bg: (data && data.bg) || '', paper, paperStyle, invertOnDark: s.invertOnDark !== false,
-      ink: s.ink, penSizes: s.penSizes, pen: 'fountain', paperWidth: s.paperWidth,
-      penConfig: (s.penConfig = s.penConfig || {}),
-      shapeSnap: s.shapeSnap !== false,
-      bgType: (data && data.bgType) || 'grid',
-      bgSize: (data && data.bgSize) || s.bgSize,
-      bgOpacity: (data && data.bgOpacity != null) ? data.bgOpacity : s.bgOpacity,
-      bgColor: s.bgColor,
-      autoGrow: true, fixedViewport: true,   // no viewBox PAN — the note scroller scrolls
-      // …but pinch still zooms the sheet. fixedViewport only rules out panning
-      // the viewBox; without this the zoom gesture was never entered at all and
-      // a slate note could not be zoomed by any means.
-      pageZoom: true,
-      strokes: data ? data.strokes : [],
-      objects: data ? data.objects : [],
-      sections: data ? data.sections : [],
-      ocr: data ? data.ocr : [],
-      onCommit: () => { this.saveSketch(id, surface.toSVGString()); },
-    });
-    host._surface = surface;
-    delete host.dataset.mounting;
-    surface.setLocked(false);
-    // In a slate note the paper picker writes the choice back to `sketch-bg` so
-    // it stays the note's canonical override across reloads.
-    this._buildSketchBar(bar, surface, s, { mode: 'full', slate: true,
-      // A slate note's drawing can go into a split too — the note's text and
-      // its paper side by side.
-      onSplit: true, sketchId: () => id, notePath: file.path,
-      onPaper: (mode) => { this.app.fileManager.processFrontMatter(file, f => { f['sketch-bg'] = mode; }).catch(() => {}); } });
-
-    // Endless downward using the note's OWN scroll container (passed in).
-    if (!scroller) scroller = pad.closest('.markdown-preview-view, .cm-scroller') || pad.parentElement;
-    const unitsPerPx = () => surface.W / (pad.clientWidth || surface.W);
-
-    /* Geometry CSS cannot know, published as custom properties on .view-content
-       (so both the full-bleed strip and the note's corner buttons inherit it):
-         --nx-pk-w    the scroll container's inner width — the strip spans the
-                      EDITOR PANE, not the window (100vw broke as soon as a
-                      sidebar took width away and clipped the bar's right end)
-         --nx-pk-off  how far left the strip must shift to reach that edge
-         --nx-pk-top  the scroller's own padding-top (Obsidian's --file-margins);
-                      the sticky bar docks above it, otherwise the paper scrolls
-                      through the strip between pane top and bar
-         --nx-pk-barh the bar's real height — the corner buttons sit below it */
-    const root = host.closest('.view-content') || host.parentElement;
-    const setVar = (k, v) => { if (root.style.getPropertyValue(k) !== v) root.style.setProperty(k, v); };
-    const syncGeom = () => {
-      if (!host.isConnected || !scroller || !root) { if (host._nxGeomObs) { host._nxGeomObs.disconnect(); host._nxGeomObs = null; } return; }
-      const cs = window.getComputedStyle(scroller);
-      const sr = scroller.getBoundingClientRect();
-      setVar('--nx-pk-top', (parseFloat(cs.paddingTop) || 0) + 'px');
-      setVar('--nx-pk-w', scroller.clientWidth + 'px');
-      setVar('--nx-pk-barh', (bar.offsetHeight || 42) + 'px');
-      // Static left edge of the strip = parent's content-box left. Read it
-      // instead of zeroing the offset first, so this stays a single measure
-      // pass (no write-read-write reflow inside the ResizeObserver).
-      const parent = host.parentElement;
-      if (parent) {
-        const pcs = window.getComputedStyle(parent), pr = parent.getBoundingClientRect();
-        const contentLeft = pr.left + (parseFloat(pcs.borderLeftWidth) || 0) + (parseFloat(pcs.paddingLeft) || 0);
-        const innerLeft = sr.left + (parseFloat(cs.borderLeftWidth) || 0);
-        setVar('--nx-pk-off', Math.round(innerLeft - contentLeft) + 'px');
-      }
-    };
-    if (window.ResizeObserver) {
-      const ro = new ResizeObserver(() => syncGeom());
-      ro.observe(scroller); ro.observe(bar);
-      host._nxGeomObs = ro;
-      this.register(() => ro.disconnect());
-    }
-    const onScroll = () => {
-      if (!host.isConnected || !scroller) return;
-      if (surface._resizing) return;
-      if (scroller.scrollTop + scroller.clientHeight > scroller.scrollHeight - 320)
-        surface.setHeight(surface.H + Math.round(scroller.clientHeight * 0.9 * unitsPerPx()));
-    };
-    if (scroller) { this.registerDomEvent(scroller, 'scroll', onScroll, { passive: true }); requestAnimationFrame(syncGeom); }
-    const ensure = () => {
-      if (!host.isConnected) return;
-      const w = pad.clientWidth;
-      if (!w) { requestAnimationFrame(ensure); return; }
-      const vh = scroller ? scroller.clientHeight : 700;
-      const want = Math.round(vh * 1.4 * (surface.W / w));
-      if (surface.H < want) surface.setHeight(want);
-    };
-    requestAnimationFrame(ensure);
+    // The sidecar can be missing even when the note names one — deleted by hand,
+    // or a sync that has not caught up. Writing an empty one is the only
+    // non-destructive answer; opening the tab on "not found" is not an answer.
+    if (!this.app.vault.getAbstractFileByPath(this._sketchPath(id))) await this.saveSketch(id, emptySketchSVG());
+    return id;
   }
 
-  async createProtokollNote() {
+  /* Open a note's sketch. `side`: 'same' replaces the note in its own leaf,
+     'left' / 'right' put it beside it, 'tab' opens a new tab. */
+  async openNoteSketch(file, side) {
+    if (!this.settings.quicksketch || this.settings.quicksketch.enabled === false) { new Notice(NX_MODULES.quicksketch.name + ' is switched off.'); return; }
+    const id = await this.ensureNoteSketch(file);
+    if (!id) { new Notice('Nexus: could not write the sketch id into that note.'); return; }
+    await this.openSketchInSplit(id, side || 'same', file.path);
+  }
+
+  async createSketchNote() {
     if (!this.settings.quicksketch || this.settings.quicksketch.enabled === false) { new Notice(NX_MODULES.quicksketch.name + ' is switched off.'); return; }
     const stamp = moment().format('YYYY-MM-DD HH.mm');
-    let base = 'Slate ' + stamp, path = base + '.md', i = 2;
+    let base = 'Sketch ' + stamp, path = base + '.md', i = 2;
     while (this.app.vault.getAbstractFileByPath(path)) path = base + ' ' + (i++) + '.md';
     const id = 'sk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const file = await this.app.vault.create(path, `---\nnexus: slate\nsketch: ${id}\n---\n`);
-    await this.app.workspace.getLeaf(true).openFile(file);
+    const file = await this.app.vault.create(path, '---\nsketch: ' + id + '\n---\n');
+    await this.saveSketch(id, emptySketchSVG());
+    // Straight into the drawing — a new sketch note exists to be drawn on. The
+    // tab's file-text button is the way back to its text.
+    await this.openSketchInSplit(id, 'tab', file.path);
   }
 
-  /* Toggle a note between Slate (drawing) mode and plain markdown, in place —
-     just flips the `nexus: slate` frontmatter; updateProtokoll (via the refresh
-     wiring) shows/hides the sketch surface accordingly. */
-  async toggleSlate(file) {
-    if (!file) return;
-    await this.app.fileManager.processFrontMatter(file, f => {
-      const on = ['slate', 'protokoll'].includes(String(f.nexus).toLowerCase());
-      if (on) delete f.nexus; else f.nexus = 'slate';
-    });
-  }
-
-  /* A VISIBLE corner button injected into the note (like the banner/bg buttons),
-     shown on EVERY markdown note so you can flip Slate mode either way — incl.
-     from a plain .md back into a Slate. On view.contentEl (stable, survives CM
-     re-renders); icon reflects the current state. addAction() proved invisible
+  /* A VISIBLE corner button injected into every markdown note (like the banner
+     and background buttons): tap opens the note's drawing in a Sketch tab,
+     press and hold (or right-click) chooses where. addAction() proved invisible
      on mobile, so this is a plain injected button instead. */
-  mountSlateControl(view) {
+  mountSketchControl(view) {
     if (!view || !view.file || view.file.extension !== 'md') return;
     const el = view.contentEl;
-    let btn = el.querySelector(':scope > .nx-slate-btn');
+    let btn = el.querySelector(':scope > .nx-sketch-open');
     if (!this.settings.quicksketch || this.settings.quicksketch.enabled === false) { if (btn) btn.remove(); return; }
     if (!btn) {
-      btn = el.createDiv('nx-slate-btn');
-      btn.onclick = () => { if (view.file) this.toggleSlate(view.file); };
+      btn = el.createDiv('nx-sketch-open');
+      this._attachSketchOpenMenu(btn, () => view.file);
     }
     const fm = (this.app.metadataCache.getFileCache(view.file) || {}).frontmatter;
-    const on = !!(fm && ['slate', 'protokoll'].includes(String(fm.nexus).toLowerCase()));
-    setIcon(btn, on ? 'file-text' : 'pen-line');
-    btn.setAttribute('aria-label', on ? 'Switch to Markdown' : 'Switch to Slate (drawing)');
-    btn.toggleClass('is-active', on);
+    const has = !!(fm && fm.sketch);
+    setIcon(btn, has ? 'pencil-line' : 'pen-line');
+    btn.setAttribute('aria-label', has ? 'Open the sketch' : 'Start a sketch for this note');
+    btn.toggleClass('is-active', has);
   }
 
   /* ---- Ink Capture ----

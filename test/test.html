@@ -25,6 +25,9 @@ function makeSurface(host) {
     host, mode: 'draw', pen: 'fountain', color: '#2f2f2f', size: 3,
     autoGrow: false, bgType: 'none', bgSize: 27, bgOpacity: 0.12,
     paper: 'paper', paperStyle: true, strokes: [], objects: [],
+    pageZoom: true, pageScale: 1,
+    getPageZoom() { return this.pageScale; },
+    setPageZoom(z) { this.pageScale = Math.max(0.3, Math.min(5, z)); },
     W: 1600, H: 900, viewX: 0, viewY: 0, viewW: 1600,
     selection: [], selObjects: [], selectShape: 'lasso', ruler: { on: false, angle: null },
     setPen(p) { this.pen = p; }, setMode(m) { this.mode = m; },
@@ -76,7 +79,7 @@ localStorage.removeItem('nexus-suite-sketchbar');
 // ── 1 · default compact bar ────────────────────────────────────────────────
 {
   const plugin = makePlugin(), s = freshSettings();
-  const t = build(plugin, s, { mode: 'compact', onDone: () => {}, onFullscreen: () => {} });
+  const t = build(plugin, s, { mode: 'compact', onDone: () => {}, onSplit: true, sketchId: () => 'sk-1' });
   eq('compact · tools', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn'), expectTools(DEFAULTS.compact));
   eq('compact · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
      expectActions(DEFAULTS.compact).concat(['more-horizontal', 'maximize-2', 'check']));
@@ -265,12 +268,37 @@ localStorage.removeItem('nexus-suite-sketchbar');
   const left = document.querySelector('.nx-sk-pop'); if (left) left.remove();
 }
 
-// ── 13 · a slate note has no auto-extend toggle to offer ───────────────────
+// ── 13 · the zoom button is the only zoom control that is not a gesture ────
 {
   const plugin = makePlugin(), s = freshSettings();
-  const t = build(plugin, s, { mode: 'full', slate: true });
-  ok('slate · no auto-extend button', icons(t.bar, '.nx-sk-btn').indexOf('chevrons-down') === -1);
-  ok('slate · and none in a menu either', icons(t.bar, '.nx-sk-btn').indexOf('more-horizontal') === -1);
+  const t = build(plugin, s, { mode: 'full' });
+  const zoomBtn = Array.from(t.bar.querySelectorAll('.nx-sk-btn')).find(b => b.dataset.icon === 'zoom-in');
+  ok('zoom · the full bar carries it', !!zoomBtn);
+  zoomBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const pop = document.querySelector('.nx-sk-pop');
+  const readout = () => pop.querySelector('.nx-sk-zoomval').textContent;
+  eq('zoom · the popover reads the level back', readout(), '100%');
+  const [minus, plus] = Array.from(pop.querySelectorAll('.nx-sk-btn'));
+  plus.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('zoom · in magnifies the sheet', readout(), '125%');
+  minus.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('zoom · and out takes it back', readout(), '100%');
+  minus.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('zoom · out below page width is allowed', t.surface.getPageZoom() < 1);
+  pop.querySelector('button').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('zoom · "page width" is always one tap away', readout(), '100%');
+  pop.remove();
+}
+
+// ── 13b · a surface that cannot page-zoom must not offer the button ────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full' });
+  t.surface.pageZoom = false;
+  const bar2 = t.bar.parentElement.createDiv('nx-sketch-bar');
+  plugin._buildSketchBar(bar2, t.surface, s, { mode: 'full' });
+  ok('zoom · hidden where the surface has no page zoom',
+     icons(bar2, '.nx-sk-btn').indexOf('zoom-in') === -1, icons(bar2, '.nx-sk-btn').join(','));
 }
 
 // ── 14 · picking a pen type from the options row ───────────────────────────

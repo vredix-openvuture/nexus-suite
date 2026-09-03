@@ -58,7 +58,7 @@
 }
 
 /* ── THE THREE NOTE-CORNER BUTTONS ────────────────────────────────────────────
-   Set the banner · set the note background · flip the note to slate. Three
+   Set the banner · set the note background · open the note's sketch. Three
    classes because the JS names them separately; ONE look, because they sit in
    one row in the same corner. Their rule lives here — 06-note-decor.css and
    12-sketch.css only add the offset that puts each one in its own slot.
@@ -71,7 +71,7 @@
 .view-content:has(> .nx-bg-btn) { position: relative; }
 .nx-banner-btn,
 .nx-bg-btn,
-.nx-slate-btn {
+.nx-sketch-open {
   position: absolute; top: 10px; z-index: 20;
   display: inline-flex; align-items: center; justify-content: center;
   width: var(--nx-ctl-h); height: var(--nx-ctl-h); padding: 0;
@@ -87,10 +87,10 @@
 .nx-banner-btn { right: 16px; }
 .nx-banner-btn:hover,
 .nx-bg-btn:hover,
-.nx-slate-btn:hover { opacity: 1; color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-3); }
+.nx-sketch-open:hover { opacity: 1; color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-3); }
 .nx-banner-btn .svg-icon,
 .nx-bg-btn .svg-icon,
-.nx-slate-btn .svg-icon { width: 16px; height: 16px; }
+.nx-sketch-open .svg-icon { width: 16px; height: 16px; }
 
 /* ── The three corner buttons ON TOP OF an image ──────────────────────────────
    Over the note's own background a muted, half-transparent pill reads fine. Over
@@ -100,14 +100,10 @@
    the buttons stop deriving theirs from the theme and bring their own contrast:
    a dark scrim, a white icon, and a drop-shadow that keeps the strokes readable
    even where the scrim sits on a light area. Only while a banner is present —
-   plain notes keep the discreet look. Same treatment on the slate canvas, where
-   the buttons likewise float over paper instead of over chrome. */
+   plain notes keep the discreet look. */
 .nx-has-banner > .nx-banner-btn,
 .nx-has-banner > .nx-bg-btn,
-.nx-has-banner > .nx-slate-btn,
-.nx-pk-note > .nx-banner-btn,
-.nx-pk-note > .nx-bg-btn,
-.nx-pk-note > .nx-slate-btn {
+.nx-has-banner > .nx-sketch-open {
   opacity: .9;
   color: #fff;
   background: rgba(18, 16, 22, .5);
@@ -116,25 +112,18 @@
 }
 .nx-has-banner > .nx-banner-btn:hover,
 .nx-has-banner > .nx-bg-btn:hover,
-.nx-has-banner > .nx-slate-btn:hover,
-.nx-pk-note > .nx-banner-btn:hover,
-.nx-pk-note > .nx-bg-btn:hover,
-.nx-pk-note > .nx-slate-btn:hover {
+.nx-has-banner > .nx-sketch-open:hover {
   opacity: 1; color: #fff;
   background: rgba(18, 16, 22, .74);
 }
 .nx-has-banner > .nx-banner-btn .svg-icon,
 .nx-has-banner > .nx-bg-btn .svg-icon,
-.nx-has-banner > .nx-slate-btn .svg-icon,
-.nx-pk-note > .nx-banner-btn .svg-icon,
-.nx-pk-note > .nx-bg-btn .svg-icon,
-.nx-pk-note > .nx-slate-btn .svg-icon {
+.nx-has-banner > .nx-sketch-open .svg-icon {
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .55));
 }
-/* Active slate toggle stays accent-coloured, but on the accent's bright variant
-   so it survives the dark scrim. */
-.nx-has-banner > .nx-slate-btn.is-active,
-.nx-pk-note > .nx-slate-btn.is-active { color: var(--text-accent); }
+/* A note that HAS a drawing stays accent-coloured, but on the accent's bright
+   variant so it survives the dark scrim. */
+.nx-has-banner > .nx-sketch-open.is-active { color: var(--text-accent); }
 
 
 /* ── IMAGE SEPARATOR ──

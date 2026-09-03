@@ -903,7 +903,7 @@ class NexusHomepageView extends ItemView {
     else files.sort((a, b) => b.stat.mtime - a.stat.mtime);
     return files;
   }
-  /* Which note carries this sketch? Frontmatter `sketch:` (slate / note sketch)
+  /* Which note carries this sketch? Frontmatter `sketch:` (a note's own sketch)
      is free; a `quicksketch` block hides its id in the body, so that lookup only
      runs on demand and is remembered. */
   _sketchOwnerFast(id) {
@@ -1017,7 +1017,7 @@ class NexusHomepageView extends ItemView {
     const add = head.createSpan('nx-home-card-gear');
     setIcon(add, 'plus');
     add.setAttribute('aria-label', 'New sketch note');
-    add.onclick = (e) => { e.stopPropagation(); this.plugin.createProtokollNote(); };
+    add.onclick = (e) => { e.stopPropagation(); this.plugin.createSketchNote(); };
     if (this._editing) {
       const gear = head.createSpan('nx-home-card-gear');
       setIcon(gear, 'settings-2');
