@@ -431,13 +431,49 @@ function parseSketchSVG(text) {
 
 /* A brand-new, empty sidecar. Written the moment a note is given a sketch id so
    the Sketch tab always opens on a real file instead of on "not found" — the
-   same envelope toSVGString emits, with nothing in it. */
-function emptySketchSVG(w, h) {
-  const W = w || LOGICAL_W;
-  const H = h || Math.round(W * 3 / 4);
-  const meta = JSON.stringify({ v: 1, w: W, h: H, bg: '', paper: 'paper', strokes: [] });
+   same envelope toSVGString emits, with nothing in it.
+
+   `presets` carries the look of the page it is being added after: paper colour,
+   texture, grid. A second page of the same drawing on different paper is not a
+   second page, it is a different pad. */
+function emptySketchSVG(presets) {
+  const p = presets || {};
+  const W = p.w || LOGICAL_W;
+  const H = p.h || Math.round(W * 3 / 4);
+  const meta = { v: 1, w: W, h: H, bg: p.bg || '', paper: p.paper || 'paper', strokes: [] };
+  if (p.paperStyle != null) meta.paperStyle = !!p.paperStyle;
+  if (p.bgType) meta.bgType = p.bgType;
+  if (p.bgSize != null) meta.bgSize = p.bgSize;
+  if (p.bgOpacity != null) meta.bgOpacity = p.bgOpacity;
+  if (p.bgColor) meta.bgColor = p.bgColor;
+  const json = JSON.stringify(meta);
   return `<svg xmlns="${SVGNS}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`
-    + `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${meta}]]></nx-sketch></metadata></svg>`;
+    + `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${json}]]></nx-sketch></metadata></svg>`;
+}
+
+/* The look of a sketch, without its ink — what a new page beside it inherits. */
+function sketchPresets(data) {
+  if (!data) return {};
+  return {
+    bg: data.bg, paper: data.paper, paperStyle: data.paperStyle,
+    bgType: data.bgType, bgSize: data.bgSize, bgOpacity: data.bgOpacity, bgColor: data.bgColor,
+  };
+}
+
+/* Rename a page without opening it: rewrite the metadata block in the file's own
+   text. The block is exactly what toSVGString emits, so replacing it whole is
+   safe — and far safer than reaching into the CDATA, whose `]]>` escaping would
+   have to be undone and redone by hand. */
+function withSketchTitle(svgText, title, parsed) {
+  const data = parsed || parseSketchSVG(svgText);
+  if (!data) return null;
+  const next = Object.assign({}, data);
+  const clean = String(title == null ? '' : title).trim();
+  if (clean) next.title = clean; else delete next.title;
+  const cdata = JSON.stringify(next).split(']]>').join(']]]]><![CDATA[>');
+  const block = `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${cdata}]]></nx-sketch></metadata>`;
+  if (!/<metadata>[\s\S]*?<\/metadata>/.test(svgText)) return null;
+  return svgText.replace(/<metadata>[\s\S]*?<\/metadata>/, () => block);
 }
 
 /* Named paper backgrounds. `bg` = solid fill colour ('' = transparent, so the
@@ -2309,4 +2345,4 @@ class NexusSketchSurface {
   }
 }
 
-module.exports = { NexusSketchSurface, parseSketchSVG, emptySketchSVG, sketchStrokePath, recognizeShape, shapeToPoints, ratioWH, LOGICAL_W, PEN_TYPES };
+module.exports = { NexusSketchSurface, parseSketchSVG, emptySketchSVG, sketchPresets, withSketchTitle, sketchStrokePath, recognizeShape, shapeToPoints, ratioWH, LOGICAL_W, PEN_TYPES };

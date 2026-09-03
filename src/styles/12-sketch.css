@@ -743,10 +743,36 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
 .nx-skpane-stage { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 .nx-skpane-stage .nx-sketch-pad { width: 100%; }
 .nx-skpane-back { margin-left: var(--nx-sp-1); }
-/* Which page you are on. The count sits IN the button, because a page number
-   you cannot press is a fact with nothing to do. */
-.nx-skpane-pages { gap: var(--nx-sp-1); padding: 0 var(--nx-sp-2); }
-.nx-skpane-pagenum { font-variant-numeric: tabular-nums; font-size: var(--font-ui-smaller); }
+/* Which page you are on. The count sits IN the button, because a page number you
+   cannot press is a fact with nothing to do — and it is drawn as a real control
+   rather than as one more quiet icon, because it is the only way to the rest of
+   the pages. */
+.nx-skpane-pages {
+  gap: var(--nx-sp-1);
+  padding: 0 var(--nx-sp-2);
+  width: auto; min-width: 0;
+  background: var(--nx-sf-1) !important;
+  border-color: var(--nx-border, var(--background-modifier-border)) !important;
+  color: var(--nx-fg, var(--text-normal)) !important;
+}
+.nx-skpane-pages:hover { background: var(--nx-sf-2) !important; }
+.nx-skpane-pagenum { font-variant-numeric: tabular-nums; font-size: var(--font-ui-small); font-weight: 600; }
+.nx-skpane-pagechev { display: inline-flex; opacity: .6; }
+.nx-skpane-pagechev .svg-icon { width: 13px; height: 13px; }
+
+/* The options row of the "this drawing" tool: four things reached once in a
+   while, so each says what it is instead of relying on its icon. */
+.nx-sk-sublabel { font-size: var(--font-ui-smaller); }
+
+/* A page's own name, editable in place in the page list. */
+.nx-skpick-rename {
+  width: 100%; padding: 2px var(--nx-sp-1);
+  border: var(--nx-bw) solid transparent; border-radius: var(--nx-r-tile);
+  background: transparent; color: inherit; font: inherit; text-align: inherit;
+}
+.nx-skpick-rename:hover { border-color: var(--nx-border, var(--background-modifier-border)); }
+.nx-skpick-rename:focus { border-color: var(--nx-accent, var(--interactive-accent)); background: var(--nx-sf-1); }
+.nx-skpick-rename::placeholder { color: var(--nx-fg-muted, var(--text-muted)); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    RECOVERED 2026-08-24. The rules below were written together with

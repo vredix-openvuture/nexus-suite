@@ -433,9 +433,18 @@ one, right for the one before. Throw it left off the **last** page and a new
 blank page is made: that is the way to add one. Only at 100 %; zoomed in,
 sideways is how you look around the sheet.
 
-The button next to the page count lists every page as a thumbnail. Open one, add
-one, or take one out of the note — taking a page out leaves its `.svg` where it
-is, because a drawing is worth more than the line that pointed at it.
+A new page inherits **page one's paper** — colour, texture and grid. A second
+page on different paper is not a second page, it is a different pad.
+
+The page count is the button to the list: every page as a thumbnail, where you
+open one, add one, name one, or take one out of the note. A name is typed over
+"Page 2" and lives in that page's own sidecar, so it travels with the drawing
+rather than with the note that lists it. Taking a page out leaves its `.svg`
+where it is — a drawing is worth more than the line that pointed at it.
+
+There is no close button: closing the tab closes it, and the blank paper
+auto-grow left below the last stroke is trimmed then. The `file-text` button
+switches **this** tab back to the text.
 
 ### The toolbar
 
@@ -468,6 +477,7 @@ At least one tool has to stay in the bar. Turning the last one off is refused.
 | **Spacing** | Drag a line down to open blank paper, up to close it again. Everything below the line moves with it. |
 | **Insert** | An image (embedded, so the file stays standalone), a sticky note, or one of eight stickers. |
 | **Ruler** | A straight edge the pen slides along, free or locked to 0 / 45 / 90 / 135 degrees. Stays on across strokes. |
+| **This drawing** | Not a pen: its options row holds the outline, export, "open the note beside this" and clear. Four things reached once in a while, behind one button instead of four. |
 | **Outline** | Named marks down the page, and a list to jump between them. What an endless sheet needs instead of headings. |
 | **Export** | SVG, PNG or PDF, written next to the sketch. |
 

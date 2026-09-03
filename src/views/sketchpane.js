@@ -22,7 +22,7 @@
 const { ItemView, Notice, setIcon } = require('obsidian');
 const { SKETCH_VIEW } = require('../constants.js');
 const notesketches = require('../lib/notesketches.js');
-const { NexusSketchSurface } = require('./sketch.js');
+const { NexusSketchSurface, sketchPresets } = require('./sketch.js');
 
 class NexusSketchPaneView extends ItemView {
   constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this.id = ''; this.notePath = ''; }
@@ -66,7 +66,12 @@ class NexusSketchPaneView extends ItemView {
     const file = this.noteFile();
     if (!file) { new Notice('This drawing does not belong to a note, so it has no pages.'); return; }
     try {
-      const fresh = await notesketches.addPage(this.plugin, file, (id, svg) => this.plugin.saveSketch(id, svg));
+      // Page one decides what the paper looks like: a second page on different
+      // paper is not a second page, it is a different pad.
+      const first = this.pageIds()[0];
+      const presets = sketchPresets(first ? await this.plugin.loadSketch(first) : null);
+      const fresh = await notesketches.addPage(this.plugin, file,
+        (id, svg) => this.plugin.saveSketch(id, svg), presets);
       await this.goToPage(fresh);
       new Notice('New page — ' + notesketches.pageOf(this.pageIds(), fresh) + ' of ' + this.pageIds().length);
     } catch (e) {
@@ -84,8 +89,20 @@ class NexusSketchPaneView extends ItemView {
   }
 
   async onOpen() { if (this.id) await this.render(); }
+  /* Closing the tab is the only way out now — there is no button for it, because
+     "close the drawing" and "close the note" are not the same decision and a
+     button that looked like the first did the second. The paper is trimmed here
+     instead: whatever blank space auto-grow added below the last stroke is not
+     worth saving. */
   async onClose() {
-    if (this.surface) this.surface.destroy();   // writes out anything the commit debounce still holds
+    if (this.surface) {
+      try {
+        this.surface.setPageZoom(1);
+        this.surface.setHeight(0);
+        if (this.surface.strokes.length) this.surface.persist();
+      } catch (e) {}
+      this.surface.destroy();   // writes out anything the commit debounce still holds
+    }
     this.surface = null;
   }
 
@@ -154,18 +171,16 @@ class NexusSketchPaneView extends ItemView {
       zoomPill.setText(Math.round(z * 100) + '%');
     };
 
-    this.plugin._buildSketchBar(bar, surface, s, {
-      mode: 'full',
-      // "Collapse" in a pane means: trim the empty paper, save, show the note.
-      onCollapse: () => this.trimAndClose(),
-    });
-    // A way back to the note the sketch belongs to.
+    this.plugin._buildSketchBar(bar, surface, s, { mode: 'full', notePath: this.notePath });
+    /* Back to the text — in THIS tab. `getLeaf(false)` would have opened the
+       note wherever the focus happened to be and left the drawing standing; the
+       button says "switch", so it switches. */
     if (this.notePath) {
-      const back = bar.createDiv({ cls: 'nx-sk-btn nx-skpane-back', attr: { 'aria-label': 'Show the note' } });
+      const back = bar.createDiv({ cls: 'nx-sk-btn nx-skpane-back', attr: { 'aria-label': 'Switch to the note' } });
       setIcon(back, 'file-text');
-      back.onclick = () => {
+      back.onclick = async () => {
         const f = this.noteFile();
-        if (f) this.app.workspace.getLeaf(false).openFile(f);
+        if (f) await this.leaf.openFile(f);
       };
       this._pages(bar);
     }
@@ -176,10 +191,13 @@ class NexusSketchPaneView extends ItemView {
   _pages(bar) {
     const ids = this.pageIds();
     const btn = bar.createDiv({ cls: 'nx-sk-btn nx-skpane-pages',
-      attr: { 'aria-label': 'The pages of this note' } });
+      attr: { 'aria-label': 'The pages of this note', role: 'button', tabindex: '0' } });
     setIcon(btn, 'copy');
     btn.createSpan({ cls: 'nx-skpane-pagenum',
       text: notesketches.pageOf(ids, this.id) + '/' + Math.max(1, ids.length) });
+    // A count with a chevron is a control; a count on its own is a fact.
+    const chev = btn.createSpan({ cls: 'nx-skpane-pagechev' });
+    setIcon(chev, 'chevron-down');
     btn.onclick = () => {
       const { NexusSketchPagesModal } = require('../modals/sketchpages.js');
       new NexusSketchPagesModal(this.plugin, this).open();
@@ -189,15 +207,6 @@ class NexusSketchPaneView extends ItemView {
   async save(surface) {
     try { await this.plugin.saveSketch(this.id, surface.toSVGString()); }
     catch (e) { console.error('Nexus: sketch save failed', e); new Notice('Nexus: could not save sketch.'); }
-  }
-  trimAndClose() {
-    if (this.surface) {
-      this.surface.setPageZoom(1);
-      this.surface.setHeight(0);                                  // back to content height
-      if (this.surface.strokes.length) this.surface.persist();
-      else this.surface.flush();
-    }
-    this.leaf.detach();
   }
 }
 

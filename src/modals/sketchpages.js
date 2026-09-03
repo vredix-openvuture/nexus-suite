@@ -9,8 +9,9 @@
  *  is. A drawing is worth more than the line that pointed at it.
  * ========================================================================== */
 
-const { Modal, setIcon } = require('obsidian');
+const { Modal, Notice, TFile, setIcon } = require('obsidian');
 const notesketches = require('../lib/notesketches.js');
+const { parseSketchSVG, withSketchTitle } = require('../views/sketch.js');
 
 class NexusSketchPagesModal extends Modal {
   constructor(plugin, pane) {
@@ -19,9 +20,41 @@ class NexusSketchPagesModal extends Modal {
     this.pane = pane;
   }
 
-  onOpen() {
+  async onOpen() {
     this.modalEl.addClass('nx-skpick-modal');
     this.render();
+    await this.readNames();
+    if (this.contentEl.isConnected) this.render();
+  }
+
+  /* A page can carry a name of its own, kept in its sidecar's metadata next to
+     the strokes — so it travels with the drawing rather than with the note that
+     happens to list it. Read after the first paint: the grid must not wait on a
+     file read to appear. */
+  async readNames() {
+    this.names = this.names || {};
+    for (const id of this.pane.pageIds()) {
+      const file = this.app.vault.getAbstractFileByPath(this.plugin._sketchPath(id));
+      if (!(file instanceof TFile)) continue;
+      try {
+        const data = parseSketchSVG(await this.app.vault.cachedRead(file));
+        if (data && data.title) this.names[id] = data.title;
+      } catch (e) { /* an unreadable page still gets its number */ }
+    }
+  }
+
+  async rename(id, title) {
+    const file = this.app.vault.getAbstractFileByPath(this.plugin._sketchPath(id));
+    if (!(file instanceof TFile)) { new Notice('Nexus: that page has no file to name.'); return; }
+    try {
+      const next = withSketchTitle(await this.app.vault.read(file), title);
+      if (!next) { new Notice('Nexus: that page could not be read, so it was not renamed.'); return; }
+      await this.app.vault.modify(file, next);
+      const clean = String(title || '').trim();
+      if (clean) this.names[id] = clean; else delete this.names[id];
+    } catch (e) {
+      new Notice('Nexus: could not rename that page — ' + ((e && e.message) || e));
+    }
   }
 
   render() {
@@ -45,8 +78,21 @@ class NexusSketchPagesModal extends Modal {
         // it gets a new one written, or gets taken out of the list.
         card.createDiv({ cls: 'nx-skpick-thumb nx-skpick-thumb-missing' });
       }
-      card.createDiv({ cls: 'nx-skpick-name', text: 'Page ' + (i + 1) });
-      card.createDiv({ cls: 'nx-skpick-meta', text: file ? id : id + ' — file missing' });
+      const named = (this.names || {})[id] || '';
+      const name = card.createEl('input', {
+        cls: 'nx-skpick-name nx-skpick-rename',
+        attr: { type: 'text', placeholder: 'Page ' + (i + 1), 'aria-label': 'Name of page ' + (i + 1) },
+      });
+      name.value = named;
+      name.onclick = (e) => e.stopPropagation();
+      let last = named;
+      name.onblur = () => { if (name.value !== last) { last = name.value; this.rename(id, name.value); } };
+      name.onkeydown = (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
+        if (e.key === 'Escape') { e.preventDefault(); name.value = last; name.blur(); }
+      };
+      card.createDiv({ cls: 'nx-skpick-meta', text: file ? 'Page ' + (i + 1) : 'Page ' + (i + 1) + ' — file missing' });
       const open = () => { this.close(); this.pane.goToPage(id); };
       card.onclick = open;
       card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };

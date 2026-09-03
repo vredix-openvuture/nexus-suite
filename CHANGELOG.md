@@ -2,6 +2,36 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.31.0 — 2026-09-04
+
+### Changed
+
+- **Outline, Export, Clear and "open the note beside" moved behind one button.**
+  *This drawing* sits with the tools and opens the options row, the same way the
+  pen does — four things reached once in a while were four buttons competing
+  with the ones you reach for constantly. Each says what it is rather than
+  relying on its icon.
+- **The button back to the note switches THIS tab** instead of opening the note
+  somewhere else and leaving the drawing standing. It says "switch", so it
+  switches.
+- **A new page inherits page one's paper** — colour, texture and grid. A second
+  page on different paper is not a second page, it is a different pad.
+- **The page count reads as a control**: its own surface, a border and a
+  chevron. A count you cannot press is a fact with nothing to do.
+
+### Added
+
+- **A page can be named.** Type over "Page 2" in the page list. The name lives in
+  that page's own sidecar, next to its strokes, so it travels with the drawing
+  rather than with the note that happens to list it.
+
+### Removed
+
+- **The minimize button in the Sketch tab.** "Close the drawing" and "close the
+  note" are not the same decision, and a button that looked like the first did
+  the second. Closing the tab does it, and the empty paper below the last stroke
+  is trimmed then.
+
 ## 0.30.0 — 2026-09-04
 
 ### Added

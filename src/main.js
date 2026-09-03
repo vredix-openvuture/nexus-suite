@@ -3100,14 +3100,18 @@ module.exports = class NexusSuite extends Plugin {
     /* Which BAR_ITEM the surface is currently in. Everything per-tool (colour,
        palette, the options row) keys off this one function, so there is a
        single answer to "which tool is this" instead of three. */
-    const TOOL_OF = () => (surface.mode === 'erase' ? 'eraser'
+    /* `sheet` is not a mode of the surface — nothing about the pen changes when
+       it is open — so it is remembered here and answered first. */
+    let sheetOpen = false;
+    const TOOL_OF = () => (sheetOpen ? 'sheet'
+      : surface.mode === 'erase' ? 'eraser'
       : surface.mode === 'select' ? 'select'
       : surface.mode === 'space' ? 'space'
       : surface.mode === 'insert' ? 'insert'
       : surface.pen === 'marker' ? 'marker' : 'pen');
-    const TOOL_LABEL = { pen: 'Pen', marker: 'Highlighter', eraser: 'Eraser', select: 'Select', space: 'Spacing', insert: 'Insert' };
+    const TOOL_LABEL = { pen: 'Pen', marker: 'Highlighter', eraser: 'Eraser', select: 'Select', space: 'Spacing', insert: 'Insert', sheet: 'This drawing' };
     // Neither of these puts ink on the page, so neither owns a colour.
-    const DRAWS = (tool) => ['eraser', 'select', 'space', 'insert'].indexOf(tool) < 0;
+    const DRAWS = (tool) => ['eraser', 'select', 'space', 'insert', 'sheet'].indexOf(tool) < 0;
 
     const persistSize = () => { s.penSizes[surface.pen] = surface.getSize(); plugin.saveSettings(); };
     /* Picking a colour or a width does not change the TOOL, so only the tool
@@ -3551,7 +3555,6 @@ module.exports = class NexusSuite extends Plugin {
       },
       grow:  { icon: 'chevrons-down', label: 'Auto-extend downward',
                active: () => surface.autoGrow, run: () => toggleGrow() },
-      clear: { icon: 'trash-2', label: 'Clear', popup: () => clearBuild },
       /* Pinching is the fast way and ctrl+wheel is the desktop's, but neither is
          visible — and a surface that cannot page-zoom must not advertise it. */
       zoom: { icon: 'zoom-in', label: 'Zoom', skip: () => !surface.pageZoom,
@@ -3559,8 +3562,6 @@ module.exports = class NexusSuite extends Plugin {
               popup: () => zoomBuild },
       /* A straight edge is a constraint on the pen, not a mode of its own: it
          stays on while you keep drawing with whatever pen you had. */
-      outline: { icon: 'list-tree', label: 'Outline', popup: () => outlineBuild },
-      export: { icon: 'download', label: 'Export', popup: () => exportBuild },
       ruler: {
         icon: 'ruler', label: 'Ruler',
         active: () => surface.ruler.on,
@@ -3582,6 +3583,7 @@ module.exports = class NexusSuite extends Plugin {
       // stealing canvas. It collapses instead.
       if (tool === 'eraser') { sub.addClass('is-empty'); applyOpen(); return; }
       sub.removeClass('is-empty');
+      if (tool === 'sheet') { buildSheetRow(sub); applyOpen(); return; }
       if (tool === 'select') { buildSelectRow(sub); applyOpen(); return; }
       if (tool === 'space') { buildSpaceRow(sub); applyOpen(); return; }
       if (tool === 'insert') { buildInsertRow(sub); applyOpen(); return; }
@@ -3609,6 +3611,29 @@ module.exports = class NexusSuite extends Plugin {
       sub.createDiv('nx-sk-sep');
       buildColors(sub);
       applyOpen();
+    };
+
+    /* Everything you do TO the drawing rather than on it. Four things that are
+       each reached once in a while: in the bar they were four buttons competing
+       with the pen; here they are one. */
+    const buildSheetRow = (parent) => {
+      const one = (icon, label, build) => {
+        const b = iconBtn(parent, icon, label, null);
+        b.createSpan({ cls: 'nx-sk-sublabel', text: label });
+        plugin._sketchPopover(b, build);
+        return b;
+      };
+      one('list-tree', 'Outline', (pop, close) => outlineBuild(pop, close));
+      one('download', 'Export', (pop, close) => exportBuild(pop, close));
+      if (opts.notePath) {
+        const beside = iconBtn(parent, 'columns-2', 'Open the note beside this', null);
+        beside.createSpan({ cls: 'nx-sk-sublabel', text: 'Note beside' });
+        beside.onclick = () => plugin.openNoteBeside(opts.notePath);
+      }
+      parent.createDiv('nx-sk-sep');
+      const clear = iconBtn(parent, 'trash-2', 'Clear', null, 'is-danger');
+      clear.createSpan({ cls: 'nx-sk-sublabel', text: 'Clear' });
+      plugin._sketchPopover(clear, (pop, close) => clearBuild(pop, close));
     };
 
     /* Select: the marquee shape, what can be done to what is caught in it, and
@@ -3714,6 +3739,8 @@ module.exports = class NexusSuite extends Plugin {
     const setTool = (id) => {
       const from = TOOL_OF();
       if (from !== id) lastTool = from;
+      if (id === 'sheet') { sheetOpen = true; syncAll(); return; }
+      sheetOpen = false;
       if (id === 'eraser') surface.setMode('erase');
       else if (id === 'select') surface.setMode('select');
       else if (id === 'space') surface.setMode('space');
@@ -3787,14 +3814,13 @@ module.exports = class NexusSuite extends Plugin {
     }
 
     // The ways OUT of the sketch — never movable, never hidden.
-    if (opts.onSplit || opts.onCollapse || opts.onDone) right.createDiv('nx-sk-sep');
+    if (opts.onSplit || opts.onDone) right.createDiv('nx-sk-sep');
     /* One big canvas, and it is the Sketch tab. The block's button asks where to
        put it — switch to it, beside the note, or a new tab. */
     if (opts.onSplit) {
       const splitBtn = iconBtn(right, 'maximize-2', 'Open in a Sketch tab', null, 'nx-sk-split');
       plugin._attachSplitMenu(splitBtn, opts, true);
     }
-    if (opts.onCollapse) iconBtn(right, 'minimize-2', 'Trim the paper & close', () => opts.onCollapse(), 'nx-sk-done');
     if (opts.onDone) iconBtn(right, 'check', 'Save & close', () => opts.onDone(), 'nx-sk-done');
 
     /* ═══ pen gestures ═══ */
@@ -3905,6 +3931,20 @@ module.exports = class NexusSuite extends Plugin {
     // stopPropagation would not do it: the button's own onclick sits on the very
     // same element, and only stopImmediatePropagation reaches a sibling listener.
     btn.addEventListener('click', (e) => { if (held) { e.preventDefault(); e.stopImmediatePropagation(); held = false; } }, true);
+  }
+
+  /* The note a drawing belongs to, opened NEXT TO it: text on one side, paper
+     on the other. Reuses a leaf that already holds the note rather than opening
+     a second copy of it. */
+  async openNoteBeside(notePath) {
+    const ws = this.app.workspace;
+    const file = notePath ? this.app.vault.getAbstractFileByPath(notePath) : null;
+    if (!file) { new Notice('Nexus: that note is gone.'); return; }
+    const open = ws.getLeavesOfType('markdown').find(l => l.view && l.view.file && l.view.file.path === notePath);
+    if (open) { ws.revealLeaf(open); return; }
+    const leaf = ws.createLeafBySplit(ws.getMostRecentLeaf() || ws.getLeaf(false), 'vertical', false);
+    await leaf.openFile(file);
+    ws.revealLeaf(leaf);
   }
 
   /* side: 'same' | 'left' | 'right' | 'tab'. 'same' replaces whatever is in the

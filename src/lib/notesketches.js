@@ -63,8 +63,9 @@ function pageOf(ids, id) {
 }
 
 /* Add one empty page to a note and return its id. The sidecar is written here
-   as well, so the tab that opens next always finds a file. */
-async function addPage(plugin, file, saveSketch) {
+   as well, so the tab that opens next always finds a file. `presets` is the look
+   of the page it follows — see views/sketch.js · sketchPresets. */
+async function addPage(plugin, file, saveSketch, presets) {
   const app = plugin.app;
   let id = newId();
   await app.fileManager.processFrontMatter(file, fm => {
@@ -74,7 +75,7 @@ async function addPage(plugin, file, saveSketch) {
     if (ids.indexOf(id) < 0) ids.push(id);
     writeIds(fm, ids);
   });
-  await saveSketch(id, emptySketchSVG());
+  await saveSketch(id, emptySketchSVG(presets));
   return id;
 }
 

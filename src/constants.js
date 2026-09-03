@@ -417,14 +417,15 @@ const BAR_ITEMS = [
   { id: 'space',      kind: 'tool',   label: 'Spacing',      icon: 'between-horizontal-start' },
   { id: 'insert',     kind: 'tool',   label: 'Insert',       icon: 'image-plus' },
   { id: 'ruler',      kind: 'action', label: 'Ruler',        icon: 'ruler' },
-  { id: 'outline',    kind: 'action', label: 'Outline',      icon: 'list-tree' },
-  { id: 'export',     kind: 'action', label: 'Export',       icon: 'download' },
+  /* Not a drawing tool: what you do TO the sheet rather than on it. It borrows
+     the options row the same way the pen does, because four buttons that are
+     each used once an hour do not each deserve a place in the bar. */
+  { id: 'sheet',      kind: 'tool',   label: 'This drawing', icon: 'settings-2' },
   { id: 'undo',       kind: 'action', label: 'Undo',         icon: 'undo-2' },
   { id: 'redo',       kind: 'action', label: 'Redo',         icon: 'redo-2' },
   { id: 'zoom',       kind: 'action', label: 'Zoom',         icon: 'zoom-in' },
   { id: 'background', kind: 'action', label: 'Background',   icon: 'layout-grid' },
   { id: 'grow',       kind: 'action', label: 'Auto-extend',  icon: 'chevrons-down' },
-  { id: 'clear',      kind: 'action', label: 'Clear',        icon: 'trash-2' },
 ];
 const BAR_ITEM_IDS = BAR_ITEMS.map(i => i.id);
 /* What sits in the bar out of the box. The code block has room for the tools
@@ -432,7 +433,7 @@ const BAR_ITEM_IDS = BAR_ITEMS.map(i => i.id);
    Anything missing here starts in the ⋯ menu. */
 const BAR_DEFAULTS = {
   compact: ['pen', 'marker', 'eraser', 'select', 'undo', 'redo'],
-  full:    ['pen', 'marker', 'eraser', 'select', 'space', 'insert', 'ruler', 'outline', 'export', 'undo', 'redo', 'zoom', 'background', 'grow', 'clear'],
+  full:    ['pen', 'marker', 'eraser', 'select', 'space', 'insert', 'ruler', 'sheet', 'undo', 'redo', 'zoom', 'background', 'grow'],
 };
 const BAR_MODES = { pinned: 'Always open', reveal: 'Opens when you pick a tool' };
 

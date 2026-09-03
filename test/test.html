@@ -101,11 +101,11 @@ localStorage.removeItem('nexus-suite-sketchbar');
 // ── 3 · full editor puts everything in the bar, so there is no ⋯ ───────────
 {
   const plugin = makePlugin(), s = freshSettings();
-  const t = build(plugin, s, { mode: 'full', onCollapse: () => {} });
+  const t = build(plugin, s, { mode: 'full' });
   eq('full · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
-     expectActions(DEFAULTS.full).map(i => i === 'layout-grid' ? 'square' : i).concat(['minimize-2']));
+     expectActions(DEFAULTS.full).map(i => i === 'layout-grid' ? 'square' : i));
   t.surface.bgType = 'grid';
-  const t2 = build(plugin, s, { mode: 'full', onCollapse: () => {} });
+  const t2 = build(plugin, s, { mode: 'full' });
   ok('full · the background button shows the current pattern',
      icons(t2.bar, '.nx-sk-grp-actions .nx-sk-btn').indexOf('square') >= 0);
   ok('full · no overflow button', icons(t.bar, '.nx-sk-btn').indexOf('more-horizontal') === -1);
@@ -251,17 +251,17 @@ localStorage.removeItem('nexus-suite-sketchbar');
 // ── 12 · a user-trimmed bar renders exactly what was asked for ─────────────
 {
   const plugin = makePlugin(), s = freshSettings();
-  s.bar = { mode: 'pinned', compact: ['pen', 'eraser', 'clear'], full: null };
+  s.bar = { mode: 'pinned', compact: ['pen', 'eraser', 'sheet'], full: null };
   const t = build(plugin, s, { mode: 'compact', onDone: () => {} });
-  eq('custom · tools', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn'), ['pen-tool', 'eraser']);
+  eq('custom · tools', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn'), ['pen-tool', 'eraser', 'settings-2']);
   eq('custom · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
-     ['trash-2', 'more-horizontal', 'check']);
+     ['more-horizontal', 'check']);
   const more = Array.from(t.bar.querySelectorAll('.nx-sk-btn')).find(b => b.dataset.icon === 'more-horizontal');
   more.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const pop = document.querySelector('.nx-sk-pop');
   eq('custom · everything not in the bar moved into the ⋯ menu',
      Array.from(pop.querySelectorAll('.nx-sk-menuitem-lbl')).map(e => e.textContent),
-     expectOverflow(['pen', 'eraser', 'clear']));
+     expectOverflow(['pen', 'eraser', 'sheet']));
   // A tool in the menu still has to select that tool.
   Array.from(pop.querySelectorAll('.nx-sk-menuitem'))[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
   eq('custom · picking a tool from the menu switches to it', t.surface.pen, 'marker');
@@ -375,8 +375,45 @@ localStorage.removeItem('nexus-suite-sketchbar');
   eq('accent · surrounding whitespace is tolerated', hsl('  #fb6734  ').h, 15);
 }
 
+// ── 16 · the "this drawing" tool: four things behind one button ────────────
+{
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full', notePath: 'Meeting.md' });
+  const sheet = Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn'))
+    .find(b => b.dataset.icon === 'settings-2');
+  ok('sheet · it is a TOOL, so it sits with the tools', !!sheet);
+  ok('sheet · outline, export and clear left the action group',
+     ['list-tree', 'download', 'trash-2'].every(i => icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn').indexOf(i) < 0),
+     icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn').join(','));
+
+  sheet.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const sub = t.bar.nextElementSibling;
+  eq('sheet · its options row holds all four',
+     icons(sub, '.nx-sk-btn'), ['list-tree', 'download', 'columns-2', 'trash-2']);
+  ok('sheet · and each says what it is', Array.from(sub.querySelectorAll('.nx-sk-sublabel')).length === 4);
+  ok('sheet · the button reads as the active tool', sheet.classList.contains('is-active'));
+
+  // Picking a real tool puts the row back — the sheet is not a mode of the pen.
+  const pen = t.bar.querySelector('.nx-sk-grp-tools .nx-sk-btn');
+  pen.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok('sheet · picking a pen closes it again', !sheet.classList.contains('is-active'));
+  ok('sheet · and the pen row is back', !!t.bar.nextElementSibling.querySelector('.nx-sk-subpen'));
+}
+
+{
+  // Without a note there is nothing to open beside.
+  const plugin = makePlugin(), s = freshSettings();
+  const t = build(plugin, s, { mode: 'full' });
+  Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn'))
+    .find(b => b.dataset.icon === 'settings-2')
+    .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('sheet · no note, no "beside"', icons(t.bar.nextElementSibling, '.nx-sk-btn'),
+     ['list-tree', 'download', 'trash-2']);
+}
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+
 out.push('');
 out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
 document.getElementById('out').textContent = out.join('\n');
