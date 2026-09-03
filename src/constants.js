@@ -425,7 +425,6 @@ const BAR_ITEMS = [
   { id: 'redo',       kind: 'action', label: 'Redo',         icon: 'redo-2' },
   { id: 'zoom',       kind: 'action', label: 'Zoom',         icon: 'zoom-in' },
   { id: 'background', kind: 'action', label: 'Background',   icon: 'layout-grid' },
-  { id: 'grow',       kind: 'action', label: 'Auto-extend',  icon: 'chevrons-down' },
 ];
 const BAR_ITEM_IDS = BAR_ITEMS.map(i => i.id);
 /* What sits in the bar out of the box. The code block has room for the tools
@@ -433,7 +432,7 @@ const BAR_ITEM_IDS = BAR_ITEMS.map(i => i.id);
    Anything missing here starts in the ⋯ menu. */
 const BAR_DEFAULTS = {
   compact: ['pen', 'marker', 'eraser', 'select', 'undo', 'redo'],
-  full:    ['pen', 'marker', 'eraser', 'select', 'space', 'insert', 'ruler', 'sheet', 'undo', 'redo', 'zoom', 'background', 'grow'],
+  full:    ['pen', 'marker', 'eraser', 'select', 'space', 'insert', 'ruler', 'sheet', 'undo', 'redo', 'zoom', 'background'],
 };
 const BAR_MODES = { pinned: 'Always open', reveal: 'Opens when you pick a tool' };
 

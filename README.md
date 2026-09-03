@@ -446,6 +446,10 @@ There is no close button: closing the tab closes it, and the blank paper
 auto-grow left below the last stroke is trimmed then. The `file-text` button
 switches **this** tab back to the text.
 
+Obsidian's own mobile gestures stop at the **canvas**, not at the view: swipe
+down on the toolbar and the command palette opens as it does anywhere else, and
+a finger on the paper is drawing.
+
 ### The toolbar
 
 Two rows. The top one holds the tools, the one under it holds the options of
@@ -477,7 +481,7 @@ At least one tool has to stay in the bar. Turning the last one off is refused.
 | **Spacing** | Drag a line down to open blank paper, up to close it again. Everything below the line moves with it. |
 | **Insert** | An image (embedded, so the file stays standalone), a sticky note, or one of eight stickers. |
 | **Ruler** | A straight edge the pen slides along, free or locked to 0 / 45 / 90 / 135 degrees. Stays on across strokes. |
-| **This drawing** | Not a pen: its options row holds the outline, export, "open the note beside this" and clear. Four things reached once in a while, behind one button instead of four. |
+| **This drawing** | Not a pen, and not among them — it sits on the right. Its options row holds the outline, export, "open the note beside this" and clear, as four labelled buttons. |
 | **Outline** | Named marks down the page, and a list to jump between them. What an endless sheet needs instead of headings. |
 | **Export** | SVG, PNG or PDF, written next to the sketch. |
 

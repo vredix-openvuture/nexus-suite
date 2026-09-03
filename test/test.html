@@ -102,8 +102,9 @@ localStorage.removeItem('nexus-suite-sketchbar');
 {
   const plugin = makePlugin(), s = freshSettings();
   const t = build(plugin, s, { mode: 'full' });
+  // `sheet` is a tool that lives with the actions, so it leads the group.
   eq('full · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
-     expectActions(DEFAULTS.full).map(i => i === 'layout-grid' ? 'square' : i));
+     ['settings-2'].concat(expectActions(DEFAULTS.full).map(i => i === 'layout-grid' ? 'square' : i)));
   t.surface.bgType = 'grid';
   const t2 = build(plugin, s, { mode: 'full' });
   ok('full · the background button shows the current pattern',
@@ -253,9 +254,9 @@ localStorage.removeItem('nexus-suite-sketchbar');
   const plugin = makePlugin(), s = freshSettings();
   s.bar = { mode: 'pinned', compact: ['pen', 'eraser', 'sheet'], full: null };
   const t = build(plugin, s, { mode: 'compact', onDone: () => {} });
-  eq('custom · tools', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn'), ['pen-tool', 'eraser', 'settings-2']);
+  eq('custom · tools', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn'), ['pen-tool', 'eraser']);
   eq('custom · actions', icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn'),
-     ['more-horizontal', 'check']);
+     ['settings-2', 'more-horizontal', 'check']);
   const more = Array.from(t.bar.querySelectorAll('.nx-sk-btn')).find(b => b.dataset.icon === 'more-horizontal');
   more.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   const pop = document.querySelector('.nx-sk-pop');
@@ -379,9 +380,10 @@ localStorage.removeItem('nexus-suite-sketchbar');
 {
   const plugin = makePlugin(), s = freshSettings();
   const t = build(plugin, s, { mode: 'full', notePath: 'Meeting.md' });
-  const sheet = Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn'))
+  const sheet = Array.from(t.bar.querySelectorAll('.nx-sk-grp-actions .nx-sk-btn'))
     .find(b => b.dataset.icon === 'settings-2');
-  ok('sheet · it is a TOOL, so it sits with the tools', !!sheet);
+  ok('sheet · it sits on the right, not among the pens', !!sheet);
+  ok('sheet · and never among them', icons(t.bar, '.nx-sk-grp-tools .nx-sk-btn').indexOf('settings-2') < 0);
   ok('sheet · outline, export and clear left the action group',
      ['list-tree', 'download', 'trash-2'].every(i => icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn').indexOf(i) < 0),
      icons(t.bar, '.nx-sk-grp-actions .nx-sk-btn').join(','));
@@ -390,7 +392,10 @@ localStorage.removeItem('nexus-suite-sketchbar');
   const sub = t.bar.nextElementSibling;
   eq('sheet · its options row holds all four',
      icons(sub, '.nx-sk-btn'), ['list-tree', 'download', 'columns-2', 'trash-2']);
-  ok('sheet · and each says what it is', Array.from(sub.querySelectorAll('.nx-sk-sublabel')).length === 4);
+  eq('sheet · each says what it is', Array.from(sub.querySelectorAll('.nx-sk-sublabel')).map(e => e.textContent),
+     ['Outline', 'Export', 'Note beside', 'Clear']);
+  ok('sheet · and each is a wide labelled button, not a square icon chip',
+     Array.from(sub.querySelectorAll('.nx-sk-btn')).every(b => b.classList.contains('nx-sk-sheetbtn')));
   ok('sheet · the button reads as the active tool', sheet.classList.contains('is-active'));
 
   // Picking a real tool puts the row back — the sheet is not a mode of the pen.
@@ -404,7 +409,7 @@ localStorage.removeItem('nexus-suite-sketchbar');
   // Without a note there is nothing to open beside.
   const plugin = makePlugin(), s = freshSettings();
   const t = build(plugin, s, { mode: 'full' });
-  Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn'))
+  Array.from(t.bar.querySelectorAll('.nx-sk-grp-actions .nx-sk-btn'))
     .find(b => b.dataset.icon === 'settings-2')
     .dispatchEvent(new MouseEvent('click', { bubbles: true }));
   eq('sheet · no note, no "beside"', icons(t.bar.nextElementSibling, '.nx-sk-btn'),

@@ -204,6 +204,34 @@ function viewFor(plugin, file) {
   eq('pages · and the list is left alone', many.frontmatter.sketch, ['sk-a', 'sk-b']);
 }
 
+
+// ── Where Obsidian's own swipes are given up ───────────────────────────────
+{
+  /* Obsidian walks UP from a touch and abandons its gestures — the drawer
+     swipe, the swipe that opens the command palette — at the first ancestor
+     carrying data-ignore-swipe. Put it on the container and the TOOLBAR loses
+     them too, which is what happened. It belongs on the drawing alone. */
+  const marked = (el) => { for (let n = el; n; n = n.parentElement) if (n.dataset && n.dataset.ignoreSwipe) return n; return null; };
+
+  const t = makeApp({ sketch: 'sk-1' });
+  t.plugin.settings.quicksketch.enabled = true;
+  t.plugin.loadSketch = async () => null;
+  t.plugin.saveSketch = async () => {};
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const el = stage.createDiv();
+  await t.plugin._renderSketchInner('', el, { sourcePath: 'Meeting.md' },
+    t.plugin.settings.quicksketch, {}, { id: 'sk-1', writing: false });
+
+  const bar = el.querySelector('.nx-sketch-bar');
+  const pad = el.querySelector('.nx-sketch-pad');
+  ok('swipe · the drawing gives Obsidian\u2019s swipes up', !!marked(pad), 'nothing marked above the pad');
+  ok('swipe · and it is the pad itself that does', marked(pad) === pad,
+     marked(pad) ? marked(pad).className : 'nothing');
+  ok('swipe · the toolbar keeps them, so the command palette still opens', marked(bar) === null,
+     marked(bar) ? marked(bar).className : '');
+}
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
 out.push('');

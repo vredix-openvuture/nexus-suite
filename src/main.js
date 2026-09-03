@@ -2736,14 +2736,14 @@ module.exports = class NexusSuite extends Plugin {
     if (outgoing && outgoing.strokes && outgoing.strokes.length > carried.length) carried = outgoing.strokes;
 
     const wrap = el.createDiv('nx-sketch');
-    // A finger stroke that starts near an edge is a drawer swipe to the mobile
-    // gesture recogniser. It skips any subtree marked like this (same lever the
-    // canvas uses) — the touch guards further up can't reach it, it listens in
-    // the capture phase and was registered long before any plugin.
-    wrap.dataset.ignoreSwipe = 'true';
     const barWrap = wrap.createDiv('nx-sketch-bar-wrap');   // grid-rows wrapper → smooth collapse
     const bar = barWrap.createDiv('nx-sketch-bar');
     const pad = wrap.createDiv('nx-sketch-pad');            // height comes from the SVG (width:100%/height:auto), not CSS aspect-ratio
+    /* A finger stroke that starts near an edge is a drawer swipe to the mobile
+       gesture recogniser, and a stroke downwards is its command palette. It
+       gives up at the first ancestor marked like this, so the mark goes on the
+       PAD: the toolbar above it keeps every gesture Obsidian offers. */
+    pad.dataset.ignoreSwipe = 'true';
 
     const surface = new NexusSketchSurface(pad, {
       W, H, bg, paper, paperStyle, invertOnDark: s.invertOnDark !== false, ink: s.ink, penSizes: s.penSizes, pen: 'fountain',
@@ -3514,7 +3514,6 @@ module.exports = class NexusSuite extends Plugin {
     };
 
     /* ═══ auto-grow · clear ═══ */
-    const toggleGrow = () => { surface.autoGrow = !surface.autoGrow; surface.persist(); return surface.autoGrow; };
     const clearBuild = (pop, close) => {
       pop.addClass('nx-sk-confirm');
       pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Clear sketch?' });
@@ -3548,13 +3547,12 @@ module.exports = class NexusSuite extends Plugin {
     const ACTIONS = {
       undo:  { icon: 'undo-2', label: 'Undo', run: () => surface.undo() },
       redo:  { icon: 'redo-2', label: 'Redo', run: () => surface.redo() },
+      /* It opens a chooser, so it is drawn as a plain button — an is-active
+         ring said "on", which is not a thing a paper picker can be. */
       background: {
-        icon: () => BG_ICON[surface.bgType] || 'layout-grid', label: 'Background',
-        active: () => surface.bgType !== 'none',
+        icon: () => BG_ICON[surface.bgType] || 'layout-grid', label: 'Paper & background',
         popup: (anchor) => (pop) => bgBuild(pop, anchor),
       },
-      grow:  { icon: 'chevrons-down', label: 'Auto-extend downward',
-               active: () => surface.autoGrow, run: () => toggleGrow() },
       /* Pinching is the fast way and ctrl+wheel is the desktop's, but neither is
          visible — and a surface that cannot page-zoom must not advertise it. */
       zoom: { icon: 'zoom-in', label: 'Zoom', skip: () => !surface.pageZoom,
@@ -3617,23 +3615,20 @@ module.exports = class NexusSuite extends Plugin {
        each reached once in a while: in the bar they were four buttons competing
        with the pen; here they are one. */
     const buildSheetRow = (parent) => {
-      const one = (icon, label, build) => {
-        const b = iconBtn(parent, icon, label, null);
+      /* Wide, labelled buttons — not the square icon chips the rest of the bar
+         uses. These are read before they are pressed, and a label inside a
+         fixed-width icon button lands on top of the icon. */
+      const one = (icon, label, cls) => {
+        const b = iconBtn(parent, icon, label, null, 'nx-sk-sheetbtn' + (cls ? ' ' + cls : ''));
         b.createSpan({ cls: 'nx-sk-sublabel', text: label });
-        plugin._sketchPopover(b, build);
         return b;
       };
-      one('list-tree', 'Outline', (pop, close) => outlineBuild(pop, close));
-      one('download', 'Export', (pop, close) => exportBuild(pop, close));
+      plugin._sketchPopover(one('list-tree', 'Outline'), (pop, close) => outlineBuild(pop, close));
+      plugin._sketchPopover(one('download', 'Export'), (pop, close) => exportBuild(pop, close));
       if (opts.notePath) {
-        const beside = iconBtn(parent, 'columns-2', 'Open the note beside this', null);
-        beside.createSpan({ cls: 'nx-sk-sublabel', text: 'Note beside' });
-        beside.onclick = () => plugin.openNoteBeside(opts.notePath);
+        one('columns-2', 'Note beside').onclick = () => plugin.openNoteBeside(opts.notePath);
       }
-      parent.createDiv('nx-sk-sep');
-      const clear = iconBtn(parent, 'trash-2', 'Clear', null, 'is-danger');
-      clear.createSpan({ cls: 'nx-sk-sublabel', text: 'Clear' });
-      plugin._sketchPopover(clear, (pop, close) => clearBuild(pop, close));
+      plugin._sketchPopover(one('trash-2', 'Clear', 'is-danger'), (pop, close) => clearBuild(pop, close));
     };
 
     /* Select: the marquee shape, what can be done to what is caught in it, and
@@ -3760,7 +3755,10 @@ module.exports = class NexusSuite extends Plugin {
 
     /* ═══ compose: tools · spacer · actions · ⋯ · the ways out ═══ */
     const tools = bar.createDiv('nx-sk-grp nx-sk-grp-tools');
-    inBar.filter(id => (BAR_ITEMS.find(i => i.id === id) || {}).kind === 'tool').forEach(id => {
+    /* `sheet` is a tool only in the sense that it owns the options row. It is
+       not something you draw with, so it belongs on the right with the other
+       things you do to a drawing rather than among the pens. */
+    inBar.filter(id => (BAR_ITEMS.find(i => i.id === id) || {}).kind === 'tool' && id !== 'sheet').forEach(id => {
       const item = BAR_ITEMS.find(i => i.id === id);
       const icon = id === 'pen' ? PEN_META[drawPen][1] : item.icon;
       const b = iconBtn(tools, icon, item.label, null);
@@ -3774,6 +3772,15 @@ module.exports = class NexusSuite extends Plugin {
 
     bar.createDiv('nx-sk-spacer');
     const right = bar.createDiv('nx-sk-grp nx-sk-grp-actions');
+    if (inBar.indexOf('sheet') >= 0) {
+      const item = BAR_ITEMS.find(i => i.id === 'sheet');
+      const b = iconBtn(right, item.icon, item.label, null);
+      toolBtns.sheet = b;
+      b.onclick = () => {
+        if (layout.mode === 'reveal') subOpen = (TOOL_OF() === 'sheet') ? !subOpen : true;
+        setTool(TOOL_OF() === 'sheet' ? (lastTool || 'pen') : 'sheet');
+      };
+    }
     const barActions = inBar.filter(id => ACTIONS[id] && !(ACTIONS[id].skip && ACTIONS[id].skip()));
     barActions.forEach(id => {
       const act = ACTIONS[id];

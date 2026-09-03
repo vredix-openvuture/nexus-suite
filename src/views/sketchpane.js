@@ -110,7 +110,6 @@ class NexusSketchPaneView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass('nx-skpane');
-    root.dataset.ignoreSwipe = 'true';   // finger strokes are not drawer swipes
     if (!this.id) { root.createDiv({ cls: 'nx-home-empty', text: 'No sketch selected.' }); return; }
 
     const s = this.plugin.settings.quicksketch;
@@ -119,6 +118,11 @@ class NexusSketchPaneView extends ItemView {
 
     const bar = root.createDiv('nx-sketch-bar nx-skpane-bar');
     const stage = root.createDiv('nx-skpane-stage');
+    /* Obsidian walks UP from a touch and gives up its own swipes at the first
+       ancestor carrying this — so it belongs on the drawing, not on the view.
+       On the view it also swallowed the swipe that opens the command palette,
+       which is the toolbar's to give away and not the canvas's. */
+    stage.dataset.ignoreSwipe = 'true';
     const pad = stage.createDiv('nx-sketch-pad');
 
     const surface = new NexusSketchSurface(pad, {

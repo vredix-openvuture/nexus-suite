@@ -756,13 +756,28 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
   color: var(--nx-fg, var(--text-normal)) !important;
 }
 .nx-skpane-pages:hover { background: var(--nx-sf-2) !important; }
-.nx-skpane-pagenum { font-variant-numeric: tabular-nums; font-size: var(--font-ui-small); font-weight: 600; }
+.nx-skpane-pagenum { font-variant-numeric: tabular-nums; font-size: var(--font-ui-smaller); }
 .nx-skpane-pagechev { display: inline-flex; opacity: .6; }
 .nx-skpane-pagechev .svg-icon { width: 13px; height: 13px; }
 
 /* The options row of the "this drawing" tool: four things reached once in a
-   while, so each says what it is instead of relying on its icon. */
-.nx-sk-sublabel { font-size: var(--font-ui-smaller); }
+   while, so each says what it is instead of relying on its icon. They are wide
+   labelled buttons — the bar's own chips are a fixed square, which is what put
+   the label on top of the icon. */
+.nx-sk-sheetbtn {
+  width: auto !important;
+  padding: 0 var(--nx-ctl-pad-x) !important;
+  gap: var(--nx-sp-2);
+  border-color: var(--nx-border, var(--background-modifier-border)) !important;
+  background: var(--nx-sf-1) !important;
+  color: var(--nx-fg, var(--text-normal)) !important;
+}
+.nx-sk-sheetbtn:hover { background: var(--nx-sf-2) !important; }
+.nx-sk-sheetbtn.is-danger { color: var(--wl-color1, #ce3737) !important; }
+.nx-sk-sheetbtn.is-danger:hover {
+  background: color-mix(in srgb, var(--wl-color1, #ce3737) 14%, transparent) !important;
+}
+.nx-sk-sublabel { font-size: var(--font-ui-small); }
 
 /* A page's own name, editable in place in the page list. */
 .nx-skpick-rename {

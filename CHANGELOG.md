@@ -2,6 +2,37 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.31.2 — 2026-09-04
+
+### Fixed
+
+- **The "this drawing" row was unusable.** Its entries reused the bar's own
+  button, which is a fixed square — the label landed on top of the icon. They
+  are wide labelled buttons of their own now, and they read as buttons.
+- **The button sat with the pens.** It is not something you draw with, so it
+  moved to the right, with the other things you do *to* a drawing.
+- **The page count was too loud.** Back to the same size as everything else in
+  the bar.
+- **The paper button showed itself as on or off.** It opens a chooser; "on" is
+  not a thing a paper picker can be, so it is a plain button now.
+
+### Removed
+
+- **The auto-extend button.** The Sketch tab grows endlessly anyway, and in a
+  code block the setting (*Settings → Quick Sketch → Auto-extend*) still decides.
+  One fewer switch in a bar that was competing with itself.
+
+## 0.31.1 — 2026-09-04
+
+### Fixed
+
+- **A swipe on the sketch toolbar did nothing.** Obsidian walks up from a touch
+  and gives up its own gestures — the drawer swipe, and the swipe down that
+  opens the command palette — at the first ancestor marked `data-ignore-swipe`.
+  That mark was on the whole sketch view, so the toolbar and everything above it
+  lost them too. It sits on the drawing alone now: swipe down on the toolbar and
+  the command palette opens, swipe on the canvas and you are drawing.
+
 ## 0.31.0 — 2026-09-04
 
 ### Changed
