@@ -23,7 +23,7 @@ run what you use.
 | **Calendar** | A month, and what each day is for | — |
 | **Search** | Weighted over title, tags, headings, properties, text | omnisearch |
 | **Kanban** | Boards with columns and cards in a note, plus the board view of your tasks | kanban |
-| **Planner** | A month in a block, one line per day | — |
+| **Planner** | A whole month of day texts, in a block | — |
 | **Vault sync** | The whole vault to a WebDAV server, with daily backups | Syncthing, Obsidian Sync |
 | **Chatter** | A note you speak instead of type | — |
 | **Workspaces** | Save and switch pane layouts | — |
@@ -414,16 +414,28 @@ with a compact toolbar. A **Sketch tab** is the drawing on its own, with the ful
 toolbar, the options row permanently in reach and room to zoom. Anything longer
 than a doodle belongs in the tab.
 
-Every markdown note can own **one** drawing. The corner button at the top right
-of a note is the way in: tap it to switch to the drawing, press and hold (or
+Every markdown note can own a **drawing with pages**. The corner button at the
+top right of a note is the way in: tap it to switch to the drawing, press and hold (or
 right-click) to choose between *Switch to sketch*, *Open to the left*, *Open to
 the right* and *Open in a new tab*. The button is hollow on a note that has none
 yet and filled once there is one. The tab's `file-text` button is the way back to
 the text.
 
-The note holds nothing but the id (`sketch: sk-…` in its frontmatter). It is
-written the first time you open the drawing, together with an empty sidecar, so
-the tab always opens on a real file. `New sketch note` does both in one step.
+The note holds nothing but the ids (`sketch: sk-…`, or a list once there is more
+than one page). The first is written when you open the drawing, together with an
+empty sidecar, so the tab always opens on a real file. `New sketch note` does
+both in one step.
+
+### Pages
+
+Throw a finger **sideways** in the Sketch tab to turn a page — left for the next
+one, right for the one before. Throw it left off the **last** page and a new
+blank page is made: that is the way to add one. Only at 100 %; zoomed in,
+sideways is how you look around the sheet.
+
+The button next to the page count lists every page as a thumbnail. Open one, add
+one, or take one out of the note — taking a page out leaves its `.svg` where it
+is, because a drawing is worth more than the line that pointed at it.
 
 ### The toolbar
 
@@ -488,9 +500,14 @@ Fingers never draw — the pen does — so a tap is free to mean something:
 
 | Gesture | Does |
 |---|---|
-| Three fingers, one tap | Back to page width |
+| Two fingers, tapped twice | Back to page width |
+| Three fingers, one tap | The same, where the OS lets three touches through |
 | Double tap | Undo |
 | Triple tap | Redo |
+
+Two fingers carry the zoom reset because three simultaneous touches are a system
+gesture on a lot of Android tablets and never reach the page at all. A *single*
+two-finger tap stays free: that is where a pinch begins and ends.
 
 Each one says what it did, briefly, at the bottom left of the pad — an undo of a
 stroke you had already forgotten looks exactly like nothing happening.
@@ -578,51 +595,38 @@ and what is due. `docs/removed-features.md` §6 has the account and the way back
 
 ## Planner
 
-A ```` ```nexus-planner ```` block is a month on one screen with **one line per
-day**. It is not the tasks module and not the agenda: those answer what is due,
-this answers what a month is *for*, which is a much shorter answer. Daily and
-weekly notes stay where the detail goes.
+A ```` ```nexus-planner ```` block is a month on one screen, showing **the same
+text per day the calendar does** — a whole month of it in an ordinary note.
 
 ````md
 ```nexus-planner
 view: month
 month: 2026-09
-2026-09-03: Ship 0.25
-2026-09-11: Dentist, 14:00
 ```
 ````
 
-The block **is** the plan, the same way a kanban board is: one line per day
-inside the fence, sorted by date, so it survives without the plugin and travels
-with the note. `view: week` gives seven roomier rows instead; the arrows page
-through months or weeks and write the new position back. Each cell has a small
-button that opens that day's daily note, using the core plugin's own format, so
-the planner never invents a second naming scheme.
+The fence says only *which* month; what a day says lives in that day's own note
+(see *The calendar*, above), so the block and the calendar page are one thing
+seen twice and cannot disagree. `view: week` gives seven roomier rows instead;
+the arrows page through months or weeks and write the new position back. Each
+cell has a small button that opens that day's daily note, using the core
+plugin's own format, so the planner never invents a second naming scheme.
 
-### Not the same thing as the calendar's day text
+Typing in a cell writes to the note, not to the block. `Ctrl`/`⌘ + Enter`
+finishes, `Esc` puts back what was there.
 
-The full-page calendar also gives you a text per day, but it keeps it in **that
-day's own note** (see *Calendar*, above). The planner block keeps its lines in
-**the block**. They are two answers to the same question and the calendar no
-longer reads the planner's — pick the one whose storage you want.
+### Lines the block still holds
 
-A planner month resolves to one note by two settings on the **Calendar** tab:
+Before this, the block WAS the store: `2026-09-03: Ship 0.25` lines inside the
+fence. Those are no longer read. To carry them over, run **Move planner lines
+into the daily notes** (also a button under *Settings → Calendar → Planner*):
 
-| Setting | Default | |
-|---|---|---|
-| Planner folder | `Planner` | Empty means the vault root. |
-| File name | `YYYY-MM` | `YYYY`, `YY`, `MM`, `MMM`, `MMMM`. A slash makes a subfolder, so `YYYY/YYYY-MM` files each year separately. |
-
-So September 2026 is `Planner/2026-09.md`, holding one `nexus-planner` block.
-Nothing is guessed and nothing is written until you type:
-
-- a month with no note shows nothing and **creates no file** — the first line
-  you type creates the note *with* the block;
-- a note that already exists but holds no `nexus-planner` block is treated as an
-  empty month, and a first line is **appended** to it rather than replacing
-  anything;
-- if a note holds more than one `nexus-planner` block, the **first** one is the
-  month's plan and the rest are left alone.
+- it counts what it found and says how many daily notes it would have to create
+  **before** it writes anything;
+- a day whose note already has a text is **left exactly as it is** and reported
+  as such;
+- nothing is deleted — the blocks keep their old lines, inert, so a run that
+  went wrong costs nothing.
 
 ## A note as a task
 
@@ -775,6 +779,8 @@ src/
     inputs.js        reusable settings inputs (autocomplete, multi-row, property rules, icon field)
     datadir.js       where the plugin's own JSON lives (the sync state)
     daytext.js       what a day is FOR — one frontmatter field of that day's note
+    plannermigrate.js the one-off move of old planner lines into the daily notes
+    notesketches.js  the PAGES of a note's drawing: the id list in its frontmatter
     tasks.js         projects & tasks as Markdown — the .md files are the source of truth
     agenda.js        the ```nexus-agenda``` block: one day (its text + tasks + backlinks) in a note
     kanban.js        the ```nexus-kanban``` block: head, column strip, card and drag — shared by both sources

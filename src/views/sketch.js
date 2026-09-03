@@ -42,10 +42,16 @@ const PALM_MS = 600;             // palm rejection: ignore touches this soon aft
    hand between them, and a finger on glass wanders further than a mouse ever
    does — the first numbers here (300 / 10 / 260) were mouse numbers and missed
    real taps on a tablet. */
-const TAP_MS = 500;              // a touch burst longer than this is a hold, not a tap
+const TAP_MS = 600;              // a touch burst longer than this is a hold, not a tap
 const TAP_SLOP_PX = 18;          // …and one that travels further than this is a drag
-const MULTITAP_MS = 320;         // taps closer together than this belong to the same run
+const MULTITAP_MS = 420;         // taps closer together than this belong to the same run
 const MULTITAP_R = 60;           // …and no further apart on screen than this
+/* A sideways throw with ONE finger. The stage scrolls vertically, so a
+   horizontal drag had nothing to do — which is what makes it free to mean
+   "next page". Only at 1×: zoomed in, sideways is how you look around. */
+const SWIPE_PX = 90;             // how far a swipe has to travel to count
+const SWIPE_RATIO = 1.8;         // …and how much more sideways than up-down
+const SWIPE_MS = 600;            // a slower drag is scrolling, not a swipe
 const HOLD_MS = 650;             // shape snap: hold the pen still this long after drawing …
 const HOLD_R = 7;                // … within this radius (viewBox units) to trigger recognition
 
@@ -506,6 +512,7 @@ class NexusSketchSurface {
     // what is visible rather than how big the sheet is drawn.
     this.pageZoom = !!opts.pageZoom;
     this.pageScale = 1;
+    this.onSwipe = opts.onSwipe || null;                 // 'next' | 'prev' — a sideways throw (see _touchUp)
     // Pan/zoom viewport = the visible sub-rect of the canvas (viewBox). Aspect is
     // kept locked to W/H so the element size (height:auto) never jumps. Only pen/
     // mouse draw; fingers pan (1) / pinch-zoom (2). See _touch* below.
@@ -775,7 +782,7 @@ class NexusSketchSurface {
     if (this._touches.size === 1) {
       // A fresh burst. `max` is how many fingers were EVER down at once in it,
       // which is what gives a 3-finger tap its meaning after two have lifted.
-      this._tap = { t0: performance.now(), max: 1, moved: false, x: e.clientX, y: e.clientY };
+      this._tap = { t0: performance.now(), max: 1, moved: false, x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY };
       this._startOneFinger();
     } else if (this._touches.size === 2) {
       if (this._tap) this._tap.max = Math.max(this._tap.max, 2);
@@ -793,7 +800,10 @@ class NexusSketchSurface {
     const t = this._touches.get(e.pointerId);
     if (!t) return;
     t.x = e.clientX; t.y = e.clientY;
-    if (this._tap && !this._tap.moved && Math.hypot(t.x - t.sx, t.y - t.sy) > TAP_SLOP_PX) this._tap.moved = true;
+    if (this._tap) {
+      if (!this._tap.moved && Math.hypot(t.x - t.sx, t.y - t.sy) > TAP_SLOP_PX) this._tap.moved = true;
+      this._tap.lx = t.x; this._tap.ly = t.y;   // where the burst ended — a swipe is judged on it
+    }
     if (this._gestRaf) return;
     this._gestRaf = requestAnimationFrame(() => { this._gestRaf = null; this._applyGesture(); });
   }
@@ -806,18 +816,43 @@ class NexusSketchSurface {
       const tap = this._tap;
       this._tap = null;
       if (tap && !tap.moved && performance.now() - tap.t0 < TAP_MS) this._registerTap(tap.max, tap.x, tap.y);
+      else if (tap && this._swipe(tap)) return;   // a page turn is not also a fling
       if (wasScroll) this._fling();
     }
   }
 
+  /* One finger thrown sideways = the next page (or the previous one). Reported,
+     never acted on here: the engine draws, what a page IS belongs to whoever
+     mounted it. Returns true when it took the gesture. */
+  _swipe(tap) {
+    if (!this.onSwipe || tap.max !== 1) return false;
+    if (Math.abs(this.pageScale - 1) > 0.01) return false;   // zoomed: sideways is looking around
+    if (performance.now() - tap.t0 > SWIPE_MS) return false;
+    const dx = tap.lx - tap.x, dy = tap.ly - tap.y;
+    if (Math.abs(dx) < SWIPE_PX || Math.abs(dx) < Math.abs(dy) * SWIPE_RATIO) return false;
+    this._stopFling();
+    this.onSwipe(dx < 0 ? 'next' : 'prev');
+    return true;
+  }
+
   /* ── Finger taps ────────────────────────────────────────────────────────────
-     Three fingers at once = back to page width; that one is deliberately not a
-     multi-tap, because the way out of a zoom must work on the first try.
-     One finger twice = undo, three times = redo. Undo waits out the multi-tap
-     window before it fires — otherwise every triple tap would undo on its way
-     to the redo. The delay is the price of having both on the same finger.
-     Palm rejection guards all of this: a tap within PALM_MS of the pen never
-     reaches _touchDown, so a hand resting mid-sentence cannot undo anything. */
+        one finger, twice   = undo
+        one finger, 3×      = redo
+        two fingers, twice  = back to page width
+        three fingers, once = the same, for anyone whose OS lets three through
+
+     Two fingers carry the zoom reset because three simultaneous touches are a
+     system gesture on a lot of Android tablets and never reach a web page at
+     all. A SINGLE two-finger tap stays free: that is where a pinch begins and
+     ends, and it must not mean anything on its own.
+
+     Undo waits out the multi-tap window before it fires — otherwise every
+     triple tap would undo on its way to the redo. The delay is the price of
+     having both on the same finger.
+
+     Palm rejection guards all of this: a tap within PALM_MS of the pen touching
+     down never reaches _touchDown, so a hand resting mid-sentence cannot undo
+     anything. */
   _clearTapSeq() {
     if (this._tapSeq && this._tapSeq.timer) window.clearTimeout(this._tapSeq.timer);
     this._tapSeq = null;
@@ -844,16 +879,27 @@ class NexusSketchSurface {
   }
 
   _registerTap(fingers, x, y) {
-    if (fingers >= 3) { this._clearTapSeq(); this.setPageZoom(1); this._flashTap('Page width'); return; }
-    // Two fingers at once is the pinch/scroll gesture's resting state — no meaning.
-    if (fingers !== 1 || this.locked) { this._clearTapSeq(); return; }
+    if (fingers >= 3) { this._clearTapSeq(); this._resetZoom(); return; }
+    if (fingers > 2) { this._clearTapSeq(); return; }
     const now = performance.now();
     const prev = this._tapSeq;
-    const runs = prev && (now - prev.t) < MULTITAP_MS && Math.hypot(x - prev.x, y - prev.y) < MULTITAP_R;
+    // A run is same-place, same-time AND same number of fingers: one finger then
+    // two is two gestures, not a double tap.
+    const runs = prev && prev.fingers === fingers
+      && (now - prev.t) < MULTITAP_MS
+      && Math.hypot(x - prev.x, y - prev.y) < MULTITAP_R;
     const n = runs ? prev.n + 1 : 1;
     this._clearTapSeq();
+
+    if (fingers === 2) {
+      // Nothing is ambiguous after two, so it fires at once rather than waiting.
+      if (n >= 2) { this._resetZoom(); return; }
+      this._tapSeq = { n, fingers, t: now, x, y, timer: null };
+      return;
+    }
+    if (this.locked) return;                       // view mode: read-only, so no undo
     if (n >= 3) { this.redo(); this._flashTap('Redo'); return; }
-    this._tapSeq = { n, t: now, x, y, timer: null };
+    this._tapSeq = { n, fingers, t: now, x, y, timer: null };
     if (n === 2) {
       const seq = this._tapSeq;
       seq.timer = window.setTimeout(() => {
@@ -862,6 +908,13 @@ class NexusSketchSurface {
         this._flashTap('Undo');
       }, MULTITAP_MS);
     }
+  }
+
+  /* Says so even when it was already at 1×: the point of the gesture is knowing
+     it was seen, and "nothing happened" and "not recognised" look the same. */
+  _resetZoom() {
+    this.setPageZoom(1);
+    this._flashTap('Page width');
   }
 
   /* ctrl/⌘ + wheel = page zoom. Without the modifier the wheel stays the page's,

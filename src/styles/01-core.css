@@ -48,13 +48,11 @@ body.nx-hide-explorer-buttons .workspace-leaf-content[data-type="file-explorer"]
    `overflow:hidden` and therefore contributes nothing to the tab's intrinsic
    size. Square = the tab pill's own height (bar height minus its padding). */
 body.nx-pin-home,
-body.nx-pin-cal,
-body.nx-pin-tasks {
+body.nx-pin-cal {
   --nx-pin-size: calc(var(--nx-bar-h) - 2 * var(--nx-tab-gap));
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"],
-body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"],
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] {
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] {
   flex: 0 0 auto !important;
   width:     var(--nx-pin-size) !important;
   min-width: var(--nx-pin-size) !important;
@@ -69,14 +67,12 @@ body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] {
               var(--nx-accent, var(--interactive-accent)) 22%, transparent) !important;
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:hover,
-body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:hover,
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"]:hover {
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:hover {
   background-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%,
                               var(--nx-chip-side, var(--background-secondary))) !important;
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-title,
-body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-title,
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-title {
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-title {
   display: none !important;
 }
 /* Both the close X and the pin glyph Obsidian swaps in for pinned tabs — either
@@ -87,22 +83,18 @@ body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-hea
    thing left inside the button. */
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-close-button,
 body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-close-button,
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-close-button,
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-status-container,
-body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-status-container,
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-status-container {
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-status-container {
   display: none !important;
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner,
-body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner,
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner {
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner {
   padding: 0 !important;
   justify-content: center !important;
   gap: 0;
 }
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon,
-body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon,
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-icon {
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon {
   margin: 0 !important;
   padding: 0 !important;
   opacity: 1;
@@ -116,8 +108,7 @@ body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-hea
    !important) — hence the extra .workspace-split.mod-root in the chain, so this
    lands the same way on every palette instead of depending on load order. */
 body.nx-pin-home  .workspace-split.mod-root .workspace-tab-header[data-type="nx-homepage"].is-active,
-body.nx-pin-cal   .workspace-split.mod-root .workspace-tab-header[data-type="nx-calendar-page"].is-active,
-body.nx-pin-tasks .workspace-split.mod-root .workspace-tab-header[data-type="nx-tasks"].is-active {
+body.nx-pin-cal   .workspace-split.mod-root .workspace-tab-header[data-type="nx-calendar-page"].is-active {
   background-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 28%,
                               var(--nx-chip-side, var(--background-secondary))) !important;
   box-shadow: inset 0 0 0 1px color-mix(in srgb,
@@ -126,7 +117,6 @@ body.nx-pin-tasks .workspace-split.mod-root .workspace-tab-header[data-type="nx-
 /* The buttons are a GROUP: a little extra air before the first real document
    tab. :has() picks whichever pinned button happens to be the last one. */
 body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:has(+ .workspace-tab-header:not(:is([data-type="nx-homepage"], [data-type="nx-calendar-page"], [data-type="nx-tasks"]))),
-body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:has(+ .workspace-tab-header:not(:is([data-type="nx-homepage"], [data-type="nx-calendar-page"], [data-type="nx-tasks"]))),
-body.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"]:has(+ .workspace-tab-header:not(:is([data-type="nx-homepage"], [data-type="nx-calendar-page"], [data-type="nx-tasks"]))) {
+body.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:has(+ .workspace-tab-header:not(:is([data-type="nx-homepage"], [data-type="nx-calendar-page"], [data-type="nx-tasks"]))) {
   margin-inline-end: 6px !important;
 }

@@ -2,21 +2,20 @@
 
 /* ============================================================================
  *  NEXUS SUITE · lib · the paper planner
- *  A month on one screen with ONE line per day, the way a paper calendar works.
+ *  A month on one screen with what each day is FOR, the way a paper calendar
+ *  works. Deliberately not the tasks module and not the agenda: those answer
+ *  "what is due", this answers "what is this month for".
  *
- *  It is deliberately not the tasks module and not the agenda. Those answer
- *  "what is due"; this answers "what is this month FOR", which is a different
- *  question and a much shorter answer. Daily and weekly notes stay where the
- *  detail goes — the planner exists so that the shape of a month is visible
- *  without opening thirty of them.
- *
- *  Like the kanban board, the block IS the data: one line per day inside the
- *  fence, so the plan survives without the plugin and travels with the note.
+ *  The fence holds only WHERE to look — which month, which view. The text of a
+ *  day lives in that day's own note (lib/daytext.js), which is the same place
+ *  the calendar page writes it, so the two are one thing seen twice.
  *
  *      view: month
  *      month: 2026-09
- *      2026-09-03: Ship 0.25
- *      2026-09-11: Dentist, 14:00
+ *
+ *  `YYYY-MM-DD: text` lines inside a fence are the OLD store. They are still
+ *  parsed, because the migration reads them (lib/plannermigrate.js), but
+ *  nothing writes them any more.
  * ========================================================================== */
 
 const blockedit = require('./blockedit.js');
@@ -184,20 +183,6 @@ function formatMonthName(pattern, month) {
   });
 }
 
-/* `store` is { folder, pattern }. An empty folder means the vault root and is a
-   real choice, so no default is filled in here — that lives in the settings.
-   Folder and pattern are joined as segments, so a stray or doubled slash on
-   either cannot resolve to `Planner//x.md` or to a folder plus `.md`. */
-function monthNotePath(store, month) {
-  const segments = (str) => String(str || '').split('/').map(s => s.trim()).filter(Boolean);
-  const name = segments(formatMonthName((store && store.pattern) || 'YYYY-MM', month));
-  if (!name.length) return '';
-  return segments(store && store.folder).concat(name).join('/') + '.md';
-}
-
-/* A month grid shows days of up to three months, so this is what has to be read
-   for one. Bounded as well as compared: past year 9999 addMonths returns a
-   five-digit year, which sorts BEFORE the end and would loop forever. */
 function monthsInRange(startIso, endIso) {
   const first = monthOf(startIso), last = monthOf(endIso);
   if (!/^\d{4}-\d{2}$/.test(first) || !/^\d{4}-\d{2}$/.test(last)) return [];
@@ -226,93 +211,10 @@ function findPlannerBlock(text) {
 }
 function fencePlanner(body) { return '```nexus-planner\n' + body + '\n```'; }
 
-/* ── The month store ────────────────────────────────────────────────────────
-   Reading never writes. A missing note is an empty month, and so is a note that
-   holds no planner block — that note is someone else's. */
-async function readMonthPlan(app, TFile, store, month) {
-  const path = monthNotePath(store, month);
-  const file = path ? app.vault.getAbstractFileByPath(path) : null;
-  if (!(file instanceof TFile)) return { path, entries: {} };
-  const at = findPlannerBlock(await app.vault.read(file));
-  return { path, entries: at ? parsePlanner(at.body).entries : {} };
-}
-
-/* A month's note only speaks for its own days: the calendar has to read exactly
-   where it writes, or a line typed into the wrong month's note would show in
-   one place and be written back to another. */
-async function readMonthPlans(app, TFile, store, months) {
-  const out = {};
-  for (const month of months || []) {
-    const plan = await readMonthPlan(app, TFile, store, month);
-    for (const date of Object.keys(plan.entries)) {
-      if (monthOf(date) === month) out[date] = plan.entries[date];
-    }
-  }
-  return out;
-}
-
-async function ensureParentFolder(app, path) {
-  const parts = String(path || '').split('/');
-  parts.pop();
-  let dir = '';
-  for (const part of parts) {
-    dir = dir ? dir + '/' + part : part;
-    if (app.vault.getAbstractFileByPath(dir)) continue;
-    // A folder that appeared in between (another write, a sync) is not an error.
-    try { await app.vault.createFolder(dir); } catch (e) {}
-  }
-}
-
-/* Write one day's line into its month's note. The note — and the block — are
-   created here and nowhere else, so reading a month never leaves a file behind.
-   Clearing the last line of a month that has no note is therefore a no-op. */
-async function writeMonthEntry(app, TFile, store, month, date, text) {
-  const path = monthNotePath(store, month);
-  if (!path) return { ok: false, reason: 'this month has no note path' };
-  const clean = String(text == null ? '' : text).replace(/[\r\n]+/g, ' ').trim();
-  const fresh = () => {
-    const cfg = parsePlanner(plannerTemplate(month + '-01'));
-    setEntry(cfg, date, clean);
-    return fencePlanner(stringifyPlanner(cfg));
-  };
-
-  let file = app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) {
-    if (!clean) return { ok: true, path, changed: false };
-    await ensureParentFolder(app, path);
-    try { file = await app.vault.create(path, fresh() + '\n'); }
-    catch (e) { return { ok: false, reason: 'the month note could not be created at ' + path }; }
-    return { ok: true, path, changed: true, created: 'note' };
-  }
-
-  const raw = await app.vault.read(file);
-  const at = findPlannerBlock(raw);
-  if (!at) {
-    if (!clean) return { ok: true, path, changed: false };
-    // The note exists but is not a plan yet. Appending leaves every line the
-    // user already typed exactly where it is; rewriting the note would not.
-    const gap = !raw ? '' : (/\n\n$/.test(raw) ? '' : /\n$/.test(raw) ? '\n' : '\n\n');
-    await app.vault.modify(file, raw + gap + fresh() + '\n');
-    return { ok: true, path, changed: true, created: 'block' };
-  }
-
-  const cfg = parsePlanner(at.body);
-  if (!cfg.month && cfg.view !== 'week') cfg.month = month;
-  setEntry(cfg, date, clean);
-  const next = stringifyPlanner(cfg);
-  if (next === at.body) return { ok: true, path, changed: false };
-  // Through blockedit, the same path the rendered block itself saves by: it
-  // locates the fence by the body we just read, which is the first block.
-  const res = await blockedit.saveFencedBlock(app, TFile, {}, { sourcePath: path },
-    'nexus-planner', next, at.body);
-  return res.ok ? { ok: true, path, changed: true } : res;
-}
-
 module.exports = {
   RE_ENTRY, WEEKDAYS_MON, WEEKDAYS_SUN, MONTHS, MONTH_ROWS,
   toDate, toIso, addDays, monthOf, monthLabel, addMonths,
   weekdayIndex, startOfWeek, monthGrid, weekDays,
   parsePlanner, stringifyPlanner, setEntry, plannerTemplate,
-  formatMonthName, monthNotePath, monthsInRange, findPlannerBlock, fencePlanner,
-  readMonthPlan, readMonthPlans, writeMonthEntry,
+  formatMonthName, monthsInRange, findPlannerBlock, fencePlanner,
 };

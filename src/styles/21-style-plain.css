@@ -23,30 +23,25 @@ body.nx-style-plain {
 
 /* ── pinned tabs: plain icon buttons, no accent chip ── */
 body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"],
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"],
-body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] {
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] {
   background-color: transparent !important;
   box-shadow: none !important;
 }
 body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:hover,
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:hover,
-body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"]:hover {
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:hover {
   background-color: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 7%, transparent) !important;
 }
 body.nx-style-plain.nx-pin-home  .workspace-split.mod-root .workspace-tab-header[data-type="nx-homepage"].is-active,
-body.nx-style-plain.nx-pin-cal   .workspace-split.mod-root .workspace-tab-header[data-type="nx-calendar-page"].is-active,
-body.nx-style-plain.nx-pin-tasks .workspace-split.mod-root .workspace-tab-header[data-type="nx-tasks"].is-active {
+body.nx-style-plain.nx-pin-cal   .workspace-split.mod-root .workspace-tab-header[data-type="nx-calendar-page"].is-active {
   background-color: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 10%, transparent) !important;
   box-shadow: none !important;
 }
 body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon,
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon,
-body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"] .workspace-tab-header-inner-icon {
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon {
   color: var(--nx-fg-muted, var(--text-muted)) !important;
 }
 body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"].is-active .workspace-tab-header-inner-icon,
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"].is-active .workspace-tab-header-inner-icon,
-body.nx-style-plain.nx-pin-tasks .workspace-tab-header[data-type="nx-tasks"].is-active .workspace-tab-header-inner-icon {
+body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"].is-active .workspace-tab-header-inner-icon {
   color: var(--nx-fg-bright, var(--text-normal)) !important;
 }
 

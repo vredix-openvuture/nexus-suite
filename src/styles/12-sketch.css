@@ -743,6 +743,10 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
 .nx-skpane-stage { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
 .nx-skpane-stage .nx-sketch-pad { width: 100%; }
 .nx-skpane-back { margin-left: var(--nx-sp-1); }
+/* Which page you are on. The count sits IN the button, because a page number
+   you cannot press is a fact with nothing to do. */
+.nx-skpane-pages { gap: var(--nx-sp-1); padding: 0 var(--nx-sp-2); }
+.nx-skpane-pagenum { font-variant-numeric: tabular-nums; font-size: var(--font-ui-smaller); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    RECOVERED 2026-08-24. The rules below were written together with
@@ -822,6 +826,28 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
   transition: transform .1s, border-color .1s;
 }
 .nx-skpick-card:hover { transform: translateY(-2px); border-color: var(--interactive-accent); }
+/* The page you are looking at, in a list of pages that otherwise look alike. */
+.nx-skpick-card.is-current { border-color: var(--nx-accent, var(--interactive-accent)); }
+.nx-skpick-card.is-current .nx-skpick-name { color: var(--nx-accent, var(--interactive-accent)); }
+/* A page whose .svg is gone still has to be pressable — to be given a new one,
+   or taken out of the note. */
+.nx-skpick-thumb-missing {
+  display: grid; place-items: center;
+  background: repeating-linear-gradient(45deg,
+    var(--nx-sf-1) 0 8px, transparent 8px 16px);
+}
+.nx-skpick-card { position: relative; }
+.nx-skpick-drop {
+  position: absolute; top: 4px; right: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: var(--nx-r-tile);
+  background: color-mix(in srgb, var(--background-primary) 78%, transparent);
+  color: var(--nx-fg-muted, var(--text-muted));
+  opacity: 0; transition: opacity .12s ease, color .12s ease;
+}
+.nx-skpick-card:hover .nx-skpick-drop { opacity: 1; }
+body.is-mobile .nx-skpick-drop { opacity: .8; }
+.nx-skpick-drop:hover { color: var(--wl-color1, #ce3737); }
 .nx-skpick-card:focus-visible { outline: calc(var(--nx-bw) * 2) solid var(--interactive-accent); outline-offset: 2px; }
 /* Sketches are ink on light paper — a white mat keeps them readable in a dark
    theme instead of drowning them in the modal's own surface. */

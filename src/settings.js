@@ -24,7 +24,6 @@ const vaultsync = require('./lib/vaultsync.js');
 const quicknoteLib = require('./lib/quicknote.js');
 const extcommand = require('./lib/extcommand.js');
 const tasks = require('./lib/tasks.js');
-const planner = require('./lib/planner.js');
 const daytext = require('./lib/daytext.js');
 const { BAR_DEFAULTS, BAR_ITEMS, BAR_MODES, HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS } = require('./constants.js');
 
@@ -104,28 +103,16 @@ class NexusSettingsTab extends PluginSettingTab {
       .addButton(b => b.setButtonText('New project').onClick(async () => { const name = await new NexusNameModal(this.app, 'New project name', 'Project').openAndGet(); if (name) { const f = await tasks.createProject(this.plugin, name); this.plugin.app.workspace.getLeaf(false).openFile(f); } }))
       .addButton(b => b.setButtonText('New task').setCta().onClick(() => new NexusTaskModal(this.plugin, null).open()));
 
-    // ── The month's planner note ──
-    e.createEl('h4', { text: 'Planner notes', cls: 'nx-callout-h' });
+    // ── The planner block ──
+    e.createEl('h4', { text: 'Planner', cls: 'nx-callout-h' });
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'A separate thing from the day’s text above: a “nexus-planner” block renders a whole month with one line per day, and those lines live in the block itself rather than in the daily notes. The calendar page no longer reads them.' });
-    const pl = s.planner || (s.planner = { folder: 'Planner', pattern: 'YYYY-MM' });
-    const plannerExample = e.createEl('p', { cls: 'setting-item-description' });
-    const showExample = () => {
-      const path = planner.monthNotePath(pl, moment().format('YYYY-MM'));
-      plannerExample.setText('This month: ' + (path || '— the pattern produces no file name —'));
-    };
-    // Rebuilding every calendar rescans the vault, so it happens when the field
-    // is left rather than on each keystroke.
-    const refreshOnLeave = (t) => { t.inputEl.onblur = () => this.plugin.refreshCalendarViews(); return t; };
-    new Setting(e).setName('Planner folder')
-      .setDesc('Leave empty to keep the month notes in the vault root.')
-      .addText(t => refreshOnLeave(t).setPlaceholder('Planner').setValue(pl.folder || '')
-        .onChange(async v => { pl.folder = (v || '').trim(); await this.save(); showExample(); }));
-    new Setting(e).setName('File name')
-      .setDesc('YYYY, YY, MM, MMM and MMMM; anything else is kept as typed. A slash makes a subfolder, so "YYYY/YYYY-MM" files each year separately.')
-      .addText(t => refreshOnLeave(t).setPlaceholder('YYYY-MM').setValue(pl.pattern || '')
-        .onChange(async v => { pl.pattern = (v || '').trim() || 'YYYY-MM'; await this.save(); showExample(); }));
-    showExample();
+      text: 'A “nexus-planner” block renders a whole month of the same day texts, writable in place \u2014 one store, two views. It used to keep its lines inside the block; the command below carries any it still holds into the daily notes. It reports what it will do before it writes, never overwrites a day that already has a text, and deletes nothing.' });
+    new Setting(e).setName('Old planner lines')
+      .setDesc(this.plugin.settings.plannerMigrated
+        ? 'Already moved once. Running it again only picks up lines added since.'
+        : 'Not moved yet. Blocks that still hold lines are showing the daily notes instead.')
+      .addButton(b => b.setButtonText('Move them into the daily notes')
+        .onClick(() => this.plugin.migratePlannerLines()));
 
     new Setting(e).addButton(b => b.setButtonText('Open calendar').setCta().onClick(() => this.plugin.openCalendarPage()));
   }

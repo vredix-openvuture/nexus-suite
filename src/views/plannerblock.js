@@ -2,12 +2,15 @@
 
 /* ============================================================================
  *  NEXUS SUITE · views · the planner block
- *  Renders a ```nexus-planner``` block: a month (or a week) with one writable
- *  line per day. The block IS the plan — see lib/planner.js.
+ *  Renders a ```nexus-planner``` block: a month (or a week) of what each day is
+ *  FOR, writable in place. The fence says which month; the text of a day lives
+ *  in that day's own note, exactly where the calendar page keeps it — one store,
+ *  two views. See lib/daytext.js.
  * ========================================================================== */
 
 const { Notice, TFile, moment, setIcon } = require('obsidian');
 const planner = require('../lib/planner.js');
+const daytext = require('../lib/daytext.js');
 const blockedit = require('../lib/blockedit.js');
 
 class NexusPlanner {
@@ -49,6 +52,14 @@ class NexusPlanner {
     const days = cfg.view === 'week'
       ? [planner.weekDays(cfg.anchor, cfg.weekStart)]
       : planner.monthGrid(cfg.month, cfg.weekStart);
+    // The fence's own `YYYY-MM-DD:` lines are the old store and are ignored:
+    // what a day says comes from that day's note. lib/plannermigrate.js is what
+    // carries the old lines over.
+    cfg.entries = {};
+    days.forEach(week => week.forEach(day => {
+      const text = daytext.readDayText(this.app, this.plugin, moment(day.date, 'YYYY-MM-DD'));
+      if (text) cfg.entries[day.date] = text;
+    }));
     this.grid(el, cfg, ctx, days, today);
   }
 
@@ -73,12 +84,12 @@ class NexusPlanner {
     const step = (n) => {
       if (cfg.view === 'week') cfg.anchor = planner.addDays(cfg.anchor, n * 7);
       else cfg.month = planner.addMonths(cfg.month, n);
-      this.save(el, ctx, cfg);
+      this.saveConfig(el, ctx, cfg);
     };
     tool('chevron-left', cfg.view === 'week' ? 'Previous week' : 'Previous month', () => step(-1));
     tool('dot', 'Back to now', () => {
       if (cfg.view === 'week') cfg.anchor = today; else cfg.month = planner.monthOf(today);
-      this.save(el, ctx, cfg);
+      this.saveConfig(el, ctx, cfg);
     });
     tool('chevron-right', cfg.view === 'week' ? 'Next week' : 'Next month', () => step(1));
     tool(cfg.view === 'week' ? 'calendar' : 'calendar-range',
@@ -87,7 +98,7 @@ class NexusPlanner {
         // month you were looking at, and the month that holds the week.
         if (cfg.view === 'week') { cfg.month = planner.monthOf(cfg.anchor); cfg.view = 'month'; }
         else { cfg.view = 'week'; if (planner.monthOf(cfg.anchor) !== cfg.month) cfg.anchor = cfg.month + '-01'; }
-        this.save(el, ctx, cfg);
+        this.saveConfig(el, ctx, cfg);
       });
   }
 
@@ -124,24 +135,34 @@ class NexusPlanner {
     setIcon(jump, 'file-text');
     jump.onclick = (e) => { e.stopPropagation(); this.openDaily(day.date); };
 
-    const input = cell.createEl('input', {
+    const input = cell.createEl('textarea', {
       cls: 'nx-pl-input',
-      attr: { type: 'text', placeholder: '', 'aria-label': 'The one thing for ' + day.date },
+      attr: { placeholder: '', 'aria-label': 'What ' + day.date + ' is for' },
     });
     input.value = cfg.entries[day.date] || '';
     let last = input.value;
     const commit = () => {
       if (input.value === last) return;
+      const previous = last;
       last = input.value;
-      planner.setEntry(cfg, day.date, input.value);
-      this.save(el, ctx, cfg);
+      this.save(day.date, input.value, input, previous);
     };
     input.onblur = commit;
     input.onkeydown = (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-      // Escape puts back what was there, which is what every text field does.
+      // Enter opens a line — the text is a paragraph, not a field; Ctrl/⌘+Enter
+      // is "done", the same as in the calendar's month cell.
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); input.blur(); }
       if (e.key === 'Escape') { input.value = last; input.blur(); }
     };
+  }
+
+  /* The fence itself — only its config changes now (which month, which view). */
+  async saveConfig(el, ctx, cfg) {
+    const src = planner.stringifyPlanner(cfg);
+    const previous = el._nxSrc;
+    if (el._nxRepaint) el._nxRepaint(src);
+    const res = await blockedit.saveFencedBlock(this.app, TFile, el, ctx, 'nexus-planner', src, previous);
+    if (!res.ok) new Notice('Nexus: ' + res.reason + ' — the block was not saved.');
   }
 
   /* Open (or create) the daily note for a day, using the core plugin's own
@@ -163,14 +184,17 @@ class NexusPlanner {
     this.app.workspace.getLeaf(false).openFile(file);
   }
 
-  async save(el, ctx, cfg) {
-    const src = planner.stringifyPlanner(cfg);
-    const previous = el._nxSrc;
-    if (el._nxRepaint) el._nxRepaint(src);
-    const res = await blockedit.saveFencedBlock(this.app, TFile, el, ctx, 'nexus-planner', src, previous);
-    if (!res.ok) { new Notice('Nexus: ' + res.reason + ' — the plan was not saved.'); return; }
-    // The calendars read this same block for their per-day line. A vault event
-    // reaches them too, but only after Obsidian gets around to firing it.
+  /* Into the day's own note. The field is the only copy of what was typed, so a
+     failed write hands it back rather than repainting it away. */
+  async save(date, text, input, previous) {
+    const res = await daytext.writeDayText(this.app, this.plugin, moment(date, 'YYYY-MM-DD'), text);
+    if (!res.ok) {
+      new Notice('Nexus: ' + res.reason + ' — nothing was saved.');
+      if (input && input.isConnected) { input.value = text; input.focus(); }
+      return;
+    }
+    // The calendar page and the mini calendar show the same text. A metadata
+    // event reaches them too, but only once Obsidian gets around to firing it.
     if (typeof this.plugin.refreshCalendarViews === 'function') this.plugin.refreshCalendarViews();
   }
 }

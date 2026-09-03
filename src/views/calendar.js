@@ -5,10 +5,9 @@
  *  Sidebar month-grid calendar.
  * ========================================================================== */
 
-const { ItemView, TFile, moment } = require('obsidian');
+const { ItemView, moment } = require('obsidian');
 const { CAL_VIEW, NX_MODULES } = require('../constants.js');
 const { getDailyNoteSettings, nxMonthGridRange, nxWeekdayLabels, openDailyNote } = require('../lib/helpers.js');
-const planner = require('../lib/planner.js');
 const daytext = require('../lib/daytext.js');
 
 class NexusCalendarView extends ItemView {
@@ -17,21 +16,17 @@ class NexusCalendarView extends ItemView {
     this.plugin = plugin;
     this.cursor = moment().startOf('month');
     this.cells = {};                 // date → its cell, so a mark can be applied after the paint
-    this.plannerPaths = new Set();
-    this._planGen = 0;               // a slow read of an old month must not win
   }
   getViewType() { return CAL_VIEW; }
   getDisplayText() { return NX_MODULES.calendar.name; }
   getIcon() { return 'calendar'; }
   async onOpen() {
     this.render();
-    // A planner line written anywhere — the block in the note, the full-page
-    // calendar — has to reach the marks here without a reload.
-    const touch = (f) => { if (f && f.path && this.plannerPaths.has(f.path)) this.markPlanned(); };
-    const vault = this.plugin.app.vault;
-    this.registerEvent(vault.on('modify', touch));
-    this.registerEvent(vault.on('create', touch));
-    this.registerEvent(vault.on('delete', touch));
+    /* A day's text is frontmatter, so the METADATA cache is the event to watch:
+       'modify' fires before Obsidian has re-parsed the note, and a mark applied
+       there would be one keystroke behind. */
+    this.registerEvent(this.plugin.app.metadataCache.on('changed', () => this.markDayTexts()));
+    this.registerEvent(this.plugin.app.vault.on('delete', () => this.render()));
   }
 
   render() {
@@ -75,38 +70,8 @@ class NexusCalendarView extends ItemView {
     }
     this.cells = cells;
     this.markDayTexts();
-    this.markPlanned();
   }
 
-  /* Two marks, one meaning: this day has something written for it. The day's
-     TEXT (the daily note's own frontmatter) is read straight from the metadata
-     cache, so it is applied during the paint; the PLANNER's line is a file read
-     per month and lands afterwards — the grid must not wait on it to appear.
-     Neither is written out here: a sidebar column is too narrow for a sentence
-     and this view's job is navigation. */
-  markDayTexts() {
-    for (const date of Object.keys(this.cells)) {
-      const has = !!daytext.readDayText(this.plugin.app, this.plugin, moment(date, 'YYYY-MM-DD'));
-      this.cells[date].toggleClass('nx-has-daytext', has);
-    }
-  }
-
-  async markPlanned() {
-    const gen = ++this._planGen;
-    const settings = this.plugin.settings;
-    if (settings.planner && settings.planner.enabled === false) { this.plannerPaths = new Set(); return; }
-    const store = (settings.tasksCalendar || {}).planner || {};
-    const [start, end] = nxMonthGridRange(this.cursor, this.plugin);
-    const months = planner.monthsInRange(start.format('YYYY-MM-DD'), end.format('YYYY-MM-DD'));
-    const paths = new Set(months.map(m => planner.monthNotePath(store, m)).filter(Boolean));
-    let lines = {};
-    try { lines = await planner.readMonthPlans(this.plugin.app, TFile, store, months); }
-    catch (e) { console.error('[Nexus] planner: could not read ' + months.join(', '), e); return; }
-    // Two fast month steps: the older read must not mark the month that left.
-    if (gen !== this._planGen) return;
-    this.plannerPaths = paths;
-    for (const date of Object.keys(this.cells)) this.cells[date].toggleClass('nx-has-plan', !!lines[date]);
-  }
 }
 
 module.exports = { NexusCalendarView };

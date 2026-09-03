@@ -150,6 +150,60 @@ function viewFor(plugin, file) {
      view.contentEl.querySelectorAll('.nx-sketch-open').length, 0);
 }
 
+
+// ── The pages of a note ────────────────────────────────────────────────────
+{
+  const NS = window.noteSketches;
+  eq('pages · nothing named is no pages', NS.idsOf({}), []);
+  eq('pages · a plain string is one page', NS.idsOf({ sketch: 'sk-a' }), ['sk-a']);
+  eq('pages · a list is the page order', NS.idsOf({ sketch: ['sk-a', 'sk-b'] }), ['sk-a', 'sk-b']);
+  eq('pages · blanks and duplicates from a hand-edited list are dropped',
+     NS.idsOf({ sketch: ['sk-a', '', null, ' sk-b ', 'sk-a'] }), ['sk-a', 'sk-b']);
+  eq('pages · a number is still an id', NS.idsOf({ sketch: 12 }), ['12']);
+
+  eq('pages · which page an id is', NS.pageOf(['sk-a', 'sk-b', 'sk-c'], 'sk-b'), 2);
+  eq('pages · an id that is not in the list is no page', NS.pageOf(['sk-a'], 'sk-z'), 0);
+  eq('pages · the one after', NS.nextId(['sk-a', 'sk-b'], 'sk-a'), 'sk-b');
+  eq('pages · nothing after the last', NS.nextId(['sk-a', 'sk-b'], 'sk-b'), null);
+  eq('pages · the one before', NS.prevId(['sk-a', 'sk-b'], 'sk-b'), 'sk-a');
+  eq('pages · nothing before the first', NS.prevId(['sk-a', 'sk-b'], 'sk-a'), null);
+
+  // One page stays a plain string: writing `sketch: [sk-a]` into every existing
+  // note the first time it opens would be a diff full of nothing.
+  const one = {}; NS.writeIds(one, ['sk-a']);
+  eq('pages · one page is written as a string', one.sketch, 'sk-a');
+  const many = {}; NS.writeIds(many, ['sk-a', 'sk-b']);
+  eq('pages · more than one is written as a list', many.sketch, ['sk-a', 'sk-b']);
+  const none = { sketch: 'sk-a' }; NS.writeIds(none, []);
+  ok('pages · no pages takes the key out', !('sketch' in none));
+}
+
+{
+  const NS = window.noteSketches;
+  const t = makeApp({ sketch: 'sk-1' });
+  const saved = [];
+  const id = await NS.addPage(t.plugin, t.file, async (sid, svg) => { saved.push([sid, svg.length > 0]); });
+  eq('pages · adding one appends to the list', t.frontmatter.sketch, ['sk-1', id]);
+  eq('pages · and writes its sidecar first', saved.length, 1);
+  ok('pages · with something a viewer can open', saved[0][1]);
+
+  await NS.removePage(t.plugin, t.file, 'sk-1');
+  eq('pages · removing one takes it out of the note', t.frontmatter.sketch, id);
+  ok('pages · and never touches the drawing itself', true);
+}
+
+{
+  // A note that has never been drawn on gets page one, and the id is a string.
+  const t = makeApp({});
+  const id = await t.plugin.ensureNoteSketch(t.file);
+  eq('pages · the first page is written as a plain id', t.frontmatter.sketch, id);
+  // …and a note that already has pages opens on the first, not on a new one.
+  const many = makeApp({ sketch: ['sk-a', 'sk-b'] });
+  eq('pages · a note with pages opens on page one',
+     await many.plugin.ensureNoteSketch(many.file), 'sk-a');
+  eq('pages · and the list is left alone', many.frontmatter.sketch, ['sk-a', 'sk-b']);
+}
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
 out.push('');

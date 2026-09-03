@@ -37,13 +37,14 @@ const { NexusCaptureHubView } = require('./views/capturehub.js');
 const { NexusGalaxyView } = require('./views/galaxy.js');
 const { NexusScratchView } = require('./views/scratch.js');
 const { NexusSketchSurface, parseSketchSVG, emptySketchSVG, ratioWH, PEN_TYPES } = require('./views/sketch.js');
+const notesketches = require('./lib/notesketches.js');
 const sketchObjects = require('./lib/sketchobjects.js');
 const penGestures = require('./lib/sketchgestures.js');
 const sketchExport = require('./lib/sketchexport.js');
 const sketchSearch = require('./lib/sketchsearch.js');
 const quicknote = require('./lib/quicknote.js');
 const extcommand = require('./lib/extcommand.js');
-const { NexusNameModal } = require('./modals/misc.js');
+const { NexusConfirmModal, NexusNameModal } = require('./modals/misc.js');
 const { NexusSearchModal } = require('./modals/search.js');
 const { NexusSettingsTab } = require('./settings.js');
 const { NexusTimerDoneModal, NexusTimerSidebarView } = require('./views/timers.js');
@@ -240,6 +241,8 @@ module.exports = class NexusSuite extends Plugin {
     // button; the drawing itself lives in the Sketch tab. See the
     // "A note's own sketch" section below.
     this.addCommand({ id: 'nexus-new-protokoll', name: 'New sketch note', callback: () => this.createSketchNote() });
+    this.addCommand({ id: 'nexus-planner-to-daily-notes', name: 'Move planner lines into the daily notes',
+      callback: () => this.migratePlannerLines() });
     this.addCommand({ id: 'nexus-track-note-as-task', name: 'Track this note as a task',
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveFile();
@@ -481,7 +484,7 @@ module.exports = class NexusSuite extends Plugin {
     this._unloading = true;
     window.clearTimeout(this._pinT);
     window.clearTimeout(this._homeEmptyTimer);
-    ['nx-pin-home', 'nx-pin-cal', 'nx-pin-tasks'].forEach(c => document.body.removeClass(c));
+    ['nx-pin-home', 'nx-pin-cal'].forEach(c => document.body.removeClass(c));
     this.app.workspace.detachLeavesOfType(CAL_VIEW);
     this.app.workspace.detachLeavesOfType(CAL_PAGE_VIEW);
     this.app.workspace.detachLeavesOfType(TASKS_VIEW);
@@ -3469,7 +3472,7 @@ module.exports = class NexusSuite extends Plugin {
       pop.createDiv('nx-sk-menu-sep');
       const add = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol', text: '＋ Section here' });
       add.onclick = async () => {
-        const { NexusNameModal } = require('./modals/misc.js');
+        const { NexusConfirmModal, NexusNameModal } = require('./modals/misc.js');
         const at = surface.viewCenter();
         closePop();
         const title = await new NexusNameModal(plugin.app, 'Name this section', '').openAndGet();
@@ -4003,6 +4006,29 @@ module.exports = class NexusSuite extends Plugin {
     return done;
   }
 
+  /* The planner used to keep a day's line in its own fence; it now reads the
+     same field the calendar writes. This carries what is already written over —
+     on request, because it creates a daily note per day that has none. */
+  async migratePlannerLines() {
+    const plannerMigrate = require('./lib/plannermigrate.js');
+    new Notice('Nexus: looking through the planner blocks…');
+    let plan;
+    try { plan = await plannerMigrate.scan(this.app, this, moment); }
+    catch (e) { new Notice('Nexus: could not read the planner blocks — ' + ((e && e.message) || e)); return; }
+    if (!plan.move.length && !plan.clash.length) { new Notice(plannerMigrate.describe(plan)); return; }
+    const go = await new NexusConfirmModal(this.app, 'Move planner lines into the daily notes',
+      plannerMigrate.describe(plan), 'Move them').openAndGet();
+    if (!go) return;
+    const res = await plannerMigrate.apply(this.app, this, moment, plan);
+    this.settings.plannerMigrated = true;
+    await this.saveSettings();
+    if (typeof this.refreshCalendarViews === 'function') this.refreshCalendarViews();
+    const lines = [res.written + ' day(s) written.'];
+    if (plan.clash.length) lines.push(plan.clash.length + ' left alone (their note already had a text).');
+    if (res.failed.length) lines.push('Failed: ' + res.failed.slice(0, 5).join('; '));
+    new Notice('Nexus\n' + lines.join('\n'), 12000);
+  }
+
   /* ---- A note's own sketch ----
      Every markdown note can own ONE drawing, kept in the same .svg sidecar
      store as the code block (id in frontmatter `sketch`). The note never draws
@@ -4011,16 +4037,20 @@ module.exports = class NexusSuite extends Plugin {
      mountSketchControl's corner button. See docs/removed-features.md for the
      Slate mode this replaced. */
 
-  /* The note's sketch id, created on demand together with an empty sidecar so
-     the tab always opens on something rather than on "not found". */
+  /* The FIRST page of a note's drawing, created on demand together with an
+     empty sidecar so the tab always opens on something rather than on "not
+     found". The rest of the pages are lib/notesketches.js. */
   async ensureNoteSketch(file) {
     if (!file || file.extension !== 'md') return '';
-    const fm = (this.app.metadataCache.getFileCache(file) || {}).frontmatter || {};
-    let id = fm.sketch ? String(fm.sketch) : '';
+    let id = notesketches.idsOfFile(this.app, file)[0] || '';
     if (!id) {
-      id = 'sk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      try { await this.app.fileManager.processFrontMatter(file, f => { if (f.sketch) id = f.sketch; else f.sketch = id; }); }
-      catch (e) { return ''; }
+      id = notesketches.newId();
+      try {
+        await this.app.fileManager.processFrontMatter(file, fm => {
+          const ids = notesketches.idsOf(fm);
+          if (ids.length) id = ids[0]; else notesketches.writeIds(fm, [id]);
+        });
+      } catch (e) { return ''; }
     }
     // The sidecar can be missing even when the note names one — deleted by hand,
     // or a sync that has not caught up. Writing an empty one is the only
@@ -4909,8 +4939,6 @@ module.exports = class NexusSuite extends Plugin {
         on: () => this.settings.homepage.enabled,      open: () => this.openHomepage() },
       { key: 'calendar', type: CAL_PAGE_VIEW, cls: 'nx-pin-cal',   label: NX_MODULES.tasksCalendar.name,
         on: () => this.settings.tasksCalendar.enabled, open: () => this.openCalendarPage() },
-      { key: 'tasks',    type: TASKS_VIEW,    cls: 'nx-pin-tasks', label: 'Tasks',
-        on: () => this.settings.tasksCalendar.enabled, open: () => this.openTasksPage() },
     ];
   }
   isTabPinned(key) { return !!(this.settings.pinnedTabs || {})[key]; }

@@ -2,8 +2,12 @@
 
 /* ============================================================================
  *  NEXUS SUITE · views · sketch pane
- *  One sketch as its own tab, so it can sit in a split NEXT TO the note it
- *  belongs to: markdown on one side, the drawing on the other, both editable.
+ *  A note's drawing as its own tab, so it can sit in a split NEXT TO the note
+ *  it belongs to: markdown on one side, the drawing on the other, both editable.
+ *
+ *  A note owns PAGES, not one drawing (lib/notesketches.js). Throw a finger
+ *  sideways to turn one; throw it left off the last page and a new blank one is
+ *  made. The button in the toolbar lists them all.
  *
  *  The drawing is the .svg sidecar (see main.js · _sketchFolder) — this view
  *  owns nothing, it just opens that file in a full editor and writes it back on
@@ -17,6 +21,7 @@
 
 const { ItemView, Notice, setIcon } = require('obsidian');
 const { SKETCH_VIEW } = require('../constants.js');
+const notesketches = require('../lib/notesketches.js');
 const { NexusSketchSurface } = require('./sketch.js');
 
 class NexusSketchPaneView extends ItemView {
@@ -24,7 +29,49 @@ class NexusSketchPaneView extends ItemView {
   getViewType() { return SKETCH_VIEW; }
   getDisplayText() {
     const base = this.notePath ? this.notePath.split('/').pop().replace(/\.md$/i, '') : '';
-    return base ? 'Sketch · ' + base : 'Sketch';
+    const pages = this.pageIds();
+    const where = pages.length > 1 ? ' ' + notesketches.pageOf(pages, this.id) + '/' + pages.length : '';
+    return base ? 'Sketch · ' + base + where : 'Sketch' + where;
+  }
+
+  /* The note's pages, in order. A drawing opened without a note (from the
+     capture hub, say) is a list of one: itself. */
+  noteFile() {
+    return this.notePath ? this.app.vault.getAbstractFileByPath(this.notePath) : null;
+  }
+  pageIds() {
+    const ids = notesketches.idsOfFile(this.app, this.noteFile());
+    return ids.length ? ids : (this.id ? [this.id] : []);
+  }
+
+  async goToPage(id) {
+    if (!id || id === this.id) return;
+    if (this.surface) { this.surface.destroy(); this.surface = null; }
+    this.id = id;
+    await this.render();
+    this.leaf.updateHeader && this.leaf.updateHeader();
+  }
+
+  /* Sideways off the last page makes a new one — that IS the "add a page"
+     gesture, and it is why the button beside it only has to LIST them. */
+  async turnPage(dir) {
+    const ids = this.pageIds();
+    if (dir === 'prev') { await this.goToPage(notesketches.prevId(ids, this.id)); return; }
+    const next = notesketches.nextId(ids, this.id);
+    if (next) { await this.goToPage(next); return; }
+    await this.addPage();
+  }
+
+  async addPage() {
+    const file = this.noteFile();
+    if (!file) { new Notice('This drawing does not belong to a note, so it has no pages.'); return; }
+    try {
+      const fresh = await notesketches.addPage(this.plugin, file, (id, svg) => this.plugin.saveSketch(id, svg));
+      await this.goToPage(fresh);
+      new Notice('New page — ' + notesketches.pageOf(this.pageIds(), fresh) + ' of ' + this.pageIds().length);
+    } catch (e) {
+      new Notice('Nexus: could not add a page — ' + ((e && e.message) || e));
+    }
   }
   getIcon() { return 'pencil-line'; }
 
@@ -70,6 +117,7 @@ class NexusSketchPaneView extends ItemView {
       bgColor: s.bgColor,
       autoGrow: true,                       // a pane is a workbench, not a preview
       pageZoom: true,                       // pinch / ctrl+wheel / the Zoom button magnify the sheet
+      onSwipe: (dir) => this.turnPage(dir),
       strokes: data.strokes || [],
       objects: data.objects || [],
       sections: data.sections || [],
@@ -116,10 +164,26 @@ class NexusSketchPaneView extends ItemView {
       const back = bar.createDiv({ cls: 'nx-sk-btn nx-skpane-back', attr: { 'aria-label': 'Show the note' } });
       setIcon(back, 'file-text');
       back.onclick = () => {
-        const f = this.app.vault.getAbstractFileByPath(this.notePath);
+        const f = this.noteFile();
         if (f) this.app.workspace.getLeaf(false).openFile(f);
       };
+      this._pages(bar);
     }
+  }
+
+  /* Which page you are on, and every page there is. The label doubles as the
+     button: a page count nobody can click is a fact with nothing to do. */
+  _pages(bar) {
+    const ids = this.pageIds();
+    const btn = bar.createDiv({ cls: 'nx-sk-btn nx-skpane-pages',
+      attr: { 'aria-label': 'The pages of this note' } });
+    setIcon(btn, 'copy');
+    btn.createSpan({ cls: 'nx-skpane-pagenum',
+      text: notesketches.pageOf(ids, this.id) + '/' + Math.max(1, ids.length) });
+    btn.onclick = () => {
+      const { NexusSketchPagesModal } = require('../modals/sketchpages.js');
+      new NexusSketchPagesModal(this.plugin, this).open();
+    };
   }
 
   async save(surface) {

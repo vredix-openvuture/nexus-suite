@@ -69,6 +69,7 @@ const DEFAULT_SETTINGS = {
   search:     { enabled: true, fields: { title: true, tags: true, headings: true, props: true, text: true } },
   typography: { enabled: true,  dashes: true, ellipsis: true, quotes: true, arrows: true, symbols: true },
   calendar:   { enabled: true,  ribbon: true },
+  plannerMigrated: false,   // the one-off move of old planner lines into the daily notes
   tasksCalendar: { enabled: false, ribbon: true, dataLocation: 'plugin', dataFolder: '_nexus',
  weekStart: 'locale',
     syncOnStartup: true, syncIntervalMin: 15, conflictPolicy: 'server',   // 'server' | 'ask'
@@ -79,9 +80,6 @@ const DEFAULT_SETTINGS = {
     /* Which frontmatter field of a daily note holds what that day is FOR. The
        month view writes it and reads it back — see lib/daytext.js. */
     dayTextKey: 'important',
-    /* Where a month's planner note lives — the ```nexus-planner``` block's own
-       store, which is a separate thing from the day's text above. */
-    planner: { folder: 'Planner', pattern: 'YYYY-MM' },
     tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local', buckets: TASK_BUCKETS.slice() } },
   propertyHider: { enabled: true, hidden: [], reveal: false },
   callouts:   { enabled: true, migrated: false, items: [] },
@@ -183,7 +181,7 @@ const DEFAULT_SETTINGS = {
   /* Nexus pages that live permanently at the tab bar as an icon (see
      applyPinnedTabs): pinned in Obsidian's own sense, close button hidden,
      reopened by the watchdog if something detaches them anyway. */
-  pinnedTabs: { home: false, calendar: false, tasks: false },
+  pinnedTabs: { home: false, calendar: false },
   /* Settings that belong to ONE machine, keyed by plugin.deviceId(): the sync
      connection, its schedule, the task accounts. In data.json so they are
      synced and backed up, keyed so no device overwrites another's entry — the

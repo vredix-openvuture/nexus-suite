@@ -552,3 +552,46 @@ Commands removed: `nexus-new-event` ("New event").
 calendar half of `calstore.js`, and the event branches listed above. What would
 also have to come back is the choice the removal made: two places to write about
 a day. The day's text is in the note; an event was in a plugin file.
+
+---
+
+## 7. The planner's own store, and the Tasks pinned tab
+
+Two small removals from the same release.
+
+### The planner block no longer holds its own lines
+
+It used to be the store: `YYYY-MM-DD: text` lines inside the
+```` ```nexus-planner ```` fence, in a month note the plugin resolved from a
+folder and a file-name pattern. It now reads and writes the same field the
+calendar does — that day's own note — so the fence carries only which month it
+shows.
+
+**Nothing is deleted.** Old lines stay in their blocks, inert. The command
+**Move planner lines into the daily notes** (`nexus-planner-to-daily-notes`,
+`src/lib/plannermigrate.js`) copies them across on request: it reports what it
+found before it writes, never overwrites a day whose note already has a text,
+and creates a daily note only for a day that has none.
+
+Removed from `src/lib/planner.js`: `monthNotePath`, `readMonthPlan`,
+`readMonthPlans`, `writeMonthEntry` and `ensureParentFolder` — the whole month
+note layer. `parsePlanner`, `stringifyPlanner` and `setEntry` stay: the fence
+still carries config, and the migration reads the old entries with them.
+
+Removed from `DEFAULT_SETTINGS.tasksCalendar`: `planner` (`{ folder, pattern }`).
+Added at the top level: `plannerMigrated`. The settings tab lost *Planner folder*
+and *File name* and gained the migration button.
+
+`src/views/calendar.js` lost `markPlanned()` and the vault watchers that fed it:
+the mini calendar marks a day that has a **text**, which is now the same
+statement.
+
+### The Tasks page cannot be pinned to the tab bar
+
+`pinnableTabs()` in `src/main.js` lost its `tasks` entry, and the CSS lost
+`body.nx-pin-tasks` in `01-core.css` and `21-style-plain.css`. The dashboard and
+the calendar keep theirs. `pinnedTabs.tasks` in an existing `data.json` is dead
+but harmless; the settings row is generated from `pinnableTabs()`, so it
+disappeared with the entry.
+
+To bring it back: one row in `pinnableTabs()` and the three selector lists.

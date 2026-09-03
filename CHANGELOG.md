@@ -2,6 +2,49 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.30.0 — 2026-09-04
+
+### Added
+
+- **A note's drawing has pages.** Throw a finger sideways in the Sketch tab to
+  turn one; throw it left off the last page and a new blank one is made. The
+  button beside the page count lists every page as a thumbnail, opens one, adds
+  one, or takes one out of the note. The note keeps the order in its own
+  frontmatter — `sketch: [sk-a, sk-b]` — and a note that already names one
+  drawing as a plain string stays exactly as it is until it gets a second page.
+- **Two fingers, tapped twice, put the sheet back to page width.** Three
+  simultaneous touches are a system gesture on a lot of Android tablets and
+  never reach a web page, which is why the three-finger tap did nothing there.
+  It still works where the OS allows it. A single two-finger tap keeps meaning
+  nothing — that is where a pinch begins and ends.
+- The zoom reset **says so even when it was already at 100 %**: "nothing
+  happened" and "not recognised" otherwise look the same.
+
+### Changed
+
+- **The planner block and the calendar are one thing now.** Both read and write
+  the same text — the day's own note. The `nexus-planner` fence keeps only which
+  month it shows; its cell is a paragraph rather than a one-line field, and
+  `Ctrl`/`⌘ + Enter` finishes it, the same as in the calendar.
+- **Old planner lines move on request**, never behind your back: the command
+  **Move planner lines into the daily notes** (also a button in Settings →
+  Calendar → Planner) counts what it found, says how many notes it would create,
+  and writes only after you say so. It never overwrites a day whose note already
+  has a text, and it deletes nothing — the blocks keep their old lines, which the
+  planner no longer reads.
+- Taps are given more room: a burst may last 600 ms (was 500) and a run of them
+  counts up to 420 ms apart (was 320). Human hands are slower than mouse
+  numbers.
+
+### Removed
+
+- **The Tasks page can no longer be pinned to the tab bar**, and its switch is
+  gone from Settings → Dashboard → Pinned tabs. The dashboard and the calendar
+  keep theirs. `pinnedTabs.tasks` left in `data.json` is dead but harmless.
+- The planner's own store: `Planner folder` and `File name` under Settings →
+  Calendar, and the month notes they pointed at. Existing month notes are
+  ordinary notes now — nothing reads them until you run the migration above.
+
 ## 0.29.0 — 2026-09-03
 
 ### Changed

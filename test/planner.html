@@ -116,21 +116,35 @@ const TFile = window.obsidianStub.TFile;
 }
 
 // ── rendered, and writing back ─────────────────────────────────────────────
+/* The note holding the block, plus the daily notes the block now writes into.
+   `_fm` is each daily note's frontmatter, which is where a day's text lives. */
 function makeApp(text) {
   const file = new TFile();
   file.path = 'Plan.md'; file.basename = 'Plan'; file.extension = 'md';
   const store = { 'Plan.md': { file, text } };
-  return {
-    _store: store,
+  const fm = {};
+  const app = {
+    _store: store, _fm: fm, _created: [],
     vault: {
       getAbstractFileByPath(p) { return store[p] ? store[p].file : null; },
       async read(f) { return store[f.path].text; },
+      async cachedRead(f) { return store[f.path].text; },
       async modify(f, next) { store[f.path].text = next; },
-      async create(p, t) { const nf = new TFile(); nf.path = p; nf.basename = p.split('/').pop().replace('.md',''); store[p] = { file: nf, text: t }; return nf; },
+      async createFolder() {},
+      async create(p, t) {
+        const nf = new TFile(); nf.path = p; nf.extension = 'md';
+        nf.basename = p.split('/').pop().replace('.md', '');
+        store[p] = { file: nf, text: t }; fm[p] = {}; app._created.push(p);
+        return nf;
+      },
+      getMarkdownFiles() { return Object.keys(store).map(k => store[k].file); },
     },
+    metadataCache: { getFileCache: (f) => ({ frontmatter: fm[f.path] || (fm[f.path] = {}) }) },
+    fileManager: { async processFrontMatter(f, fn) { fn(fm[f.path] || (fm[f.path] = {})); } },
     workspace: { getLeaf: () => ({ openFile() {} }) },
-    internalPlugins: { getPluginById: () => null },
+    internalPlugins: { getPluginById: () => ({ instance: { options: { format: 'YYYY-MM-DD', folder: 'Journal' } } }) },
   };
+  return app;
 }
 function ctxFor(app) {
   return {
@@ -159,7 +173,8 @@ function blockOf(app) {
   const stage = document.getElementById('stage');
   stage.innerHTML = '';
   const el = stage.createDiv();
-  const pl = new window.NexusPlanner({ app, settings: { planner: { enabled: true } } });
+  const plugin = { app, settings: { planner: { enabled: true }, tasksCalendar: {} } };
+  const pl = new window.NexusPlanner(plugin);
   pl.today = () => '2026-09-15';
   pl.render('view: month\nmonth: 2026-09', el, ctxFor(app));
 
@@ -178,29 +193,44 @@ function blockOf(app) {
   input.value = 'Ship the release';
   input.dispatchEvent(new Event('blur'));
   await sleep(0);
-  ok('write · the line is saved into the block',
-     blockOf(app).some(l => l === '2026-09-15: Ship the release'), blockOf(app).join('|'));
+  eq('write · the text goes into that DAY\u2019s note, not the block',
+     app._fm['Journal/2026-09-15.md'].important, 'Ship the release');
+  ok('write · the block itself is untouched', blockOf(app).join('|') === 'view: month|month: 2026-09',
+     blockOf(app).join('|'));
   ok('write · the note around it survives', app._store['Plan.md'].text.indexOf('After.') > 0);
+  eq('write · a day with no note gets one', app._created, ['Journal/2026-09-15.md']);
 
-  // A second day, after the block has already been rewritten once.
-  const el2 = document.querySelector('#stage > div');
-  const again = el2.querySelectorAll('.nx-pl-cell')[16].querySelector('.nx-pl-input');
+  // A second day, and the first must still be there.
+  const again = el.querySelectorAll('.nx-pl-cell')[16].querySelector('.nx-pl-input');
   again.value = 'Dentist';
   again.dispatchEvent(new Event('blur'));
   await sleep(0);
-  const block = blockOf(app);
-  ok('write · and so is the second one', block.some(l => l === '2026-09-16: Dentist'), block.join('|'));
-  ok('write · without losing the first', block.some(l => l.indexOf('Ship the release') >= 0), block.join('|'));
+  eq('write · and so is the second one', app._fm['Journal/2026-09-16.md'].important, 'Dentist');
+  eq('write · without losing the first', app._fm['Journal/2026-09-15.md'].important, 'Ship the release');
 
-  // Clearing a day removes the line.
-  const el3 = document.querySelector('#stage > div');
-  const clear = el3.querySelectorAll('.nx-pl-cell')[15].querySelector('.nx-pl-input');
-  eq('write · the value came back on re-render', clear.value, 'Ship the release');
+  // The cell is a paragraph now, not a field: several lines survive.
+  const multi = el.querySelectorAll('.nx-pl-cell')[17].querySelector('.nx-pl-input');
+  eq('write · the cell is a textarea', multi.tagName, 'TEXTAREA');
+  multi.value = 'Two things\nand another';
+  multi.dispatchEvent(new Event('blur'));
+  await sleep(0);
+  eq('write · a multi-line day is stored whole',
+     app._fm['Journal/2026-09-17.md'].important, 'Two things\nand another');
+
+  // Clearing a day takes the field out of the note rather than blanking it.
+  const clear = el.querySelectorAll('.nx-pl-cell')[15].querySelector('.nx-pl-input');
   clear.value = '';
   clear.dispatchEvent(new Event('blur'));
   await sleep(0);
-  ok('write · clearing removes the line',
-     !blockOf(app).some(l => l.indexOf('Ship the release') >= 0), blockOf(app).join('|'));
+  ok('write · clearing removes the field', !('important' in app._fm['Journal/2026-09-15.md']),
+     JSON.stringify(app._fm['Journal/2026-09-15.md']));
+
+  // And a re-render reads the day back out of the notes.
+  pl.render('view: month\nmonth: 2026-09', el, ctxFor(app));
+  eq('render · a day\u2019s text comes back from its note',
+     el.querySelectorAll('.nx-pl-cell')[16].querySelector('.nx-pl-input').value, 'Dentist');
+  eq('render · and a day the fence still names is ignored',
+     el.querySelectorAll('.nx-pl-cell')[15].querySelector('.nx-pl-input').value, '');
 }
 
 {
@@ -210,7 +240,8 @@ function blockOf(app) {
   const stage = document.getElementById('stage');
   stage.innerHTML = '';
   const el = stage.createDiv();
-  const pl = new window.NexusPlanner({ app, settings: { planner: { enabled: true } } });
+  const plugin = { app, settings: { planner: { enabled: true }, tasksCalendar: {} } };
+  const pl = new window.NexusPlanner(plugin);
   pl.today = () => '2026-09-15';
   pl.render('view: month\nmonth: 2026-09', el, ctxFor(app));
 
@@ -226,236 +257,6 @@ function blockOf(app) {
   ok('page · switching to the week is saved', blockOf(app).indexOf('view: week') >= 0, blockOf(app).join('|'));
   const weekEl = document.querySelector('#stage > div');
   eq('page · a week is seven cells', weekEl.querySelectorAll('.nx-pl-cell').length, 7);
-}
-
-// ── the month note: where a month's plan lives ─────────────────────────────
-/* A vault that behaves like Obsidian's on the two points that matter here:
-   creating a file under a folder that does not exist FAILS, and a folder has
-   to be made before the file. Without that, ensureParentFolder proves nothing. */
-function makeVault(files) {
-  const store = {};
-  const folders = new Set();
-  for (const path of Object.keys(files || {})) {
-    const f = new TFile();
-    f.path = path; f.extension = 'md'; f.basename = path.split('/').pop().replace(/\.md$/, '');
-    store[path] = { file: f, text: files[path] };
-    const dir = path.slice(0, path.lastIndexOf('/'));
-    if (path.indexOf('/') >= 0) dir.split('/').forEach((_, i, all) => folders.add(all.slice(0, i + 1).join('/')));
-  }
-  const app = {
-    _store: store, _folders: folders, _created: [],
-    text(p) { return store[p] ? store[p].text : null; },
-    vault: {
-      getAbstractFileByPath(p) { return store[p] ? store[p].file : (folders.has(p) ? { path: p, children: [] } : null); },
-      async read(f) { return store[f.path].text; },
-      async modify(f, next) { store[f.path].text = next; },
-      async createFolder(p) { if (folders.has(p)) throw new Error('exists'); folders.add(p); },
-      async create(p, text) {
-        const dir = p.slice(0, p.lastIndexOf('/'));
-        if (p.indexOf('/') >= 0 && !folders.has(dir)) throw new Error('no such folder: ' + dir);
-        const f = new TFile();
-        f.path = p; f.extension = 'md'; f.basename = p.split('/').pop().replace(/\.md$/, '');
-        store[p] = { file: f, text };
-        app._created.push(p);
-        return f;
-      },
-    },
-  };
-  return app;
-}
-const DEFAULT_STORE = { folder: 'Planner', pattern: 'YYYY-MM' };
-
-{
-  // ── the path a month resolves to ──
-  eq('note · folder plus pattern', P.monthNotePath(DEFAULT_STORE, '2026-09'), 'Planner/2026-09.md');
-  eq('note · no folder means the vault root',
-     P.monthNotePath({ folder: '', pattern: 'YYYY-MM' }, '2026-09'), '2026-09.md');
-  eq('note · a missing folder is the root too',
-     P.monthNotePath({ pattern: 'YYYY-MM' }, '2026-09'), '2026-09.md');
-  eq('note · a slash in the pattern makes a subfolder',
-     P.monthNotePath({ folder: 'Planner', pattern: 'YYYY/YYYY-MM' }, '2026-09'), 'Planner/2026/2026-09.md');
-  eq('note · stray slashes on the folder are trimmed',
-     P.monthNotePath({ folder: '/Planner/', pattern: 'YYYY-MM' }, '2026-09'), 'Planner/2026-09.md');
-  eq('note · a missing pattern falls back to YYYY-MM',
-     P.monthNotePath({ folder: 'Planner' }, '2026-09'), 'Planner/2026-09.md');
-  eq('note · rubbish for a month resolves to nothing', P.monthNotePath(DEFAULT_STORE, 'later'), '');
-
-  eq('name · the month written out', P.formatMonthName('MMMM YYYY', '2026-09'), 'September 2026');
-  eq('name · abbreviated', P.formatMonthName('YY-MMM', '2026-09'), '26-Sep');
-  eq('name · MM is the number, MMM is not',
-     [P.formatMonthName('MM', '2026-09'), P.formatMonthName('MMM', '2026-09')], ['09', 'Sep']);
-  eq('name · a pattern with no token is one note for every month',
-     P.formatMonthName('Plan', '2026-09'), 'Plan');
-
-  eq('range · a month grid touches three months',
-     P.monthsInRange('2026-08-31', '2026-10-11'), ['2026-08', '2026-09', '2026-10']);
-  eq('range · a single month grid touches one', P.monthsInRange('2026-09-01', '2026-09-30'), ['2026-09']);
-  eq('range · across a year end', P.monthsInRange('2026-12-28', '2027-01-31'), ['2026-12', '2027-01']);
-}
-
-{
-  // ── reading a month that has no note ──
-  const app = makeVault({});
-  const plan = await P.readMonthPlan(app, TFile, DEFAULT_STORE, '2026-09');
-  eq('read · a month with no note has no entries', plan.entries, {});
-  eq('read · but it knows where the note would go', plan.path, 'Planner/2026-09.md');
-  eq('read · and reading created nothing', app._created, []);
-  eq('read · nor a folder', Array.from(app._folders), []);
-
-  const many = await P.readMonthPlans(app, TFile, DEFAULT_STORE, ['2026-08', '2026-09']);
-  eq('read · several empty months are still nothing', many, {});
-  eq('read · and still created nothing', app._created, []);
-}
-
-{
-  // ── the first line creates the note ──
-  const app = makeVault({});
-  const res = await P.writeMonthEntry(app, TFile, DEFAULT_STORE, '2026-09', '2026-09-03', 'Ship 0.25');
-  ok('write · the first line succeeds', res.ok, JSON.stringify(res));
-  eq('write · and creates the month note', app._created, ['Planner/2026-09.md']);
-  eq('write · after making the folder it needs', Array.from(app._folders), ['Planner']);
-  const text = app.text('Planner/2026-09.md');
-  eq('write · the note is a fenced planner block and nothing else', text,
-     '```nexus-planner\nview: month\nmonth: 2026-09\n2026-09-03: Ship 0.25\n```\n');
-  const at = P.findPlannerBlock(text);
-  ok('write · the block is found by the locator', !!at);
-  eq('write · and the existing parser reads the line back',
-     P.parsePlanner(at.body).entries, { '2026-09-03': 'Ship 0.25' });
-  eq('write · the block says which month it is', P.parsePlanner(at.body).month, '2026-09');
-  const back = await P.readMonthPlan(app, TFile, DEFAULT_STORE, '2026-09');
-  eq('write · and reading the month gives the line', back.entries, { '2026-09-03': 'Ship 0.25' });
-
-  // Clearing a day that was never written must not leave a file behind.
-  const empty = makeVault({});
-  await P.writeMonthEntry(empty, TFile, DEFAULT_STORE, '2026-10', '2026-10-05', '   ');
-  eq('write · clearing a day of a month with no note creates nothing', empty._created, []);
-}
-
-{
-  // ── editing one line leaves the rest alone ──
-  const NOTE = [
-    '# September',
-    '',
-    '```nexus-planner',
-    'view: month',
-    'month: 2026-09',
-    '2026-09-03: Ship 0.25',
-    '2026-09-11: Dentist, 14:00',
-    '2026-09-20: Holiday',
-    '```',
-    '',
-    'A paragraph the user wrote under the block.',
-  ].join('\n');
-  const app = makeVault({ 'Planner/2026-09.md': NOTE });
-  const res = await P.writeMonthEntry(app, TFile, DEFAULT_STORE, '2026-09', '2026-09-11', 'Dentist, 15:30');
-  ok('edit · the write succeeded', res.ok, JSON.stringify(res));
-  const after = P.parsePlanner(P.findPlannerBlock(app.text('Planner/2026-09.md')).body);
-  eq('edit · that day changed', after.entries['2026-09-11'], 'Dentist, 15:30');
-  eq('edit · and the other days did not',
-     [after.entries['2026-09-03'], after.entries['2026-09-20']], ['Ship 0.25', 'Holiday']);
-  ok('edit · the prose around the block survives',
-     app.text('Planner/2026-09.md').indexOf('A paragraph the user wrote under the block.') > 0);
-  ok('edit · and so does the heading', app.text('Planner/2026-09.md').indexOf('# September') === 0);
-  eq('edit · nothing new was created', app._created, []);
-
-  await P.writeMonthEntry(app, TFile, DEFAULT_STORE, '2026-09', '2026-09-20', '');
-  const cleared = await P.readMonthPlan(app, TFile, DEFAULT_STORE, '2026-09');
-  ok('edit · clearing a line removes it', !('2026-09-20' in cleared.entries));
-  eq('edit · and leaves the others', Object.keys(cleared.entries).sort(), ['2026-09-03', '2026-09-11']);
-}
-
-{
-  // ── the round trip is lossless on a block a human touched ──
-  const messy = [
-    'view: month',
-    'month: 2026-09',
-    '2026-09-20: late',
-    '',
-    'a stray line the user typed',
-    '2026-09-01: early',
-    '2026-09-11: middle',
-  ].join('\n');
-  const cfg = P.parsePlanner(messy);
-  const out = P.stringifyPlanner(cfg);
-  ok('trip · the stray line survives', out.indexOf('a stray line the user typed') >= 0, out);
-  const pairs = (e) => Object.keys(e).sort().map(k => k + ' = ' + e[k]);
-  eq('trip · every entry survives', pairs(P.parsePlanner(out).entries), pairs(cfg.entries));
-  eq('trip · in date order regardless of how they were typed',
-     out.split('\n').filter(l => /^\d{4}-/.test(l)),
-     ['2026-09-01: early', '2026-09-11: middle', '2026-09-20: late']);
-  eq('trip · and a second pass changes nothing', P.stringifyPlanner(P.parsePlanner(out)), out);
-
-  const app = makeVault({ 'Planner/2026-09.md': '```nexus-planner\n' + messy + '\n```' });
-  await P.writeMonthEntry(app, TFile, DEFAULT_STORE, '2026-09', '2026-09-11', 'middle, moved');
-  const body = P.findPlannerBlock(app.text('Planner/2026-09.md')).body;
-  ok('trip · a write through the store keeps the stray line',
-     body.indexOf('a stray line the user typed') >= 0, body);
-  eq('trip · and only the edited day moved', P.parsePlanner(body).entries,
-     { '2026-09-01': 'early', '2026-09-11': 'middle, moved', '2026-09-20': 'late' });
-}
-
-{
-  // ── a note the user owns that happens to sit at the path ──
-  const app = makeVault({ 'Planner/2026-09.md': '# My own note\n\nNothing to do with the planner.\n' });
-  const plan = await P.readMonthPlan(app, TFile, DEFAULT_STORE, '2026-09');
-  eq('foreign · a note without a block is an empty month', plan.entries, {});
-  eq('foreign · and it is not touched by reading',
-     app.text('Planner/2026-09.md'), '# My own note\n\nNothing to do with the planner.\n');
-  await P.writeMonthEntry(app, TFile, DEFAULT_STORE, '2026-09', '2026-09-03', 'Ship 0.25');
-  const text = app.text('Planner/2026-09.md');
-  ok('foreign · writing appends a block instead of overwriting', text.indexOf('# My own note') === 0, text);
-  ok('foreign · the block is there now', text.indexOf('```nexus-planner') > 0, text);
-  ok('foreign · with a blank line between what was there and the block',
-     text.indexOf('Nothing to do with the planner.\n\n```nexus-planner') > 0, JSON.stringify(text));
-  eq('foreign · and holds the line',
-     P.parsePlanner(P.findPlannerBlock(text).body).entries, { '2026-09-03': 'Ship 0.25' });
-}
-
-{
-  // ── two blocks in one note: the first one is the plan ──
-  const NOTE = [
-    '```nexus-planner',
-    'view: month',
-    'month: 2026-09',
-    '2026-09-03: first block',
-    '```',
-    '',
-    '```nexus-planner',
-    'view: month',
-    'month: 2026-09',
-    '2026-09-03: second block',
-    '```',
-  ].join('\n');
-  const app = makeVault({ 'Planner/2026-09.md': NOTE });
-  eq('two · the locator returns the first block', P.findPlannerBlock(NOTE).start, 0);
-  const plan = await P.readMonthPlan(app, TFile, DEFAULT_STORE, '2026-09');
-  eq('two · so reading gives the first block', plan.entries, { '2026-09-03': 'first block' });
-  await P.writeMonthEntry(app, TFile, DEFAULT_STORE, '2026-09', '2026-09-03', 'edited');
-  const text = app.text('Planner/2026-09.md');
-  eq('two · and writing edits the first block',
-     P.parsePlanner(P.findPlannerBlock(text).body).entries, { '2026-09-03': 'edited' });
-  ok('two · the second block is left exactly as it was',
-     text.indexOf('2026-09-03: second block') > 0, text);
-}
-
-{
-  // ── merging months: a note only speaks for its own days ──
-  const app = makeVault({
-    'Planner/2026-08.md': '```nexus-planner\nmonth: 2026-08\n2026-08-31: last of August\n2026-09-01: typed into the wrong month\n```',
-    'Planner/2026-09.md': '```nexus-planner\nmonth: 2026-09\n2026-09-01: first of September\n```',
-  });
-  const lines = await P.readMonthPlans(app, TFile, DEFAULT_STORE, ['2026-08', '2026-09']);
-  eq('merge · a grid spanning two months reads both', lines['2026-08-31'], 'last of August');
-  eq('merge · a day is read from its OWN month note', lines['2026-09-01'], 'first of September');
-  eq('merge · and nothing else leaks in', Object.keys(lines).sort(), ['2026-08-31', '2026-09-01']);
-}
-
-{
-  // ── a pattern with a subfolder creates the folders it needs ──
-  const app = makeVault({});
-  await P.writeMonthEntry(app, TFile, { folder: 'Plans', pattern: 'YYYY/MMMM' }, '2026-09', '2026-09-03', 'x');
-  eq('nested · the note lands where the pattern says', app._created, ['Plans/2026/September.md']);
-  eq('nested · and both folders were made', Array.from(app._folders), ['Plans', 'Plans/2026']);
 }
 
 {
@@ -477,28 +278,6 @@ const DEFAULT_STORE = { folder: 'Planner', pattern: 'YYYY-MM' };
   eq('keys · a default the renderer filled in is not written back',
      P.stringifyPlanner(filled), 'view: month\nmonth: 2026-09');
 
-  const app = makeVault({ 'Planner/2026-09.md': '```nexus-planner\nview: month\nmonth: 2026-09\nweek: 2026-09-07\n```' });
-  await P.writeMonthEntry(app, TFile, DEFAULT_STORE, '2026-09', '2026-09-03', 'Ship');
-  ok('keys · and a write through the store keeps it too',
-     app.text('Planner/2026-09.md').indexOf('week: 2026-09-07') > 0, app.text('Planner/2026-09.md'));
-}
-
-{
-  // ── a path is built from segments, so no slash can produce junk ──
-  eq('path · a leading slash on the pattern',
-     P.monthNotePath({ folder: 'Planner', pattern: '/YYYY-MM' }, '2026-09'), 'Planner/2026-09.md');
-  eq('path · a trailing one does not leave an empty file name',
-     P.monthNotePath({ folder: 'Planner', pattern: 'YYYY/' }, '2026-09'), 'Planner/2026.md');
-  eq('path · doubled slashes collapse',
-     P.monthNotePath({ folder: '/Planner//', pattern: 'YYYY//YYYY-MM' }, '2026-09'), 'Planner/2026/2026-09.md');
-  eq('path · a pattern that is only a slash names no file',
-     P.monthNotePath({ folder: 'Planner', pattern: '/' }, '2026-09'), '');
-  eq('path · spaces around a segment are not part of it',
-     P.monthNotePath({ folder: ' Planner ', pattern: 'YYYY-MM' }, '2026-09'), 'Planner/2026-09.md');
-
-  // Not a token, so it is left as typed — the settings tab shows the result.
-  eq('path · an unknown token is kept literally',
-     P.monthNotePath({ folder: '', pattern: 'YYYY-MM-DD' }, '2026-09'), '2026-09-DD.md');
 }
 
 {
@@ -506,6 +285,61 @@ const DEFAULT_STORE = { folder: 'Planner', pattern: 'YYYY-MM' };
   eq('range · it stops at the end of the calendar instead of looping',
      P.monthsInRange('9999-11-01', '9999-12-31'), ['9999-11', '9999-12']);
   eq('range · a backwards range is empty', P.monthsInRange('2026-10-01', '2026-09-01'), []);
+}
+
+
+// ── carrying the old lines into the daily notes ─────────────────────────────
+{
+  const M = window.plannerMigrate;
+  const moment = window.obsidianStub.moment;
+
+  eq('fence · the body of a planner block is found',
+     M.fenceBodies('# x\n```nexus-planner\nmonth: 2026-09\n2026-09-03: Ship\n```\nafter'),
+     ['month: 2026-09\n2026-09-03: Ship']);
+  eq('fence · another language is not one', M.fenceBodies('```js\n2026-09-03: Ship\n```'), []);
+  eq('fence · two blocks in one note are both read',
+     M.fenceBodies('```nexus-planner\na\n```\n```nexus-planner\nb\n```').length, 2);
+  eq('fence · an unclosed block is ignored rather than swallowing the note',
+     M.fenceBodies('```nexus-planner\nmonth: 2026-09'), []);
+
+  const app = makeApp('```nexus-planner\nmonth: 2026-09\n2026-09-03: Ship 0.25\n2026-09-11: Dentist\n```');
+  const plugin = { app, settings: { planner: { enabled: true }, tasksCalendar: {} } };
+  // One day already has a text of its own: the migration must not touch it.
+  await app.vault.create('Journal/2026-09-11.md', '');
+  app._fm['Journal/2026-09-11.md'] = { important: 'mine, written later' };
+  app._created.length = 0;
+
+  const plan = await M.scan(app, plugin, moment);
+  eq('scan · the days that can move', plan.move.map(e => e.date), ['2026-09-03']);
+  eq('scan · with their text', plan.move[0].text, 'Ship 0.25');
+  eq('scan · a day whose note already speaks is a clash', plan.clash.map(e => e.date), ['2026-09-11']);
+  eq('scan · and the notes that would have to be created', plan.creates, 1);
+  ok('scan · the report says all of it', /1 day\(s\)/.test(M.describe(plan))
+     && /will be created/.test(M.describe(plan))
+     && /left exactly as they are/.test(M.describe(plan)), M.describe(plan));
+  ok('scan · and that nothing is deleted', /Nothing is deleted/.test(M.describe(plan)));
+
+  const res = await M.apply(app, plugin, moment, plan);
+  eq('apply · the day was written', app._fm['Journal/2026-09-03.md'].important, 'Ship 0.25');
+  eq('apply · its note was created', app._created, ['Journal/2026-09-03.md']);
+  eq('apply · the clash was left alone', app._fm['Journal/2026-09-11.md'].important, 'mine, written later');
+  eq('apply · and it says how many it wrote', res.written, 1);
+  ok('apply · the block still holds its old lines',
+     app._store['Plan.md'].text.indexOf('2026-09-03: Ship 0.25') > 0);
+
+  // Running it again finds nothing left to move: the day now has a text.
+  const twice = await M.scan(app, plugin, moment);
+  eq('apply · a second run moves nothing', twice.move, []);
+  ok('apply · and says so', /Nothing to move|left exactly as they are/.test(M.describe(twice)), M.describe(twice));
+}
+
+{
+  const M = window.plannerMigrate;
+  const moment = window.obsidianStub.moment;
+  const app = makeApp('# no planner here');
+  const plugin = { app, settings: { tasksCalendar: {} } };
+  const plan = await M.scan(app, plugin, moment);
+  eq('scan · a vault with no planner block', M.describe(plan), 'No planner lines found. Nothing to move.');
 }
 
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
