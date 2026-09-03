@@ -473,3 +473,82 @@ It needs the CSS block, `updateProtokoll` + `_pkObserve` +
 `mountProtokollSurface`, the `refreshBanner()` call, `fixedViewport` in the
 engine, and the two settings. What it would still not have is a sticky options
 row or a reachable zoom — those were never solved there, which is why it went.
+
+---
+
+## 6. Events and the local calendars
+
+Everything the calendar knew about *appointments*. What is left is the month,
+what each day is **for** (`lib/daytext.js`, one frontmatter field of that day's
+own note) and the tasks due on it.
+
+**Why:** after the CalDAV network layer went (§4), local calendars were the only
+event source left — one more place to type something that the daily note
+already holds, with an RFC 5545 parser and an RRULE engine behind it. The user's
+call: a month, a text per day, nothing else.
+
+**Your data is not deleted.** The calendar JSON under
+`<dataDir>/calendar/local/*.json` is simply no longer read. `dataDir` itself
+stays — the sync state lives there — and its setting is unchanged.
+
+The last commit in which all of this still existed in full:
+
+```
+1393cdb
+```
+
+### Deleted whole
+
+| File | What it was |
+|---|---|
+| `src/lib/ical.js` | 198 lines. A dependency-free iCalendar (RFC 5545) reader/writer for VEVENT and VTODO: line unfolding, parameter parsing, `DATE` vs `DATE-TIME`, TZID pass-through. |
+| `src/lib/recur.js` | 133 lines. RRULE expansion (FREQ/INTERVAL/COUNT/UNTIL/BYDAY/BYMONTHDAY), always bounded to the visible range so an endless rule could not run away, plus EXDATE and RECURRENCE-ID overrides. |
+| `src/modals/event.js` | 124 lines. `NexusEventModal` — the new/edit/read dialog: title, all-day toggle, start and end, location, description, calendar picker, delete. |
+
+### `src/lib/calstore.js` → `src/lib/datadir.js`
+
+The file kept only what was never about calendars: `pluginDir`, `dataDir`,
+`ensureFolder`, `readJSON`, `writeJSON` — which is what `lib/sync.js` uses. Gone
+with the rename: `localDir`, `calId`, `loadCalendars`, `createLocalCalendar`,
+`saveLocalEvent`, `deleteLocalEvent`, `expandRange` (the range aggregator that
+ran every stored event through `recur.expand`) and `migrate`.
+
+`migrate` had one caller, `main.js · migrateCalendarData`, which carried a
+pre-0.20 vault folder into the plugin folder on load. Both are gone, and so is
+the `_calLegacyFolder` flag `loadSettings` set for it.
+
+### `src/views/calendarpage.js` — rewritten, 409 → ~230 lines
+
+Month only. Gone: `mode` and the week/day renderers, the view switch, the
+calendar visibility panel (`hiddenCalendars`), the "+ Event" button, the chips
+built from occurrences, `calKey()`, and the empty-state hint that offered to add
+a local calendar. The planner line it used to draw is now the **day's text**,
+read and written through `lib/daytext.js` instead of `lib/planner.js`.
+
+### The other surfaces
+
+| File | What changed |
+|---|---|
+| `src/lib/agenda.js` | `calendars()`, `events()`, `eventRow()` and `openEvent()` removed. The block's `calendar:` section now shows the day's text; its `calendars:` config key is ignored. |
+| `src/views/sidebar.js` | The calendar panel listed occurrences; it now lists the coming days with their text and what is due. Its "+" (new event) is gone — the tasks panel keeps its own. |
+| `src/views/homepage.js` | The calendar card's three modes read day texts and due tasks instead of events. The month grid's dot became two: written / due. |
+| `src/views/calendar.js` | Unchanged except that a day is now also marked when it has a day text, not only a planner line. |
+| `src/modals/cards.js` | The card config lost "Only these calendars" and "Include events already over". |
+
+### Settings
+
+Removed from `DEFAULT_SETTINGS.tasksCalendar`: `localCalendars`,
+`hiddenCalendars`, `defaultView`. **Left in `data.json` they are dead but
+harmless.** Added: `dayTextKey` (default `'important'`).
+
+The settings tab lost "Default view" and the whole *Local calendars* section,
+and gained *The day's text* in its place.
+
+Commands removed: `nexus-new-event` ("New event").
+
+### To bring events back
+
+`git show 1393cdb:src/lib/ical.js` and the two files beside it, the
+calendar half of `calstore.js`, and the event branches listed above. What would
+also have to come back is the choice the removal made: two places to write about
+a day. The day's text is in the note; an event was in a plugin file.

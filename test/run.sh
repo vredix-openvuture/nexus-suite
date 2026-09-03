@@ -29,7 +29,7 @@ fail=0
 echo "── tokens ──"
 "$(dirname "$0")/tokens.sh" || fail=1
 
-for page in test measure select canvas notesketch objects gestures export search kanban tasks planner sync quicknote startup settings capture inkvault galaxy; do
+for page in test measure select canvas notesketch objects gestures export search kanban tasks planner sync daytext quicknote startup settings capture inkvault galaxy; do
   result=$(chromium --headless --disable-gpu --no-sandbox --virtual-time-budget=6000 \
     --dump-dom "http://localhost:$PORT/$page.html" 2>/dev/null |
     python3 -c "

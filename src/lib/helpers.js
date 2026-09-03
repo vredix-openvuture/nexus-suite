@@ -27,23 +27,28 @@ function getDailyNoteSettings(app) {
   };
 }
 
-async function openDailyNote(app, date) {
+/* The daily note for a date, created from the daily-note template if it is not
+   there yet. Split out of openDailyNote because writing a day's text has to be
+   able to make the note without also jumping to it. */
+async function ensureDailyNote(app, date) {
   const { format, folder, template } = getDailyNoteSettings(app);
-  const name = date.format(format);
-  const path = (folder ? folder + '/' : '') + name + '.md';
-  let file = app.vault.getAbstractFileByPath(path);
-  if (!file) {
-    if (folder && !app.vault.getAbstractFileByPath(folder)) {
-      try { await app.vault.createFolder(folder); } catch (e) {}
-    }
-    let content = '';
-    if (template) {
-      const tp = template.endsWith('.md') ? template : template + '.md';
-      const tf = app.vault.getAbstractFileByPath(tp);
-      if (tf) { try { content = await app.vault.read(tf); } catch (e) {} }
-    }
-    file = await app.vault.create(path, content);
+  const path = (folder ? folder + '/' : '') + date.format(format) + '.md';
+  const existing = app.vault.getAbstractFileByPath(path);
+  if (existing) return existing;
+  if (folder && !app.vault.getAbstractFileByPath(folder)) {
+    try { await app.vault.createFolder(folder); } catch (e) {}
   }
+  let content = '';
+  if (template) {
+    const tp = template.endsWith('.md') ? template : template + '.md';
+    const tf = app.vault.getAbstractFileByPath(tp);
+    if (tf) { try { content = await app.vault.read(tf); } catch (e) {} }
+  }
+  return app.vault.create(path, content);
+}
+
+async function openDailyNote(app, date) {
+  const file = await ensureDailyNote(app, date);
   await app.workspace.getLeaf(false).openFile(file);
 }
 
@@ -234,4 +239,4 @@ function nxPinMenuItem(plugin, menu, key) {
     .onClick(() => plugin.setTabPinned(key, !on)));
 }
 
-module.exports = { renderMd, getDailyNoteSettings, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToHsl, nxHexToRgb, nxRgbToHex, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxStartOfWeek, nxWeekdayLabels, nxWeekStartDow };
+module.exports = { renderMd, getDailyNoteSettings, ensureDailyNote, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxHexToHsl, nxHexToRgb, nxRgbToHex, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxStartOfWeek, nxWeekdayLabels, nxWeekStartDow };

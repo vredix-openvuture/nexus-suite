@@ -12,9 +12,8 @@ const { NexusCalendarPageView } = require('./views/calendarpage.js');
 const { NexusTasksPageView } = require('./views/taskspage.js');
 const { NexusSideView } = require('./views/sidebar.js');
 const { NexusSketchPaneView } = require('./views/sketchpane.js');
-const { NexusEventModal } = require('./modals/event.js');
 const { NexusTaskModal } = require('./modals/task.js');
-const calstore = require('./lib/calstore.js');
+const datadir = require('./lib/datadir.js');
 const tasks = require('./lib/tasks.js');
 const sync = require('./lib/sync.js');
 const { VikunjaClient } = require('./lib/vikunja.js');
@@ -53,7 +52,6 @@ const { NexusWorkspaceModal } = require('./modals/workspace.js');
 module.exports = class NexusSuite extends Plugin {
   async onload() {
     await this.loadSettings();
-    await this._guard('calmigrate', () => this.migrateCalendarData());
     this.searchIndex = new Map();
     this._inkPending = new Set();
     this._inkProcessing = new Set();
@@ -321,11 +319,6 @@ module.exports = class NexusSuite extends Plugin {
     this.addCommand({ id: 'nexus-open-calendar-sidebar', name: 'Open the calendar in the sidebar', callback: () => this.openSidePanel('calendar') });
     this.addCommand({ id: 'nexus-open-tasks-sidebar', name: 'Open the tasks in the sidebar', callback: () => this.openSidePanel('tasks') });
     this.addCommand({ id: 'nexus-sync-taskcal', name: 'Sync calendars and tasks now', callback: () => { new Notice('Nexus: syncing…'); this.syncTaskCal().then(r => new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000)); } });
-    this.addCommand({ id: 'nexus-new-event', name: 'New event', callback: () => {
-      if (!this.settings.tasksCalendar.enabled) { new Notice(NX_MODULES.tasksCalendar.name + ' is switched off.'); return; }
-      if (!(this.settings.tasksCalendar.localCalendars || []).length) { new Notice('Create a local calendar first (Settings → ' + NX_MODULES.tasksCalendar.name + ').'); return; }
-      new NexusEventModal(this, {}, null).open();
-    }});
     this.app.workspace.onLayoutReady(() => { if (this.settings.tasksCalendar.enabled && this.settings.tasksCalendar.syncOnStartup) this._guard('taskcal-sync', () => this.syncTaskCal()); });
     this.registerInterval(window.setInterval(() => { if (this.settings.tasksCalendar.enabled) this.syncTaskCal(); }, Math.max(5, this.settings.tasksCalendar.syncIntervalMin || 15) * 60000));
 
@@ -639,30 +632,10 @@ module.exports = class NexusSuite extends Plugin {
         set: (v) => { deviceSettings.deviceStore(this.settings, this.deviceId()).taskAccounts = Array.isArray(v) ? v : []; },
         enumerable: false, configurable: true,
       });
-      if (!Array.isArray(tc.localCalendars)) tc.localCalendars = [];
-      if (!Array.isArray(tc.hiddenCalendars)) tc.hiddenCalendars = [];
       if (!tc.tasks || typeof tc.tasks !== 'object') tc.tasks = Object.assign({}, DEFAULT_SETTINGS.tasksCalendar.tasks);
-      // No stored dataLocation = an install from before the move into the plugin
-      // folder. The new default would silently point at an empty directory, so
-      // remember to carry the old vault folder over in onload.
-      this._calLegacyFolder = (data && data.tasksCalendar && data.tasksCalendar.dataLocation)
-        ? null : ((data && data.tasksCalendar && data.tasksCalendar.dataFolder) || '_nexus');
     }
   }
 
-  /* Carry an existing vault-folder calendar store into the plugin folder once.
-     Copies, never deletes — the old folder stays as a fallback until you remove
-     it yourself. */
-  async migrateCalendarData() {
-    const legacy = this._calLegacyFolder;
-    this._calLegacyFolder = null;
-    const tc = this.settings.tasksCalendar;
-    if (!tc || !legacy) return;
-    tc.dataLocation = 'plugin';
-    const moved = await calstore.migrate(this, legacy);
-    await this.saveSettings();
-    if (moved) new Notice('Nexus: calendar data copied into the plugin folder ("' + legacy + '" can be deleted).');
-  }
 
   /* ---- Per-device dashboard -------------------------------------------------
      The device ID lives in localStorage (per device/installation, NOT in the
@@ -2289,7 +2262,7 @@ module.exports = class NexusSuite extends Plugin {
 
   /* date/mode are optional — an agenda block hands them over so "open in
      calendar" lands on the day it was showing, not on today. */
-  async openCalendarPage(date, mode) {
+  async openCalendarPage(date) {
     let leaf = this.app.workspace.getLeavesOfType(CAL_PAGE_VIEW)[0];
     if (!leaf) {
       leaf = this.app.workspace.getLeaf(false);
@@ -2299,7 +2272,6 @@ module.exports = class NexusSuite extends Plugin {
     const v = leaf.view;
     if (v && date && v.cursor) {
       v.cursor = moment(date);
-      if (mode) v.mode = mode;
       if (typeof v.reload === 'function') v.reload(); else if (typeof v.render === 'function') v.render();
     }
   }

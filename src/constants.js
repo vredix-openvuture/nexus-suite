@@ -70,24 +70,24 @@ const DEFAULT_SETTINGS = {
   typography: { enabled: true,  dashes: true, ellipsis: true, quotes: true, arrows: true, symbols: true },
   calendar:   { enabled: true,  ribbon: true },
   tasksCalendar: { enabled: false, ribbon: true, dataLocation: 'plugin', dataFolder: '_nexus',
-    defaultView: 'month', weekStart: 'locale',
+ weekStart: 'locale',
     syncOnStartup: true, syncIntervalMin: 15, conflictPolicy: 'server',   // 'server' | 'ask'
     // accounts moved into the per-device store (devices[id].taskAccounts) —
     // every device signs itself in. The name still works as a live alias, see
     // loadSettings.
 
-    localCalendars: [],  // {id,name,color}
-    hiddenCalendars: [], // per-calendar visibility toggle (calKey strings that are HIDDEN)
-    /* Where a month's planner note lives. The calendar month view reads and
-       writes the ```nexus-planner``` block in this note, so the block and the
-       calendar are two views of one file — see lib/planner.js. */
+    /* Which frontmatter field of a daily note holds what that day is FOR. The
+       month view writes it and reads it back — see lib/daytext.js. */
+    dayTextKey: 'important',
+    /* Where a month's planner note lives — the ```nexus-planner``` block's own
+       store, which is a separate thing from the day's text above. */
     planner: { folder: 'Planner', pattern: 'YYYY-MM' },
     tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local', buckets: TASK_BUCKETS.slice() } },
   propertyHider: { enabled: true, hidden: [], reveal: false },
   callouts:   { enabled: true, migrated: false, items: [] },
   workspaces: { enabled: true, selectMode: 'release' },
   /* NB: tasksCalendar.dataLocation ('plugin' | 'vault') decides where the
-     calendar cache + local calendars live — see calstore.dataDir(). */
+     the plugin's own JSON lives — see datadir.dataDir(). */
   /* The galaxy: the vault's links laid out in three dimensions and drawn on an
      ordinary canvas. `drift` is the slow idle turn — the thing that makes it
      feel alive rather than parked — and it is the first setting anyone will
@@ -386,7 +386,7 @@ const NX_MODULES = {
   quicksketch:   { name: 'Quick Sketch', sub: 'Draw in a note with pen, touch or mouse' },
   inkCapture:    { name: 'Ink Capture',  sub: 'Scans and handwriting from other apps' },
   calendar:      { name: 'Mini calendar', sub: 'Month grid over your daily notes, in the sidebar' },
-  tasksCalendar: { name: 'Calendar',     sub: 'Local calendars, events and tasks — the full-page view' },
+  tasksCalendar: { name: 'Calendar',     sub: 'A month, what each day is for, and the tasks due on it' },
   search:        { name: 'Search',       sub: 'Weighted search over title, tags, headings, properties, text' },
   workspaces:    { name: 'Workspaces',   sub: 'Save and switch pane layouts' },
   kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note, or every note of a folder — plus the board view of your tasks' },

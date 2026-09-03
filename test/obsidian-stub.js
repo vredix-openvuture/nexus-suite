@@ -18,17 +18,55 @@ class Menu {}
 class MenuItem {}
 class ButtonComponent {}
 class Platform {}
-/* Enough of moment for the code under test: a fixed instant, so a timestamp
-   written into frontmatter is a real string an assertion can check. */
+/* Enough of moment for the code under test. Called with NO argument it is a
+   fixed instant, so a timestamp written into frontmatter is a real string an
+   assertion can check — several pages depend on exactly that. Called WITH a
+   date it is a real calendar day that can be cloned, stepped and compared,
+   which is what anything walking a range needs. */
 const FIXED = '2026-01-02T03:04';
-function moment() {
-  return {
-    format: (f) => (f && f.indexOf('T') < 0 ? FIXED.slice(0, 10) : FIXED),
-    isValid: () => true,
-    add() { return this; },
-    from: () => 'a while ago',
-    toISOString: () => FIXED + ':00.000Z',
+const PAD = (n) => String(n).padStart(2, '0');
+function calendarDay(y, m, d) {
+  const at = new Date(Date.UTC(y, m, d));
+  const self = {
+    _at: at,
+    clone: () => calendarDay(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()),
+    add(n, unit) {
+      if (unit === 'month') at.setUTCMonth(at.getUTCMonth() + n);
+      else at.setUTCDate(at.getUTCDate() + (unit === 'week' ? n * 7 : n));
+      return self;
+    },
+    format: (f) => String(f || 'YYYY-MM-DD')
+      .replace(/YYYY/g, String(at.getUTCFullYear()))
+      .replace(/MM/g, PAD(at.getUTCMonth() + 1))
+      .replace(/DD/g, PAD(at.getUTCDate())),
+    valueOf: () => at.getTime(),
+    isValid: () => !isNaN(at.getTime()),
+    isSame: (other) => at.getTime() === other.valueOf(),
+    isBefore: (other) => at.getTime() < other.valueOf(),
+    isAfter: (other) => at.getTime() > other.valueOf(),
+    isSameOrBefore: (other) => at.getTime() <= other.valueOf(),
+    isSameOrAfter: (other) => at.getTime() >= other.valueOf(),
+    startOf: () => self,
+    endOf: () => self,
+    month: () => at.getUTCMonth(),
+    date: () => at.getUTCDate(),
+    toISOString: () => at.toISOString(),
   };
+  return self;
+}
+function moment(value) {
+  if (value == null) {
+    return {
+      format: (f) => (f && f.indexOf('T') < 0 ? FIXED.slice(0, 10) : FIXED),
+      isValid: () => true,
+      add() { return this; },
+      from: () => 'a while ago',
+      toISOString: () => FIXED + ':00.000Z',
+    };
+  }
+  const m = /^(\d{4})\D(\d{2})\D(\d{2})/.exec(String(value));
+  if (!m) throw new Error('the moment stub only understands YYYY?MM?DD, got ' + value);
+  return calendarDay(+m[1], +m[2] - 1, +m[3]);
 }
 moment.locale = () => 'en';
 const requestUrl = async () => ({ status: 200, text: '', json: {} });

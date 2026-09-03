@@ -268,19 +268,10 @@ class NexusCalendarCardConfigModal extends Modal {
       new Setting(contentEl).setName('Days ahead').setDesc('How far the agenda looks (1–60).')
         .addText(t => { t.inputEl.type = 'number'; t.setValue(String(it.days || 7));
           t.onChange(async v => { const n = parseInt(v, 10); if (!isNaN(n)) { it.days = Math.max(1, Math.min(60, n)); await save(); } }); });
-      new Setting(contentEl).setName('Include events already over')
-        .setDesc('Off = the card only shows what is still to come today.')
-        .addToggle(t => t.setValue(!!it.past).onChange(async v => { it.past = v; await save(); }));
       new Setting(contentEl).setName('Limit (max shown)')
         .addText(t => { t.inputEl.type = 'number'; t.setValue(String(it.count || 12));
           t.onChange(async v => { const n = parseInt(v, 10); if (!isNaN(n)) { it.count = Math.max(1, n); await save(); } }); });
     }
-
-    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Calendars' });
-    const cals = (this.plugin.settings.tasksCalendar.localCalendars || [])
-      .map(c => c.name).filter(Boolean);
-    nxMultiRow(contentEl, 'Only these calendars', 'One name per line; empty = all. Substring is enough.',
-      it.calendars, ',', cals[0] || 'Personal', v => { it.calendars = v; save(); }, () => cals);
 
     // Side panels use the same modal on a settings-backed config object — there
     // is no widget list to remove them from.

@@ -22,7 +22,7 @@
  * ========================================================================== */
 
 const { Notice, TFile, moment, setIcon } = require('obsidian');
-const calstore = require('./calstore.js');
+const daytext = require('./daytext.js');
 const tasks = require('./tasks.js');
 const { getDailyNoteSettings, nxEndOfWeek, nxStartOfWeek } = require('./helpers.js');
 
@@ -207,28 +207,6 @@ class NexusAgenda {
 
   /* ---- data ------------------------------------------------------------- */
 
-  /* Loading every calendar file per block is wasteful when a note holds more
-     than one — hold them for a moment, and drop them on any refresh. */
-  async calendars() {
-    if (this._cals && (Date.now() - this._calsAt) < 2500) return this._cals;
-    this._cals = await calstore.loadCalendars(this.plugin);
-    this._calsAt = Date.now();
-    return this._cals;
-  }
-
-  async events(cfg, day) {
-    const all = await this.calendars();
-    const want = cfg.calendars.map(c => c.toLowerCase());
-    const cals = want.length
-      ? all.filter(c => want.some(w => String(c.display || '').toLowerCase() === w
-          || String(c.display || '').toLowerCase().includes(w)))
-      : all;
-    const start = day.clone().startOf('day');
-    const end = day.clone().endOf('day');
-    return calstore.expandRange(cals, start, end)
-      .filter(o => o.start.isSameOrBefore(end) && o.end.isAfter(start));
-  }
-
   /* Locally created tasks keep their title only in the project note's checklist
      line (`[[t-xy|Title]]`) — read it back out of the metadata cache so the
      agenda shows a name and not a key. Tasks written by the sync carry a
@@ -349,13 +327,6 @@ class NexusAgenda {
     if (f instanceof TFile) this.app.workspace.getLeaf(false).openFile(f);
     else new Notice('No project note for "' + name + '".');
   }
-  async openEvent(occ, cals, repaint) {
-    const { NexusEventModal } = require('../modals/event.js');
-    new NexusEventModal(this.plugin, occ.event, () => { this._cals = null; if (repaint) repaint(); }, cals, occ.cal).open();
-  }
-
-  /* ---- render ----------------------------------------------------------- */
-
   async render(src, el, ctx) {
     const cfg = parseAgenda(src);
     const sourcePath = ctx && ctx.sourcePath;
@@ -387,14 +358,7 @@ class NexusAgenda {
       const { NexusTaskModal } = require('../modals/task.js');
       new NexusTaskModal(this.plugin, () => repaint(), cfg.projects[0] || '').open();
     });
-    if (modOn && cfg.calendar) tool('calendar-plus', 'New event', async () => {
-      const cals = await this.calendars();
-      if (!cals.length) { new Notice('Add a local calendar or sync an account first.'); return; }
-      const { NexusEventModal } = require('../modals/event.js');
-      new NexusEventModal(this.plugin, { start: { dt: day.format('YYYY-MM-DD') + 'T09:00:00', utc: false, tzid: null } },
-        () => { this._cals = null; repaint(); }, cals, null).open();
-    });
-    if (modOn && cfg.calendar) tool('calendar-days', 'Open in calendar', () => this.plugin.openCalendarPage(day, 'day'));
+    if (modOn && cfg.calendar) tool('calendar-days', 'Open in calendar', () => this.plugin.openCalendarPage(day));
 
     const body = el.createDiv('nx-ag-body');
 
@@ -403,18 +367,13 @@ class NexusAgenda {
         text: 'Tasks & Calendar is switched off — turn on “Enabled” in the plugin settings to fill this agenda.' });
     }
 
-    /* calendar */
+    /* what the day is for (the daily note's own frontmatter — see lib/daytext) */
     if (cfg.calendar && modOn) {
-      const occs = await this.events(cfg, day);
-      if (occs.length || !cfg.hideEmpty) {
-        const sec = this.section(body, 'Events', occs.length);
-        if (!occs.length) sec.createDiv({ cls: 'nx-ag-empty', text: 'No events.' });
-        else {
-          const cals = await this.calendars();
-          const allDay = occs.filter(o => o.allDay);
-          const timed = occs.filter(o => !o.allDay).sort((a, b) => a.start.valueOf() - b.start.valueOf());
-          [...allDay, ...timed].forEach(o => this.eventRow(sec, o, day, cals, repaint));
-        }
+      const text = daytext.readDayText(this.app, this.plugin, day);
+      if (text || !cfg.hideEmpty) {
+        const sec = this.section(body, 'The day', 0);
+        if (!text) sec.createDiv({ cls: 'nx-ag-empty', text: 'Nothing written for this day.' });
+        else sec.createDiv({ cls: 'nx-ag-daytext', text });
       }
     }
 
@@ -454,28 +413,6 @@ class NexusAgenda {
     h.createSpan({ text: label });
     if (count) h.createSpan({ cls: 'nx-ag-count', text: String(count) });
     return sec;
-  }
-
-  eventRow(sec, occ, day, cals, repaint) {
-    const ev = occ.event;
-    const row = sec.createDiv('nx-ag-row nx-ag-event');
-    if (occ.color) row.style.setProperty('--nx-ag-dot', occ.color);
-    const time = row.createDiv('nx-ag-time');
-    if (occ.allDay) time.setText('all day');
-    else {
-      // an event that started yesterday or runs past midnight keeps its real
-      // clock time — the arrows say it reaches beyond this day
-      const startsBefore = occ.start.isBefore(day.clone().startOf('day'));
-      const endsAfter = occ.end.isAfter(day.clone().endOf('day'));
-      time.setText((startsBefore ? '‹ ' : '') + occ.start.format('H:mm') + '–' + occ.end.format('H:mm') + (endsAfter ? ' ›' : ''));
-    }
-    row.createSpan({ cls: 'nx-ag-dot' });
-    const main = row.createDiv('nx-ag-main');
-    main.createSpan({ cls: 'nx-ag-text', text: ev.summary || '(no title)' });
-    if (ev.location) main.createSpan({ cls: 'nx-ag-meta', text: ev.location });
-    const calName = occ.cal && occ.cal.display;
-    if (calName) row.createSpan({ cls: 'nx-ag-chip', text: calName });
-    row.onclick = () => this.openEvent(occ, cals, repaint);
   }
 
   taskRow(sec, it, repaint) {

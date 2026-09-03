@@ -32,16 +32,21 @@
   border-radius: var(--nx-r-circle); background: var(--text-accent);
 }
 .nx-cal-day.nx-today.nx-has-note::after { background: var(--text-on-accent); }
-/* A day with a planner line is marked, never written out: a sidebar column is
-   too narrow for a sentence and this view is for navigating, not reading. */
-.nx-cal-day.nx-has-plan::before {
+/* A day with something written for it — its own text, or a planner line — is
+   MARKED, never written out: a sidebar column is too narrow for a sentence and
+   this view is for navigating, not reading. */
+.nx-cal-day.nx-has-plan::before,
+.nx-cal-day.nx-has-daytext::before {
   content: ""; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
   width: 3px; height: 3px; border-radius: var(--nx-r-circle); background: var(--text-muted);
 }
 /* Both marks on one day: they split around the centre with a gap, or they read
    as one 6px smear. */
-.nx-cal-day.nx-has-note.nx-has-plan::after  { left: 50%; transform: translateX(2px); }
-.nx-cal-day.nx-has-note.nx-has-plan::before { left: 50%; transform: translateX(-5px); }
-.nx-cal-day.nx-today.nx-has-plan::before { background: var(--text-on-accent); opacity: .7; }
+.nx-cal-day.nx-has-note.nx-has-plan::after,
+.nx-cal-day.nx-has-note.nx-has-daytext::after  { left: 50%; transform: translateX(2px); }
+.nx-cal-day.nx-has-note.nx-has-plan::before,
+.nx-cal-day.nx-has-note.nx-has-daytext::before { left: 50%; transform: translateX(-5px); }
+.nx-cal-day.nx-today.nx-has-plan::before,
+.nx-cal-day.nx-today.nx-has-daytext::before { background: var(--text-on-accent); opacity: .7; }
 
 

@@ -187,6 +187,20 @@
 }
 .nx-side-day:first-child { margin-top: 0; }
 .nx-side-day:hover { color: var(--nx-accent, var(--interactive-accent)); }
+/* What the day is for, under its heading. Wraps — this is the content, and a
+   sentence cut off at one line is worth less than the space it saves. */
+.nx-side-daytext {
+  padding: 0 2px var(--nx-sp-1);
+  font-size: .84rem; line-height: 1.45;
+  color: var(--nx-fg-bright, var(--text-normal));
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* The same text inside an agenda block, where there is more room around it. */
+.nx-ag-daytext {
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  line-height: 1.5; color: var(--nx-fg-bright, var(--text-normal));
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
 /* A narrow dock has no room for the wide time column of the agenda block. */
 .nx-side .nx-ag-row { min-height: 0; padding: var(--nx-sp-1) 2px; }
 .nx-side .nx-ag-time { min-width: 0; font-size: .72em; }

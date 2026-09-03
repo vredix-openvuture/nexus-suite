@@ -13,10 +13,10 @@
  *  card config modals can edit them unchanged.
  * ========================================================================== */
 
-const { ItemView, Notice, moment, setIcon } = require('obsidian');
+const { ItemView, moment, setIcon } = require('obsidian');
 const { SIDE_CAL_VIEW, SIDE_TASKS_VIEW } = require('../constants.js');
 const { NexusAgenda, parsePriority } = require('../lib/agenda.js');
-const calstore = require('../lib/calstore.js');
+const daytext = require('../lib/daytext.js');
 
 const DEFAULTS = {
   calendar: { title: 'Calendar', icon: 'calendar-check', display: 'agenda', days: 7, calendars: '', count: 20, past: false },
@@ -58,7 +58,7 @@ class NexusSideView extends ItemView {
     }, 60 * 1000));
   }
   schedule() { window.clearTimeout(this._t); this._t = window.setTimeout(() => this.render(), 400); }
-  reload() { this._ag && (this._ag._cals = null); this.render(); }
+  reload() { this.render(); }
 
   render() {
     const root = this.contentEl;
@@ -78,7 +78,7 @@ class NexusSideView extends ItemView {
       b.onclick = fn;
       return b;
     };
-    tool('plus', this.kind === 'tasks' ? 'New task' : 'New event', () => this.create());
+    if (this.kind === 'tasks') tool('plus', 'New task', () => this.create());
     tool('external-link', this.kind === 'tasks' ? 'Open the tasks page' : 'Open the calendar page',
       () => (this.kind === 'tasks' ? this.plugin.openTasksPage() : this.plugin.openCalendarPage()));
     tool('settings-2', 'Configure', () => {
@@ -111,54 +111,38 @@ class NexusSideView extends ItemView {
     items.forEach(it => ag.taskRow(body, it, () => this.schedule()));
   }
 
+  /* The days ahead, each with what it is FOR and what is due on it. There are
+     no events any more (docs/removed-features.md), and a day with nothing on it
+     is part of the answer to "what does this week look like" — so it keeps its
+     row instead of being skipped. */
   renderCalendar(body, item, count) {
     const ag = this.agenda();
     const days = Math.max(1, Math.min(60, parseInt(item.days, 10) || 7));
     const start = moment().startOf('day');
-    const end = start.clone().add(days - 1, 'day').endOf('day');
-    body.createDiv({ cls: 'nx-ag-empty', text: 'Reading calendars …' });
-    ag.calendars().then(all => {
-      if (!body.isConnected) return;
-      const want = (item.calendars || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-      const cals = want.length
-        ? all.filter(c => want.some(w => String(c.display || '').toLowerCase().includes(w)))
-        : all;
-      const now = moment();
-      let occs = calstore.expandRange(cals, start, end)
-        .filter(o => item.past ? true : o.end.isAfter(now))
-        .sort((a, b) => a.start.valueOf() - b.start.valueOf());
-      if (item.count > 0) occs = occs.slice(0, item.count);
-      body.empty();
-      count.setText(String(occs.length));
-      if (!occs.length) { body.createDiv({ cls: 'nx-ag-empty', text: 'Nothing scheduled.' }); return; }
-      let lastKey = '';
-      occs.forEach(o => {
-        const key = o.start.format('YYYY-MM-DD');
-        if (key !== lastKey) {
-          lastKey = key;
-          const d = o.start.clone().startOf('day');
-          const label = d.isSame(start, 'day') ? 'Today'
-            : d.isSame(start.clone().add(1, 'day'), 'day') ? 'Tomorrow'
-            : d.format('ddd, D MMM');
-          const h = body.createDiv({ cls: 'nx-side-day', text: label });
-          h.onclick = () => this.plugin.openCalendarPage(d, 'day');
-        }
-        ag.eventRow(body, o, o.start.clone().startOf('day'), cals, () => this.reload());
-      });
-    }).catch(() => { if (body.isConnected) { body.empty(); body.createDiv({ cls: 'nx-ag-empty', text: 'Calendar could not be read.' }); } });
+    let written = 0;
+    for (let i = 0; i < days; i++) {
+      const d = start.clone().add(i, 'day');
+      const iso = d.format('YYYY-MM-DD');
+      const text = daytext.readDayText(this.app, this.plugin, d);
+      const due = ag.collectTasks({
+        projects: [], calendars: [], state: 'open', priority: null,
+        due: ['day'], sort: 'smart', limit: 0,
+      }, d);
+      if (!text && !due.length && item.hideEmpty) continue;
+      if (text) written++;
+      const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.format('ddd, D MMM');
+      const h = body.createDiv({ cls: 'nx-side-day' + (i === 0 ? ' is-today' : ''), text: label });
+      h.onclick = () => this.plugin.openCalendarPage(d);
+      if (text) body.createDiv({ cls: 'nx-side-daytext', text });
+      due.forEach(it => ag.taskRow(body, it, () => this.schedule()));
+    }
+    count.setText(String(written));
+    if (!body.childElementCount) body.createDiv({ cls: 'nx-ag-empty', text: 'Nothing written or due in the next ' + days + ' day(s).' });
   }
 
-  async create() {
-    if (this.kind === 'tasks') {
-      const { NexusTaskModal } = require('../modals/task.js');
-      new NexusTaskModal(this.plugin, () => this.schedule(), '').open();
-      return;
-    }
-    const cals = await this.agenda().calendars();
-    if (!cals.length) { new Notice('Add a local calendar or sync an account first.'); return; }
-    const { NexusEventModal } = require('../modals/event.js');
-    new NexusEventModal(this.plugin, { start: { dt: moment().format('YYYY-MM-DD') + 'T09:00:00', utc: false, tzid: null } },
-      () => this.reload(), cals, null).open();
+  create() {
+    const { NexusTaskModal } = require('../modals/task.js');
+    new NexusTaskModal(this.plugin, () => this.schedule(), '').open();
   }
 }
 

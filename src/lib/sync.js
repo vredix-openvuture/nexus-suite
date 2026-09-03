@@ -148,10 +148,10 @@ async function writeTaskNote(plugin, remote, projectName, existing) {
 }
 
 /* ── base index (per account) under the data dir ── */
-const calstore = require('./calstore.js');
-function baseIndexPath(plugin, accountId) { return calstore.dataDir(plugin) + '/sync/vikunja-' + accountId + '.base.json'; }
-async function loadBase(plugin, accountId) { return (await calstore.readJSON(plugin, baseIndexPath(plugin, accountId))) || {}; }
-async function saveBase(plugin, accountId, base) { await calstore.writeJSON(plugin, baseIndexPath(plugin, accountId), base); }
+const datadir = require('./datadir.js');
+function baseIndexPath(plugin, accountId) { return datadir.dataDir(plugin) + '/sync/vikunja-' + accountId + '.base.json'; }
+async function loadBase(plugin, accountId) { return (await datadir.readJSON(plugin, baseIndexPath(plugin, accountId))) || {}; }
+async function saveBase(plugin, accountId, base) { await datadir.writeJSON(plugin, baseIndexPath(plugin, accountId), base); }
 
 const vik = require('./vikunja.js');
 

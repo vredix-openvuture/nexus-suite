@@ -21,6 +21,7 @@ window.sketchCanvas = require('../src/lib/sketchcanvas.js');
 window.sketchObjects = require('../src/lib/sketchobjects.js');
 window.parseSketchSVG = require('../src/views/sketch.js').parseSketchSVG;
 window.emptySketchSVG = require('../src/views/sketch.js').emptySketchSVG;
+window.daytextLib = require('../src/lib/daytext.js');
 window.BAR_DEFAULTS = require('../src/constants.js').BAR_DEFAULTS;
 window.SKETCH_VIEW = require('../src/constants.js').SKETCH_VIEW;
 window.sketchGestures = require('../src/lib/sketchgestures.js');

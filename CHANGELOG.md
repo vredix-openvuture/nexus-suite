@@ -2,6 +2,42 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.29.0 — 2026-09-03
+
+### Changed
+
+- **The calendar is a month, and what each day is for.** One view — a month is
+  the shape that answers "what does this look like"; a week or a day is a note.
+  Every cell is a writing surface: tap it and type, not one line but as much as
+  fits. The text fills the cell and is clipped at the bottom rather than pushing
+  the row taller, because a month whose rows change height as you write is not a
+  month. `Ctrl`/`⌘ + Enter` or tapping away saves, `Esc` puts back what was
+  there.
+- **The day's text lives in that day's own note**, as one frontmatter field
+  (`important` by default, changeable under *Calendar → The day's text*). Not in
+  a plugin file: Obsidian's search finds it, a template can prefill it, a
+  Dataview query can read it, and it survives without this plugin. Writing on a
+  day with no note yet creates one from your daily-note template.
+- **The dashboard card, the sidebar panel and the agenda block follow.** All
+  three listed events; all three now show what the coming days are for and what
+  is due on them. The mini calendar marks a day that has a text.
+
+### Removed
+
+- **Events, and the local calendars they lived in.** After the CalDAV layer went
+  in 0.27.0 they were the only event source left — a second place to write about
+  a day, with an iCalendar parser and an RRULE engine behind it. Gone with them:
+  the event dialog, the "New event" command, the calendar visibility panel, the
+  week and day views, and the "only these calendars" filters.
+
+  **Your data is not deleted** — the calendar JSON is simply no longer read, and
+  the data folder itself stays (the sync state lives there). `dataLocation` and
+  `dataFolder` are unchanged. `docs/removed-features.md` §6 has the full account
+  and the way back.
+- The `nexus-planner` block keeps its own lines in its own block and still
+  works; the calendar no longer reads them. Two answers to one question — pick
+  the storage you want.
+
 ## 0.28.1 — 2026-09-03
 
 ### Fixed

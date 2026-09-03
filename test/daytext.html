@@ -1,0 +1,139 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>day text harness</title>
+<style>body{margin:0;background:#141414;color:#ddd;font:13px/1.5 system-ui;padding:20px}</style>
+</head><body>
+<div id="stage"></div><pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+(async () => {
+try {
+const daytext = window.daytextLib;
+const moment = window.obsidianStub.moment;
+
+/* A vault of daily notes: `notes` maps a path to its frontmatter, and the
+   daily-note plugin's own settings decide the folder and the file name. */
+function makeApp(notes, opts) {
+  const o = opts || {};
+  const files = {};
+  Object.keys(notes || {}).forEach(path => { files[path] = { path, extension: 'md', frontmatter: notes[path] }; });
+  const created = [], written = [];
+  const app = {
+    internalPlugins: { getPluginById: () => ({ instance: { options: {
+      format: o.format || 'YYYY-MM-DD', folder: o.folder == null ? 'Journal' : o.folder, template: o.template || '',
+    } } }) },
+    vault: {
+      getAbstractFileByPath: (p) => files[p] || null,
+      async createFolder(p) { created.push('folder:' + p); },
+      async create(p, body) { created.push(p); files[p] = { path: p, extension: 'md', frontmatter: {}, body }; return files[p]; },
+      async read() { return o.templateBody || ''; },
+    },
+    metadataCache: { getFileCache: (f) => ({ frontmatter: f.frontmatter }) },
+    fileManager: {
+      async processFrontMatter(f, fn) { fn(f.frontmatter); written.push(f.path); },
+    },
+  };
+  const plugin = { app, settings: { tasksCalendar: { dayTextKey: o.key } } };
+  return { app, plugin, files, created, written };
+}
+const day = (iso) => moment(iso, 'YYYY-MM-DD');
+
+// ── Where it reads from ────────────────────────────────────────────────────
+{
+  const t = makeApp({ 'Journal/2026-09-03.md': { important: 'Ship 0.29' } });
+  eq('read · the default key is "important"', daytext.DEFAULT_KEY, 'important');
+  eq('read · a day with a note and the field', daytext.readDayText(t.app, t.plugin, day('2026-09-03')), 'Ship 0.29');
+  eq('read · a day with no note at all', daytext.readDayText(t.app, t.plugin, day('2026-09-04')), '');
+}
+{
+  const t = makeApp({ 'Journal/2026-09-03.md': { focus: 'Dentist' } }, { key: 'focus' });
+  eq('read · the key is configurable', daytext.readDayText(t.app, t.plugin, day('2026-09-03')), 'Dentist');
+  const blank = makeApp({ 'Journal/2026-09-03.md': { important: 'x' } }, { key: '  ' });
+  eq('read · a blank key falls back to the default', daytext.readDayText(blank.app, blank.plugin, day('2026-09-03')), 'x');
+}
+{
+  // Frontmatter is YAML: a day whose text is a year comes back as a NUMBER,
+  // and a list comes back as an array. Neither may throw.
+  const t = makeApp({
+    'Journal/2026-09-01.md': { important: 2026 },
+    'Journal/2026-09-02.md': { important: ['a', 'b'] },
+    'Journal/2026-09-03.md': { important: null },
+  });
+  eq('read · a number is text', daytext.readDayText(t.app, t.plugin, day('2026-09-01')), '2026');
+  eq('read · a list is its lines', daytext.readDayText(t.app, t.plugin, day('2026-09-02')), 'a\nb');
+  eq('read · an empty field is empty', daytext.readDayText(t.app, t.plugin, day('2026-09-03')), '');
+}
+{
+  // Multi-line is the point: the text fills a day, it is not one line.
+  const t = makeApp({ 'Journal/2026-09-03.md': { important: 'Ship it\nThen rest' } });
+  eq('read · several lines survive', daytext.readDayText(t.app, t.plugin, day('2026-09-03')), 'Ship it\nThen rest');
+}
+
+// ── The month at once ──────────────────────────────────────────────────────
+{
+  const t = makeApp({
+    'Journal/2026-09-01.md': { important: 'one' },
+    'Journal/2026-09-04.md': { important: 'four' },
+    'Journal/2026-09-05.md': {},
+  });
+  const range = daytext.readRange(t.app, t.plugin, day('2026-09-01'), day('2026-09-05'));
+  eq('range · only the days that have one', range, { '2026-09-01': 'one', '2026-09-04': 'four' });
+}
+
+// ── Writing ────────────────────────────────────────────────────────────────
+{
+  const t = makeApp({ 'Journal/2026-09-03.md': { important: 'old' } });
+  const res = await daytext.writeDayText(t.app, t.plugin, day('2026-09-03'), '  new  ');
+  ok('write · it reports success', res.ok);
+  eq('write · the text is trimmed', t.files['Journal/2026-09-03.md'].frontmatter.important, 'new');
+  eq('write · and no note was created', t.created, []);
+}
+{
+  // Writing on a day with no note makes one — that is what "write here" means.
+  const t = makeApp({}, { folder: 'Journal' });
+  await daytext.writeDayText(t.app, t.plugin, day('2026-09-07'), 'Dentist');
+  ok('write · a missing note is created', !!t.files['Journal/2026-09-07.md'], t.created.join(','));
+  eq('write · in the daily-note folder', t.files['Journal/2026-09-07.md'].frontmatter.important, 'Dentist');
+}
+{
+  // Empty means "there is nothing for this day", not `important: ""`.
+  const t = makeApp({ 'Journal/2026-09-03.md': { important: 'old', other: 'keep' } });
+  await daytext.writeDayText(t.app, t.plugin, day('2026-09-03'), '   ');
+  ok('write · clearing removes the key', !('important' in t.files['Journal/2026-09-03.md'].frontmatter));
+  eq('write · and leaves the rest of the frontmatter', t.files['Journal/2026-09-03.md'].frontmatter.other, 'keep');
+}
+{
+  // …and clearing a day that has no note must not create one to hold nothing.
+  const t = makeApp({});
+  const res = await daytext.writeDayText(t.app, t.plugin, day('2026-09-09'), '');
+  ok('write · nothing to clear creates nothing', res.ok && !t.created.length, t.created.join(','));
+}
+{
+  // A failed write is reported, never swallowed: the typed text is the only copy.
+  const t = makeApp({ 'Journal/2026-09-03.md': { important: 'old' } });
+  t.app.fileManager.processFrontMatter = async () => { throw new Error('read-only vault'); };
+  const res = await daytext.writeDayText(t.app, t.plugin, day('2026-09-03'), 'new');
+  ok('write · a failure is reported', res.ok === false);
+  eq('write · with the reason', res.reason, 'read-only vault');
+}
+{
+  // The daily-note format is the user's, not ours.
+  const t = makeApp({ 'Log/2026.09.03.md': { important: 'yes' } }, { folder: 'Log', format: 'YYYY.MM.DD' });
+  eq('path · the daily-note format decides the file name', daytext.dailyNotePath(t.app, day('2026-09-03')), 'Log/2026.09.03.md');
+  eq('path · and it is found there', daytext.readDayText(t.app, t.plugin, day('2026-09-03')), 'yes');
+  const flat = makeApp({ '2026-09-03.md': { important: 'root' } }, { folder: '' });
+  eq('path · no folder means the vault root', daytext.readDayText(flat.app, flat.plugin, day('2026-09-03')), 'root');
+}
+
+} catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
+if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
+out.push('');
+out.push(fail === 0 ? ('ALL GREEN — ' + pass + ' checks') : (fail + ' FAILED of ' + (pass + fail)));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

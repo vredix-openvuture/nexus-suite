@@ -5,12 +5,11 @@
  *  The rendered hub view (hero, cards, stats).
  * ========================================================================== */
 
-const { ItemView, Menu, Notice, TFile, moment, setIcon } = require('obsidian');
+const { ItemView, Menu, Notice, moment, setIcon } = require('obsidian');
 const { NexusActionConfigModal, NexusCalendarCardConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusTaskCardConfigModal } = require('../modals/cards.js');
 const { NexusAgenda, parsePriority } = require('../lib/agenda.js');
-const calstore = require('../lib/calstore.js');
+const daytext = require('../lib/daytext.js');
 const capture = require('../lib/capture.js');
-const planner = require('../lib/planner.js');
 const scratch = require('../lib/scratch.js');
 const { CARD_DEFS, HOME_VIEW, NX_DEFAULT_ACTIONS, NX_GREETINGS, NX_MODULES, WMO, WMO_ICON } = require('../constants.js');
 const { getDailyNoteSettings, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxWeekdayLabels, openDailyNote, renderMd } = require('../lib/helpers.js');
@@ -628,7 +627,7 @@ class NexusHomepageView extends ItemView {
     const list = (v) => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
     const due = Array.isArray(item.due) && item.due.length ? item.due : ['day', 'overdue'];
     return {
-      calendars: list(item.calendars), projects: list(item.projects),
+      calendars: [], projects: list(item.projects),
       state: item.state || 'open',
       priority: item.priority ? parsePriority(item.priority) : null,
       due, sort: item.sort || 'smart', limit: item.count > 0 ? item.count : 0,
@@ -646,143 +645,103 @@ class NexusHomepageView extends ItemView {
     }
     return { head, count };
   }
+  /* The calendar card: what the coming days are FOR, and what is due on them.
+     There are no events left to list (docs/removed-features.md), so the day's
+     own text is the content — the same text the calendar page writes, read
+     straight out of each daily note. */
   _wCalendar(card, item) {
-    const { head, count } = this._cardHead(card, item, 'calendar-check', 'Calendar', NexusCalendarCardConfigModal);
+    const { count } = this._cardHead(card, item, 'calendar-check', 'Calendar', NexusCalendarCardConfigModal);
     const body = card.createDiv('nx-home-card-body nx-home-cal-body');
     if (!this._calModuleOn()) { this._empty(body, 'Tasks & Calendar is switched off.'); return; }
 
-    const ag = this._agenda();
     const days = Math.max(1, Math.min(60, parseInt(item.days, 10) || 7));
     const start = moment().startOf('day');
     const mode = item.display || 'agenda';
-    const [monFrom, monTo] = nxMonthGridRange(start, this.plugin);
-    const end = mode === 'month' ? monTo : start.clone().add(days - 1, 'day').endOf('day');
-    const from = mode === 'month' ? monFrom : start;
 
     if (this._editing) {
-      // A "+ new event" button in edit mode would fight the drag handle.
+      // A "+ new" button in edit mode would fight the drag handle.
       body.createDiv({ cls: 'nx-home-empty', text: 'Calendar — ' + (mode === 'month' ? 'month view' : days + ' day(s)') });
       return;
     }
-    body.createDiv({ cls: 'nx-home-empty nx-cal-loading', text: 'Reading calendars …' });
-    ag.calendars().then(all => {
-      if (!body.isConnected) return;
-      const want = this._taskCfg(item).calendars.map(c => c.toLowerCase());
-      const cals = want.length
-        ? all.filter(c => want.some(w => String(c.display || '').toLowerCase().includes(w)))
-        : all;
-      const occs = calstore.expandRange(cals, from, end);
-      body.empty();
-      if (mode === 'month') this._calMonth(body, occs, start, cals);
-      else if (mode === 'week') this._calWeek(body, occs, start, days, cals, item);
-      else this._calAgenda(body, occs, start, days, cals, item);
-      count.setText(String(occs.filter(o => o.end.isAfter(moment())).length || occs.length));
-    }).catch(() => { if (body.isConnected) { body.empty(); this._empty(body, 'Calendar could not be read.'); } });
+    if (mode === 'month') { count.setText(String(this._calMonth(body, start))); return; }
+    if (mode === 'week') { count.setText(String(this._calWeek(body, start, item))); return; }
+    count.setText(String(this._calAgenda(body, start, days, item)));
   }
-  /* Upcoming events, grouped by day — the day heading is clickable and opens
-     that day in the full calendar. */
-  _calAgenda(body, occs, start, days, cals, item) {
-    const ag = this._agenda();
-    const now = moment();
-    const list = occs
-      .filter(o => item.past ? true : o.end.isAfter(now))
-      .sort((a, b) => a.start.valueOf() - b.start.valueOf());
-    const max = item.count > 0 ? item.count : 0;
-    const shown = max ? list.slice(0, max) : list;
-    if (!shown.length) { this._empty(body, 'Nothing scheduled in the next ' + days + ' day(s).'); return; }
-    let lastKey = '';
-    shown.forEach(o => {
-      const dayKey = o.start.format('YYYY-MM-DD');
-      if (dayKey !== lastKey) {
-        lastKey = dayKey;
-        const d = o.start.clone().startOf('day');
-        const label = d.isSame(start, 'day') ? 'Today'
-          : d.isSame(start.clone().add(1, 'day'), 'day') ? 'Tomorrow'
-          : d.format('ddd, D MMM');
-        const h = body.createDiv({ cls: 'nx-home-cal-day', text: label });
-        h.onclick = () => this.plugin.openCalendarPage(d, 'day');
-      }
-      ag.eventRow(body, o, o.start.clone().startOf('day'), cals, () => this.render());
-    });
-  }
-  /* One row per day, whether or not anything is on it — the paper-calendar
-     shape. The agenda mode answers "what is next"; this answers "what does this
-     week look like", and an empty Thursday is part of that answer, so a day
-     with nothing still gets its line.
 
-     The planner's line for the day is the text; the events become a dot, not a
-     list. A card that lists everything is the full calendar with less room. */
-  _calWeek(body, occs, start, days, cals, item) {
+  /* What each day holds, day by day. Days with nothing are skipped here — this
+     mode answers "what is coming", and an empty Thursday is not an answer. */
+  _calAgenda(body, start, days, item) {
+    const ag = this._agenda();
+    const max = item.count > 0 ? item.count : 0;
+    let shown = 0, written = 0;
+    for (let i = 0; i < days && (!max || shown < max); i++) {
+      const d = start.clone().add(i, 'day');
+      const text = daytext.readDayText(this.app, this.plugin, d);
+      const due = ag.collectTasks(Object.assign(this._taskCfg(item), { due: ['day'], limit: 0 }), d);
+      if (!text && !due.length) continue;
+      if (text) written++;
+      shown++;
+      const label = i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : d.format('ddd, D MMM');
+      const h = body.createDiv({ cls: 'nx-home-cal-day', text: label });
+      h.onclick = () => this.plugin.openCalendarPage(d);
+      if (text) body.createDiv({ cls: 'nx-home-cal-daytext', text });
+      due.forEach(it => ag.taskRow(body, it, () => this.render()));
+    }
+    if (!shown) this._empty(body, 'Nothing written or due in the next ' + days + ' day(s).');
+    return written;
+  }
+
+  /* One row per day whether or not anything is on it — the paper-calendar
+     shape. An empty Thursday IS part of "what does this week look like". */
+  _calWeek(body, start, item) {
+    const ag = this._agenda();
     const span = Math.max(1, Math.min(14, parseInt(item.days, 10) || 7));
     const first = (item.fromToday === false) ? start.clone().startOf('week') : start.clone();
-    const byDay = {};
-    occs.forEach(o => {
-      const s = o.start.clone().startOf('day'), e = o.end.clone().subtract(1, 'ms').startOf('day');
-      for (let d = s.clone(); d.isSameOrBefore(e); d.add(1, 'day')) {
-        const k = d.format('YYYY-MM-DD');
-        (byDay[k] || (byDay[k] = [])).push(o);
-      }
-    });
-    const rows = [];
     const grid = body.createDiv('nx-home-week');
+    let written = 0;
     for (let i = 0; i < span; i++) {
       const d = first.clone().add(i, 'day');
-      const key = d.format('YYYY-MM-DD');
+      const text = daytext.readDayText(this.app, this.plugin, d);
+      if (text) written++;
+      const due = ag.collectTasks(Object.assign(this._taskCfg(item), { due: ['day'], limit: 0 }), d);
       const row = grid.createDiv('nx-home-week-row' + (d.isSame(start, 'day') ? ' is-today' : ''));
       row.createSpan({ cls: 'nx-home-week-wd', text: d.format('ddd') });
       row.createSpan({ cls: 'nx-home-week-n', text: d.format('D') });
-      const line = row.createSpan({ cls: 'nx-home-week-line', text: '' });
-      const n = (byDay[key] || []).length;
-      if (n) row.createSpan({ cls: 'nx-home-week-dot', text: n > 1 ? String(n) : '' });
-      row.onclick = () => this.plugin.openCalendarPage(d, 'day');
-      rows.push({ key, line });
+      row.createSpan({ cls: 'nx-home-week-line', text });
+      if (due.length) row.createSpan({ cls: 'nx-home-week-dot', text: due.length > 1 ? String(due.length) : '' });
+      row.onclick = () => this.plugin.openCalendarPage(d);
     }
-    /* The plan is read after the grid is drawn: it is a file read per month and
-       the week should not wait on it to appear. */
-    const store = (this.plugin.settings.tasksCalendar || {}).planner || {};
-    const months = planner.monthsInRange(first.format('YYYY-MM-DD'),
-      first.clone().add(span - 1, 'day').format('YYYY-MM-DD'));
-    planner.readMonthPlans(this.app, TFile, store, months).then(lines => {
-      if (!body.isConnected) return;
-      rows.forEach(r => { if (lines[r.key]) r.line.setText(lines[r.key]); });
-    }).catch(err => console.error('[Nexus] the week card could not read the plan:', err));
+    return written;
   }
 
-  /* Compact month grid with a dot per day that has events. */
-  _calMonth(body, occs, today, cals) {
+  /* Compact month grid: a dot on every day that has something written or due. */
+  _calMonth(body, today) {
+    const ag = this._agenda();
     const grid = body.createDiv('nx-home-cal-month');
     const first = today.clone().startOf('month');
     const [from, to] = nxMonthGridRange(today, this.plugin);
-    const byDay = {};
-    occs.forEach(o => {
-      // A multi-day event belongs on every day it covers.
-      const s = o.start.clone().startOf('day'), e = o.end.clone().subtract(1, 'ms').startOf('day');
-      for (let d = s.clone(); d.isSameOrBefore(e); d.add(1, 'day')) {
-        const k = d.format('YYYY-MM-DD');
-        (byDay[k] || (byDay[k] = [])).push(o);
-      }
-    });
+    const texts = daytext.readRange(this.app, this.plugin, from, to);
     const head = grid.createDiv('nx-home-cal-wd');
     nxWeekdayLabels(this.plugin).forEach(d => head.createSpan({ text: d }));
     const cells = grid.createDiv('nx-home-cal-cells');
     for (let d = from.clone(); d.isSameOrBefore(to); d.add(1, 'day')) {
-      const k = d.format('YYYY-MM-DD');
+      const iso = d.format('YYYY-MM-DD');
+      const text = texts[iso] || '';
+      const due = ag.collectTasks({ projects: [], calendars: [], state: 'open', priority: null, due: ['day'], sort: 'smart', limit: 0 }, d);
       const cell = cells.createDiv('nx-home-cal-cell'
         + (d.isSame(today, 'day') ? ' is-today' : '')
         + (d.month() !== first.month() ? ' is-out' : ''));
       cell.createSpan({ cls: 'nx-home-cal-n', text: String(d.date()) });
-      const evs = byDay[k] || [];
-      if (evs.length) {
+      if (text || due.length) {
         const dots = cell.createDiv('nx-home-cal-dots');
-        evs.slice(0, 3).forEach(o => {
-          const dot = dots.createSpan('nx-home-cal-dot');
-          if (o.color) dot.style.background = o.color;
-        });
+        if (text) dots.createSpan('nx-home-cal-dot is-written');
+        if (due.length) dots.createSpan('nx-home-cal-dot is-due');
       }
+      if (text) cell.setAttribute('aria-label', text);
       const day = d.clone();
-      cell.onclick = () => this.plugin.openCalendarPage(day, 'day');
-      if (evs.length) cell.setAttribute('aria-label', evs.map(o => (o.allDay ? '' : o.start.format('H:mm') + ' ') + (o.event.summary || '')).join('\n'));
+      cell.onclick = () => this.plugin.openCalendarPage(day);
     }
+    return Object.keys(texts).length;
   }
   _wTasks(card, item) {
     const { count } = this._cardHead(card, item, 'list-checks', 'Tasks', NexusTaskCardConfigModal);

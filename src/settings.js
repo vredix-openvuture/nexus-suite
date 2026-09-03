@@ -17,7 +17,7 @@ const { nxAllTagCounts, nxFilesWithTag, nxRenameTag } = require('./lib/tagtools.
 const { FN_TYPES } = require('./lib/foldernotes.js');
 const { nxAutocomplete, nxBlockExample, nxCollapseSections, nxFoldDescriptions, nxMultiRow } = require('./lib/inputs.js');
 const { nxAllFolders } = require('./lib/helpers.js');
-const calstore = require('./lib/calstore.js');
+const datadir = require('./lib/datadir.js');
 const penGestures = require('./lib/sketchgestures.js');
 const sketchSearch = require('./lib/sketchsearch.js');
 const vaultsync = require('./lib/vaultsync.js');
@@ -25,6 +25,7 @@ const quicknoteLib = require('./lib/quicknote.js');
 const extcommand = require('./lib/extcommand.js');
 const tasks = require('./lib/tasks.js');
 const planner = require('./lib/planner.js');
+const daytext = require('./lib/daytext.js');
 const { BAR_DEFAULTS, BAR_ITEMS, BAR_MODES, HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
@@ -58,10 +59,8 @@ class NexusSettingsTab extends PluginSettingTab {
           .onChange(async v => { s.dataFolder = (v || '').trim() || '_nexus'; await this.save(); }));
     } else {
       e.createEl('p', { cls: 'setting-item-description',
-        text: 'Current path: ' + calstore.dataDir(this.plugin) });
+        text: 'Current path: ' + datadir.dataDir(this.plugin) });
     }
-    new Setting(e).setName('Default view').addDropdown(d => d.addOption('month', 'Month').addOption('week', 'Week').addOption('day', 'Day')
-      .setValue(s.defaultView).onChange(async v => { s.defaultView = v; await this.save(); }));
     // One setting for every calendar surface in the vault — month grids, the
     // week view, the agenda's "this week". Obsidian's own locale stays untouched.
     new Setting(e).setName('Week starts on')
@@ -86,21 +85,14 @@ class NexusSettingsTab extends PluginSettingTab {
     new Setting(e)
       .addButton(b => b.setButtonText('Sync now').onClick(() => { new Notice('Nexus: syncing…'); this.plugin.syncTaskCal().then(r => { new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000); }); }));
 
-    // ── Local calendars ──
-    e.createEl('h4', { text: 'Local calendars', cls: 'nx-callout-h' });
-    const locWrap = e.createDiv('nx-set-list');
-    const renderLocals = () => {
-      locWrap.empty();
-      if (!(s.localCalendars || []).length) locWrap.createDiv({ cls: 'nx-account-empty', text: 'No local calendars yet.' });
-      (s.localCalendars || []).forEach(lc => {
-        const set = new Setting(locWrap);
-        set.addColorPicker(cp => cp.setValue(lc.color || '#4a9eff').onChange(async v => { lc.color = v; await this.save(); }));
-        set.addText(t => t.setValue(lc.name).onChange(async v => { lc.name = v; await this.save(); }));
-        set.addButton(b => b.setIcon('trash').setTooltip('Remove').onClick(async () => { s.localCalendars = s.localCalendars.filter(x => x.id !== lc.id); await this.save(); renderLocals(); }));
-      });
-    };
-    renderLocals();
-    new Setting(e).addButton(b => b.setButtonText('Add local calendar').onClick(async () => { await calstore.createLocalCalendar(this.plugin, 'Local', '#4a9eff'); renderLocals(); }));
+    // ── The day's text ──
+    e.createEl('h4', { text: "The day's text", cls: 'nx-callout-h' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Every day in the month view is a writing surface: type what the day is for and it is saved into that day\u2019s own note, as one frontmatter field. Not in a plugin file \u2014 in the note, where Obsidian\u2019s search finds it and a template or a Dataview query can read it. Writing on a day that has no note yet creates one from your daily-note template.' });
+    new Setting(e).setName('Frontmatter key')
+      .setDesc('The field the text is written to. Default: important.')
+      .addText(t => t.setPlaceholder(daytext.DEFAULT_KEY).setValue(s.dayTextKey || daytext.DEFAULT_KEY)
+        .onChange(async v => { s.dayTextKey = (v || '').trim() || daytext.DEFAULT_KEY; await this.save(); this.plugin.refreshCalendarViews(); }));
 
     // ── Todos (projects / tasks as Markdown) ──
     e.createEl('h4', { text: 'Todos', cls: 'nx-callout-h' });
@@ -115,7 +107,7 @@ class NexusSettingsTab extends PluginSettingTab {
     // ── The month's planner note ──
     e.createEl('h4', { text: 'Planner notes', cls: 'nx-callout-h' });
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'The month view shows one line per day under the day number, and you can type one there. The line lives in a “nexus-planner” block in the month’s own note, so the plan stays plain text and the same block in the note shows exactly the same thing.' });
+      text: 'A separate thing from the day’s text above: a “nexus-planner” block renders a whole month with one line per day, and those lines live in the block itself rather than in the daily notes. The calendar page no longer reads them.' });
     const pl = s.planner || (s.planner = { folder: 'Planner', pattern: 'YYYY-MM' });
     const plannerExample = e.createEl('p', { cls: 'setting-item-description' });
     const showExample = () => {

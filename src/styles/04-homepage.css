@@ -638,6 +638,12 @@ body.is-mobile .nx-timers-del { opacity: 1; }
 }
 .nx-home-cal-day:first-child { margin-top: 0; }
 .nx-home-cal-day:hover { color: var(--nx-accent, var(--interactive-accent)); }
+.nx-home-cal-daytext {
+  padding: 0 2px var(--nx-sp-1);
+  font-size: .84rem; line-height: 1.45;
+  color: var(--nx-fg-bright, var(--text-normal));
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
 .nx-home-cal-body .nx-ag-row { min-height: 0; padding: var(--nx-sp-1) 2px; }
 
 /* month grid */
@@ -657,6 +663,9 @@ body.is-mobile .nx-timers-del { opacity: 1; }
 .nx-home-cal-cell.is-today .nx-home-cal-n { font-weight: 700; color: var(--nx-accent, var(--interactive-accent)); }
 .nx-home-cal-dots { display: flex; gap: 2px; }
 .nx-home-cal-dot { width: 4px; height: 4px; border-radius: var(--nx-r-circle); background: var(--nx-accent, var(--interactive-accent)); }
+/* Two different statements, so two different marks: something is WRITTEN for
+   this day, and something is DUE on it. */
+.nx-home-cal-dot.is-due { background: var(--text-muted); }
 
 /* ── TASKS CARD ── */
 .nx-home-tasks-body { padding: 4px 6px 8px; }

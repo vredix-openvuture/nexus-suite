@@ -9,6 +9,7 @@ const { ItemView, TFile, moment } = require('obsidian');
 const { CAL_VIEW, NX_MODULES } = require('../constants.js');
 const { getDailyNoteSettings, nxMonthGridRange, nxWeekdayLabels, openDailyNote } = require('../lib/helpers.js');
 const planner = require('../lib/planner.js');
+const daytext = require('../lib/daytext.js');
 
 class NexusCalendarView extends ItemView {
   constructor(leaf, plugin) {
@@ -73,14 +74,23 @@ class NexusCalendarView extends ItemView {
       day.add(1, 'day');
     }
     this.cells = cells;
+    this.markDayTexts();
     this.markPlanned();
   }
 
-  /* The planner's line is NOT written out here: a sidebar column is too narrow
-     for a sentence and this view's job is navigation. A mark says the day has
-     one; the month view and the block are where you read it.
-     Applied after the paint, not during it — the grid must not wait on a file
-     read to appear. */
+  /* Two marks, one meaning: this day has something written for it. The day's
+     TEXT (the daily note's own frontmatter) is read straight from the metadata
+     cache, so it is applied during the paint; the PLANNER's line is a file read
+     per month and lands afterwards — the grid must not wait on it to appear.
+     Neither is written out here: a sidebar column is too narrow for a sentence
+     and this view's job is navigation. */
+  markDayTexts() {
+    for (const date of Object.keys(this.cells)) {
+      const has = !!daytext.readDayText(this.plugin.app, this.plugin, moment(date, 'YYYY-MM-DD'));
+      this.cells[date].toggleClass('nx-has-daytext', has);
+    }
+  }
+
   async markPlanned() {
     const gen = ++this._planGen;
     const settings = this.plugin.settings;

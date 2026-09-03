@@ -20,10 +20,10 @@ run what you use.
 | **Quick Sketch** | Low-latency vector drawing in a note | — |
 | **Ink Capture** | Scans and handwriting into the vault | — |
 | **Mini calendar** | Month grid over your daily notes, in the sidebar | calendar |
-| **Calendar** | Local calendars, events and tasks, as a full page | — |
+| **Calendar** | A month, and what each day is for | — |
 | **Search** | Weighted over title, tags, headings, properties, text | omnisearch |
 | **Kanban** | Boards with columns and cards in a note, plus the board view of your tasks | kanban |
-| **Planner** | A month on one screen, one line per day | — |
+| **Planner** | A month in a block, one line per day | — |
 | **Vault sync** | The whole vault to a WebDAV server, with daily backups | Syncthing, Obsidian Sync |
 | **Chatter** | A note you speak instead of type | — |
 | **Workspaces** | Save and switch pane layouts | — |
@@ -135,8 +135,8 @@ the selected project's tasks on the right, with a line at the bottom to add one.
 
 ## The agenda block
 
-A ```` ```nexus-agenda ```` block puts one day — events, tasks, backlinks —
-inside an ordinary note. Built for the daily-note template: drop it in once and
+A ```` ```nexus-agenda ```` block puts one day — what it is for, what is due,
+what links to it — inside an ordinary note. Built for the daily-note template: drop it in once and
 every daily note carries its own agenda.
 
 ````md
@@ -152,10 +152,9 @@ project note; a repeating task advances its due date instead of closing.
 | Key | Values | Default |
 |---|---|---|
 | `date` | `today` · `note-date` (from the file name, daily-note format) · `tomorrow` / `yesterday` · `+3` / `-1` · `2026-07-29` | `today` |
-| `show` | any of `calendar`, `tasks`, `linked` — what isn't named is off | all three |
+| `show` | any of `calendar` (the day's text), `tasks`, `linked` — what isn't named is off | all three |
 | `hide` | the same names, switched off individually | — |
 | `title` | replaces the date heading | the day |
-| `calendars` | calendar names, comma separated | all |
 | `project` | project names, comma separated | all |
 | `state` | `open` · `done` · `all` | `open` |
 | `priority` | `>=5` · `=9` · `high` / `medium` / `low` | — |
@@ -542,6 +541,41 @@ drawn; every other tool starts at the head of its own palette.
 Deleting a palette that a tool was using drops that tool back to the active one
 rather than silently moving it to a different set of colours.
 
+## The calendar
+
+A month, and what each day is for. One view — a month is the only shape that
+answers "what does this look like", and a week or a day is a note.
+
+Every cell is a writing surface. Tap it and type what the day is for: not one
+line, as much as fits. The text fills the cell and is clipped at the bottom
+rather than pushing the row taller, because a month whose rows change height as
+you write is not a month. `Ctrl`/`⌘ + Enter` or tapping away saves it, `Esc`
+puts back what was there.
+
+### Where the text lives
+
+In that day's own note, as **one frontmatter field**:
+
+```md
+---
+important: Ship 0.29, then rest
+---
+```
+
+Not in a plugin file. Obsidian's own search finds it, a template can prefill it,
+a Dataview query can read it, and it survives without this plugin. The field is
+`important` by default and you can change it under **Calendar → The day's
+text**. Writing on a day that has no note yet creates one, from your daily-note
+template.
+
+The rest of the cell: the **day number** opens the note, and tasks due that day
+ride along as chips under the text. The sidebar mini calendar only *marks* a day
+that has a text — a sidebar column is too narrow for a sentence.
+
+There are **no events**. Local calendars, the event dialog, RRULE expansion and
+the iCalendar parser were taken out — what is left is the month, the day texts
+and what is due. `docs/removed-features.md` §6 has the account and the way back.
+
 ## Planner
 
 A ```` ```nexus-planner ```` block is a month on one screen with **one line per
@@ -565,20 +599,14 @@ through months or weeks and write the new position back. Each cell has a small
 button that opens that day's daily note, using the core plugin's own format, so
 the planner never invents a second naming scheme.
 
-### The calendar reads the same plan
+### Not the same thing as the calendar's day text
 
-The full-page calendar's **month view shows that line under the day number**,
-and you can type one straight into the cell — one line, clipped, so no cell
-changes height because of what was typed. (On a phone the month cell is about
-50px wide and only shows lines that exist; writing one there is the block's job
-or the calendar on a wider screen.) It sits *above* the event chips: the
-line says what the day is for, the chips say what is in it, and a cell clips
-from the bottom, so below them a busy day would hide exactly the sentence worth
-reading. The sidebar mini calendar only *marks* a day that has a line — a
-sidebar column is too narrow for a sentence.
+The full-page calendar also gives you a text per day, but it keeps it in **that
+day's own note** (see *Calendar*, above). The planner block keeps its lines in
+**the block**. They are two answers to the same question and the calendar no
+longer reads the planner's — pick the one whose storage you want.
 
-Both surfaces read and write the same block, so they cannot disagree. A month
-resolves to one note by two settings on the **Calendar** tab:
+A planner month resolves to one note by two settings on the **Calendar** tab:
 
 | Setting | Default | |
 |---|---|---|
@@ -745,11 +773,10 @@ src/
   lib/
     helpers.js       renderMd, daily-note, ink zoom/pan, pdf page, colour conversion
     inputs.js        reusable settings inputs (autocomplete, multi-row, property rules, icon field)
-    ical.js          dependency-free iCalendar (RFC 5545) parser for VEVENT/VTODO
-    recur.js         RRULE expansion, always bounded to the visible range
-    calstore.js      local calendars as vault JSON, so mobile renders offline
+    datadir.js       where the plugin's own JSON lives (the sync state)
+    daytext.js       what a day is FOR — one frontmatter field of that day's note
     tasks.js         projects & tasks as Markdown — the .md files are the source of truth
-    agenda.js        the ```nexus-agenda``` block: one day (events + tasks + backlinks) in a note
+    agenda.js        the ```nexus-agenda``` block: one day (its text + tasks + backlinks) in a note
     kanban.js        the ```nexus-kanban``` block: head, column strip, card and drag — shared by both sources
     kanbanblock.js   how a board is written down: the parser and the writer of the block's own text
     kanbanedit.js    source “block”: the fence IS the board — its card menu, card editor and write-back
@@ -762,7 +789,7 @@ src/
     inkactions.js    the writes: annotate a scan, add a page, save a page list, merge captures
   views/
     calendar.js      NexusCalendarView (sidebar)
-    calendarpage.js  full-page calendar (month/week/day), renders from the cache
+    calendarpage.js  the month, its day texts and the tasks due on each day
     taskspage.js     full-page tasks: project tree + the selected project's tasks, as list or board
     timers.js        timer sidebar view + done/config modals
     ink.js           the capture hub's Ink tab: its adapter, its verbs and its card actions

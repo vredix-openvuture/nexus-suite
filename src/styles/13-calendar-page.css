@@ -1,38 +1,10 @@
 /* ============================================================================
- *  NEXUS SUITE — Tasks & Calendar (full-page calendar + event/account modals)
+ *  NEXUS SUITE — Tasks & Calendar (the month, its day texts, task chips)
  * ========================================================================== */
 
 .nx-calpage { padding: 0 !important; height: 100%; display: flex; flex-direction: column; }
 /* full width + full height: no max-width cap, real flexbox fill (min-height:0 lets the grid shrink/grow) */
 .nx-calpage-inner { padding: 18px 22px 24px; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; position: relative; }
-
-/* ── calendar visibility panel (popover, top-right) ── */
-.nx-cp-calpanel { position: absolute; top: 54px; right: 22px; z-index: 50; width: 262px; max-height: 62vh; overflow-y: auto; padding: 10px; border-radius: var(--nx-radius); background: var(--nx-elevated, var(--background-secondary)); border: var(--nx-hairline); box-shadow: 0 14px 36px -12px #000; }
-.nx-cp-calpanel-h { display: flex; align-items: center; justify-content: space-between; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin-bottom: var(--nx-sp-2); }
-/* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
-.nx-cp-calpanel-x {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
-  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
-  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
-  cursor: pointer; box-shadow: none;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
-  background: transparent; border-color: transparent;
-  color: var(--nx-fg-muted, var(--text-muted));
-}
-.nx-cp-calpanel-x:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
-.nx-cp-calpanel-empty { color: var(--text-muted); font-size: .85rem; font-style: italic; padding: var(--nx-sp-1); }
-/* Legacy alias of .nx-row (00-tokens.css) — one calendar in the visibility panel. */
-.nx-cp-calrow {
-  display: flex; align-items: center; gap: var(--nx-ctl-gap);
-  min-height: var(--nx-row-h);
-  padding: var(--nx-sp-1) var(--nx-sp-2);
-  border-radius: var(--nx-r-tile); cursor: pointer;
-}
-.nx-cp-calrow:hover { background: var(--nx-sf-1); }
-.nx-cp-calrow input { flex: 0 0 auto; }
-.nx-cp-caldot { width: 11px; height: 11px; border-radius: var(--nx-r-circle); background: var(--interactive-accent); flex: 0 0 auto; }
-.nx-cp-calname { font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── header ── */
 .nx-cp-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 16px; }
@@ -54,23 +26,6 @@
 .nx-cp-today { font-size: .85rem; font-weight: 600; }
 .nx-cp-primary { background: var(--nx-accent, var(--interactive-accent)); color: var(--nx-on-accent, var(--text-on-accent)); border-color: transparent; }
 .nx-cp-primary:hover { background: color-mix(in srgb, var(--nx-fg, #fff) 10%, var(--nx-accent, var(--interactive-accent))); }
-.nx-cp-seg {
-  display: inline-flex; height: var(--nx-ctl-h);
-  border: var(--nx-hairline); border-radius: var(--nx-r-tile); overflow: hidden;
-}
-/* Legacy alias of .nx-btn.is-quiet — one half of a segmented control, so it
-   gives up the radius the segment's own frame already carries. */
-.nx-cp-segbtn {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1); padding: 0 var(--nx-ctl-pad-x);
-  border: var(--nx-hairline);
-  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
-  cursor: pointer; box-shadow: none;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-  background: transparent; border-color: transparent;
-  color: var(--nx-fg-muted, var(--text-muted));
-  height: 100%; border-radius: 0;
-}
-.nx-cp-segbtn.is-active { background: var(--interactive-accent); color: var(--text-on-accent); }
 .nx-cp-actions { display: flex; gap: 6px; margin-left: auto; }
 .nx-cp-btn.is-spinning svg { animation: nx-cp-spin .8s linear infinite; }
 @keyframes nx-cp-spin { to { transform: rotate(360deg); } }
@@ -94,34 +49,35 @@
 .nx-cp-day.nx-has-note .nx-cp-daynum::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: var(--nx-r-circle); background: var(--interactive-accent); margin-right: var(--nx-sp-1); vertical-align: middle; }
 .nx-cp-events { display: flex; flex-direction: column; gap: 2px; overflow: hidden; min-height: 0; }
 
-/* ── the planner's line for a day ──────────────────────────────────────────
-   Above the chips and exactly one line tall whatever was typed: the cell is a
-   fixed grid row, so text that wraps would push chips out of view instead of
-   making room. The row is in every cell, filled or not, so no cell changes
-   shape when a line is added. */
-.nx-cp-plan {
-  flex: 0 0 auto; font-size: .74rem; line-height: 1.5;
+/* ── the day's text ───────────────────────────────────────────────────────
+   The content of a cell, not a caption on it: it takes the room the chips do
+   not, wraps, and is clipped at the bottom rather than pushing the row taller —
+   a month whose rows change height as you write is not a month. */
+.nx-cp-daytext {
+  flex: 1 1 auto; min-height: 0; overflow: hidden;
+  font-size: .74rem; line-height: 1.45;
   padding: 0 var(--nx-sp-1); border-radius: var(--nx-r-tile);
   color: var(--nx-fg-bright, var(--text-normal));
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text;
+  white-space: pre-wrap; overflow-wrap: anywhere; cursor: text;
 }
-.nx-cp-plan:hover { background: var(--nx-sf-2); }
+.nx-cp-daytext:hover { background: var(--nx-sf-2); }
 /* An empty day stays empty until you go looking: the hint is the affordance,
    and thirty of them would read as thirty entries. */
-.nx-cp-plan.is-empty { color: var(--text-faint); opacity: 0; }
-.nx-cp-day:hover .nx-cp-plan.is-empty, .nx-cp-plan.is-editing { opacity: 1; }
-/* A tablet has no hover, so the hint would never show and the row would be an
+.nx-cp-daytext.is-empty { color: var(--text-faint); opacity: 0; }
+.nx-cp-daytext.is-empty::before { content: 'Write…'; }
+.nx-cp-day:hover .nx-cp-daytext.is-empty, .nx-cp-daytext.is-editing { opacity: 1; }
+/* A tablet has no hover, so the hint would never show and the area would be an
    invisible strip that does something other than the cell around it. */
-body.is-mobile .nx-cp-plan.is-empty { opacity: .55; }
-.nx-cp-plan.is-editing { padding: 0; background: none; }
-.nx-cp-plan-input {
-  width: 100%; height: auto; min-height: 0; padding: 0 var(--nx-sp-1);
-  font-size: .74rem; line-height: 1.5; font-family: inherit;
+body.is-mobile .nx-cp-daytext.is-empty { opacity: .55; }
+.nx-cp-daytext.is-editing { padding: 0; background: none; }
+.nx-cp-daytext-input {
+  width: 100%; height: 100%; min-height: 3.4em; resize: none;
+  padding: var(--nx-sp-1); font-size: .74rem; line-height: 1.45; font-family: inherit;
   border: var(--nx-hairline); border-radius: var(--nx-r-tile);
   background: var(--nx-sf-3, var(--background-primary)); color: var(--nx-fg-bright, var(--text-normal));
 }
 
-/* ── event chip ── */
+/* ── task chip ── */
 .nx-cp-chip {
   --chip: var(--nx-accent, var(--interactive-accent));
   display: flex; align-items: center; gap: var(--nx-sp-1); cursor: pointer;
@@ -130,48 +86,12 @@ body.is-mobile .nx-cp-plan.is-empty { opacity: .55; }
   border-left: calc(var(--nx-bw) * 2) solid var(--chip); color: var(--nx-fg-bright, var(--text-normal));
 }
 .nx-cp-chip:hover { background: color-mix(in srgb, var(--chip) 34%, transparent); }
-.nx-cp-chip.is-allday { background: color-mix(in srgb, var(--chip) 30%, transparent); }
-.nx-cp-chip-time { font-variant-numeric: tabular-nums; font-weight: 600; opacity: .85; flex: 0 0 auto; }
 .nx-cp-chip.is-task { background: color-mix(in srgb, var(--chip) 14%, transparent); border-left-style: dashed; }
 .nx-cp-chip-check { flex: 0 0 auto; font-size: .82rem; line-height: 1; opacity: .9; }
 .nx-cp-chip.is-done .nx-cp-chip-text { text-decoration: line-through; opacity: .55; }
 .nx-cp-chip.is-done { opacity: .75; }
 .nx-cp-chip-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nx-cp-more { font-size: .7rem; color: var(--text-muted); padding-left: var(--nx-sp-1); }
-
-/* ── week ── */
-.nx-cp-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--nx-sp-1); flex: 1 1 auto; }
-.nx-cp-wcol { display: flex; flex-direction: column; gap: var(--nx-sp-1); min-height: 0; overflow-y: auto; padding: var(--nx-sp-1); border-radius: var(--nx-r-tile); border: var(--nx-hairline); background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 3%, var(--background-primary)); }
-.nx-cp-wcol.nx-today { border-color: var(--interactive-accent); }
-.nx-cp-wcol-head { display: flex; align-items: baseline; justify-content: space-between; cursor: pointer; padding: 2px 4px; border-radius: var(--nx-r-tile); }
-.nx-cp-wcol-head:hover { background: var(--nx-sf-1); }
-.nx-cp-wdow { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
-.nx-cp-wnum { font-size: 1rem; font-weight: 700; }
-.nx-cp-wcol-head.nx-has-note .nx-cp-wnum::after { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: var(--nx-r-circle); background: var(--interactive-accent); margin-left: var(--nx-sp-1); vertical-align: middle; }
-
-/* ── day / agenda ── */
-.nx-cp-agenda { display: flex; flex-direction: column; gap: 14px; max-width: 640px; }
-.nx-cp-agenda-note { display: flex; }
-.nx-cp-note-ic { display: inline-flex; margin-right: 6px; }
-.nx-cp-agenda-sec { display: flex; flex-direction: column; gap: 6px; }
-.nx-cp-agenda-h { font-size: .74rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
-.nx-cp-arow { display: flex; align-items: center; gap: 10px; }
-.nx-cp-atime { flex: 0 0 88px; font-variant-numeric: tabular-nums; font-size: .82rem; color: var(--text-muted); text-align: right; }
-.nx-cp-arow .nx-cp-chip { flex: 1; font-size: .9rem; padding: 5px 10px; }
-.nx-cp-empty { color: var(--text-muted); font-style: italic; padding: 20px 0; }
-
-/* ── empty-state hint ── */
-.nx-cp-empty-hint { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 14px; padding: 12px 16px; border-radius: var(--nx-radius); border: var(--nx-bw) dashed color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 40%, var(--background-modifier-border)); background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 6%, transparent); }
-.nx-cp-empty-msg { flex: 1; color: var(--text-normal); font-size: .92rem; }
-
-/* ── event + account modals ── */
-.nx-event-modal .nx-event-times { display: flex; flex-direction: column; }
-.nx-event-foot { display: flex; align-items: center; gap: var(--nx-sp-2); margin-top: 16px; }
-.nx-event-ro { display: flex; gap: 10px; margin: 4px 0; }
-.nx-event-ro-k { flex: 0 0 90px; color: var(--text-muted); font-size: .85rem; }
-.nx-event-ro-v { color: var(--text-normal); }
-.nx-event-ro-desc { margin-top: 10px; padding: 10px; border-radius: var(--nx-radius); background: var(--background-secondary); white-space: pre-wrap; }
-.nx-event-ro-hint { margin-top: 14px; font-size: .8rem; color: var(--text-muted); }
 
 .nx-set-list { display: flex; flex-direction: column; margin: 4px 0 8px; }
 .nx-account-empty { color: var(--text-muted); font-style: italic; padding: 6px 2px; font-size: .88rem; }
@@ -191,23 +111,14 @@ body.is-mobile .nx-cp-plan.is-empty { opacity: .55; }
 .nx-conflict-btns { display: flex; gap: var(--nx-sp-2); justify-content: flex-end; margin-top: 10px; }
 
 /* ── narrow pane / phone ───────────────────────────────────────────────────
-   Seven columns survive in the month (that IS the month), but everything
-   inside them has to shrink; the week view does not — seven ~45px columns are
-   unreadable, so it stacks into one row per day. */
+   Seven columns survive (that IS the month), but everything inside them has to
+   shrink. */
 @media (max-width: 620px) {
   .nx-calpage-inner { padding: var(--nx-sp-3) var(--nx-sp-3) var(--nx-sp-4); }
   .nx-cp-head { gap: 8px 10px; margin-bottom: var(--nx-sp-3); }
   .nx-cp-title { font-size: 1.22rem; width: 100%; }
   .nx-cp-title .nx-cp-sub { font-size: .85rem; }
   .nx-cp-actions { margin-left: 0; }
-
-  /* The panel is a 262px popover pinned under a header that now wraps to two
-     lines — as a bottom sheet it can neither collide with the header nor hang
-     off the right edge, and it sits where a thumb reaches. */
-  .nx-cp-calpanel {
-    top: auto; bottom: 12px; left: 12px; right: 12px;
-    width: auto; max-height: 52vh;
-  }
 
   /* month: no room for 92px rows plus full chips */
   .nx-cp-dowrow { gap: 2px; }
@@ -216,32 +127,13 @@ body.is-mobile .nx-cp-plan.is-empty { opacity: .55; }
   .nx-cp-day { min-height: 56px; padding: 3px 2px; }
   .nx-cp-daynum { font-size: .72rem; padding: 0 3px; }
   .nx-cp-chip { padding: 0 3px; gap: 3px; font-size: .6rem; }
-  .nx-cp-chip-time { display: none; }   /* the title matters more than the hour */
   .nx-cp-more { font-size: .62rem; }
-  /* 56px of cell is for the day itself — a hint on every empty one would eat
-     a third of it, so only days that HAVE a line spend a row on one. */
-  .nx-cp-plan { font-size: .62rem; padding: 0 3px; }
-  .nx-cp-plan.is-empty { display: none; }
-
-  /* week: one row per day, the list itself scrolling (min-height:0 — a flex
-     item won't shrink below its content without it, and the page would
-     overflow instead of the week scrolling) */
-  .nx-cp-week {
-    grid-template-columns: 1fr; grid-auto-rows: min-content; gap: 6px;
-    min-height: 0; overflow-y: auto;
-  }
-  .nx-cp-wcol { overflow: visible; padding: 6px 8px; }
-  .nx-cp-wcol-head { justify-content: flex-start; gap: 9px; }
-  .nx-cp-week .nx-cp-chip { padding: var(--nx-sp-1) var(--nx-sp-2); font-size: .84rem; }
-  .nx-cp-week .nx-cp-chip-time { display: block; }
-
-  /* agenda: an 88px right-aligned time column halves the text width */
-  .nx-cp-arow { align-items: flex-start; gap: var(--nx-sp-2); }
-  .nx-cp-atime { flex: 0 0 auto; min-width: 3.6em; text-align: left; padding-top: 5px; }
+  /* 56px of cell is for the day itself — a hint on every empty one would eat a
+     third of it, so only days that HAVE something spend room on it. */
+  .nx-cp-daytext { font-size: .62rem; padding: 0 3px; }
+  .nx-cp-daytext.is-empty { display: none; }
 
   /* modals: label columns give way to the values */
   .nx-conflict-grid { grid-template-columns: minmax(52px, auto) 1fr 1fr; gap: 3px 6px; }
   .nx-conflict-v { font-size: .78rem; }
-  .nx-event-ro { flex-direction: column; gap: 1px; margin: 7px 0; }
-  .nx-event-ro-k { flex: none; }
 }
