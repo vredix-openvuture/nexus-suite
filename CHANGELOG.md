@@ -2,6 +2,28 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.28.1 — 2026-09-03
+
+### Fixed
+
+- **Finger taps were never recognised on a pen tablet.** Palm rejection counted
+  the pen HOVERING over the glass, not just touching it — and on a tablet the
+  pen is in your hand above the screen the whole time, so the 600 ms window
+  never closed and every finger gesture was thrown away before it was read. The
+  window now opens on pen **contact**. A palm that lands just before the nib is
+  still caught: the pen touching down clears the touches it finds.
+- **The tap thresholds were mouse numbers.** A three-finger tap is six pointer
+  events with a human hand between them, and a finger on glass wanders further
+  than a mouse: a tap may now last 500 ms (was 300), travel 18 px (was 10), and
+  a run of taps counts up to 320 ms apart (was 260).
+
+### Added
+
+- **A tap says what it did** — a small read-out at the bottom left of the pad:
+  *Undo*, *Redo*, *Page width*. An undo of a stroke you had already forgotten
+  looks exactly like nothing happening, and this is also the only way to tell
+  "the tap was not recognised" from "the tap did nothing".
+
 ## 0.28.0 — 2026-09-03
 
 ### Added

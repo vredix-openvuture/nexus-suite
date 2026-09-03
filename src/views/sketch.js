@@ -38,10 +38,14 @@ const PALM_MS = 600;             // palm rejection: ignore touches this soon aft
    a touch burst that lifts quickly and never travelled. How many fingers were
    down at once picks the meaning, how many taps followed each other picks the
    rest. See _registerTap. */
-const TAP_MS = 300;              // a touch burst longer than this is a hold, not a tap
-const TAP_SLOP_PX = 10;          // …and one that travels further than this is a drag
-const MULTITAP_MS = 260;         // taps closer together than this belong to the same run
-const MULTITAP_R = 44;           // …and no further apart on screen than this
+/* Generous on purpose. A three-finger tap is six pointer events with a human
+   hand between them, and a finger on glass wanders further than a mouse ever
+   does — the first numbers here (300 / 10 / 260) were mouse numbers and missed
+   real taps on a tablet. */
+const TAP_MS = 500;              // a touch burst longer than this is a hold, not a tap
+const TAP_SLOP_PX = 18;          // …and one that travels further than this is a drag
+const MULTITAP_MS = 320;         // taps closer together than this belong to the same run
+const MULTITAP_R = 60;           // …and no further apart on screen than this
 const HOLD_MS = 650;             // shape snap: hold the pen still this long after drawing …
 const HOLD_R = 7;                // … within this radius (viewBox units) to trigger recognition
 
@@ -509,7 +513,7 @@ class NexusSketchSurface {
     this._touches = new Map();                           // active touch pointers → client coords
     // -Infinity, not 0: with 0 every touch in the app's first PALM_MS counts as
     // landing right after a pen and is dropped.
-    this._lastPen = -Infinity;
+    this._lastPen = -Infinity;                           // pen CONTACT, never hover — see _touchDown
     this.onCommit = opts.onCommit || null;
     this.onZoom = opts.onZoom || null;                   // page-zoom level changed (see setPageZoom)
     this.resizable = !!opts.resizable;
@@ -758,7 +762,13 @@ class NexusSketchSurface {
   _touchDown(e) {
     this._stopFling();   // a finger down means "stop", always
     if (this._active || this._erasing) return;                          // pen is drawing → ignore stray finger
-    if (performance.now() - this._lastPen < PALM_MS) return;            // palm rejection
+    /* Palm rejection, keyed on pen CONTACT. It used to count pen HOVER too —
+       "a palm lands while the pen approaches" — but on a pen tablet the pen is
+       in your hand above the glass the whole time, so hovering vetoed every
+       finger gesture, taps included. A palm that lands just before the nib is
+       still caught: _onDown clears the touches (and the tap) the moment the pen
+       actually touches down. */
+    if (performance.now() - this._lastPen < PALM_MS) { this._tap = null; return; }
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
     // sx/sy is where this finger LANDED — a tap is judged against it, x/y follows the move.
     this._touches.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });
@@ -812,8 +822,29 @@ class NexusSketchSurface {
     if (this._tapSeq && this._tapSeq.timer) window.clearTimeout(this._tapSeq.timer);
     this._tapSeq = null;
   }
+  /* A tap gesture leaves no trace of its own — an undo of a stroke you had
+     forgotten looks exactly like nothing happening. So each one says what it
+     did, briefly, on the pad itself. It is also the only way to tell "the tap
+     was not recognised" from "the tap did nothing". */
+  _flashTap(text) {
+    if (!this.host) return;
+    let el = this._tapFlash;
+    if (!el || !el.isConnected) {
+      el = document.createElement('div');
+      el.className = 'nx-sk-tapflash';
+      this.host.appendChild(el);
+      this._tapFlash = el;
+    }
+    el.textContent = text;
+    el.classList.remove('is-on');
+    void el.offsetWidth;            // restart the fade instead of extending it
+    el.classList.add('is-on');
+    window.clearTimeout(this._tapFlashT);
+    this._tapFlashT = window.setTimeout(() => el.classList.remove('is-on'), 850);
+  }
+
   _registerTap(fingers, x, y) {
-    if (fingers >= 3) { this._clearTapSeq(); this.setPageZoom(1); return; }
+    if (fingers >= 3) { this._clearTapSeq(); this.setPageZoom(1); this._flashTap('Page width'); return; }
     // Two fingers at once is the pinch/scroll gesture's resting state — no meaning.
     if (fingers !== 1 || this.locked) { this._clearTapSeq(); return; }
     const now = performance.now();
@@ -821,13 +852,14 @@ class NexusSketchSurface {
     const runs = prev && (now - prev.t) < MULTITAP_MS && Math.hypot(x - prev.x, y - prev.y) < MULTITAP_R;
     const n = runs ? prev.n + 1 : 1;
     this._clearTapSeq();
-    if (n >= 3) { this.redo(); return; }
+    if (n >= 3) { this.redo(); this._flashTap('Redo'); return; }
     this._tapSeq = { n, t: now, x, y, timer: null };
     if (n === 2) {
       const seq = this._tapSeq;
       seq.timer = window.setTimeout(() => {
         if (this._tapSeq === seq) this._tapSeq = null;
         this.undo();
+        this._flashTap('Undo');
       }, MULTITAP_MS);
     }
   }
@@ -1070,13 +1102,13 @@ class NexusSketchSurface {
   _onDown(e) {
     this._stopFling();
     this._checkPenButtons(e);
-    if (e.pointerType === 'pen') this._lastPen = performance.now();   // palm rejection window
+    if (e.pointerType === 'pen') this._lastPen = performance.now();   // contact — opens the palm window
     if (e.pointerType === 'touch') { this._touchDown(e); return; }    // finger = pan / page-scroll / zoom, never draws
     if (this.locked) return;                                          // view mode: pen/mouse never draw or erase
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     // Pen wins over fingers: a palm that slipped in as a "pan" gets dropped the
     // moment the pen actually touches down.
-    if (this._touches.size) { this._touches.clear(); this._gestMode = null; }
+    if (this._touches.size) { this._touches.clear(); this._gestMode = null; this._tap = null; }
     e.preventDefault();
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
     this._ctmInv = this._invCTM();   // cache once per stroke (see _pt)
@@ -1126,7 +1158,9 @@ class NexusSketchSurface {
   }
   _onMove(e) {
     this._checkPenButtons(e);
-    if (e.pointerType === 'pen') this._lastPen = performance.now();   // hover counts too — palm lands while the pen approaches
+    // Only while the nib is actually down: a hovering pen must not veto the
+    // fingers of the other hand (pressure/buttons are 0 in hover).
+    if (e.pointerType === 'pen' && (e.buttons || e.pressure > 0)) this._lastPen = performance.now();
     if (e.pointerType === 'touch') { this._touchMove(e); return; }
     if (this._erasing) { this._eraseAt(this._pt(e)); return; }
     if (this._selDrag) { e.preventDefault(); this._selMove(this._pt(e), e); return; }
@@ -2049,7 +2083,10 @@ class NexusSketchSurface {
   /* Write a pending change out now. Safe to call when nothing is pending. */
   flush() { if (this._commitT || this._commitMaxT) this._fire(); }
   /* Call when the pad goes away for good (view closed, overlay torn down). */
-  destroy() { this.flush(); this._disarmFlushGuard(); this._stopFling(); this._clearTapSeq(); }
+  destroy() {
+    this.flush(); this._disarmFlushGuard(); this._stopFling(); this._clearTapSeq();
+    window.clearTimeout(this._tapFlashT);
+  }
 
   /* Dark-paper ink inversion. `_inkColor` is applied everywhere a stroke colour
      is painted (live canvas, committed DOM, export) so the flip is consistent and

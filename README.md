@@ -493,11 +493,16 @@ Fingers never draw — the pen does — so a tap is free to mean something:
 | Double tap | Undo |
 | Triple tap | Redo |
 
-Undo waits out the multi-tap window (about a quarter second) before it fires;
+Each one says what it did, briefly, at the bottom left of the pad — an undo of a
+stroke you had already forgotten looks exactly like nothing happening.
+
+Undo waits out the multi-tap window (about a third of a second) before it fires;
 otherwise every triple tap would undo something on its way to the redo. A tap
-that lands within 600 ms of the pen touching or hovering is a palm and is
-ignored, so a hand resting mid-sentence cannot undo anything. In a code block in
-view mode only the zoom reset works — the drawing is read-only there.
+within 600 ms of the pen **touching** the glass is a palm and is ignored, so a
+hand resting mid-sentence cannot undo anything — a pen merely hovering does not
+count, or a tablet with the pen in your hand would never see a tap at all. In a
+code block in view mode only the zoom reset works: the drawing is read-only
+there.
 
 ### Pen buttons
 

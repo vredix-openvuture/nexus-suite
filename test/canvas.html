@@ -272,6 +272,34 @@ async function tapTests() {
     eq('tap · a touch right after the pen is a palm, not a tap', s.strokes.length, 1);
   }
   {
+    /* The reported regression: on a pen tablet the pen HOVERS over the glass the
+       whole time, and palm rejection counted hover — so no finger tap ever got
+       through. Contact opens the window, hover does not. */
+    const s = drawn(1);
+    const hover = new PointerEvent('pointermove', { bubbles: true, pointerId: 9, pointerType: 'pen', buttons: 0, pressure: 0 });
+    s._onMove(hover);
+    ok('tap · a hovering pen does not open the palm window', s._lastPen === -Infinity, 'lastPen ' + s._lastPen);
+    tap(s, 1); tap(s, 1);
+    await wait(MULTI_WAIT);
+    eq('tap · so a tap while the pen hovers still undoes', s.strokes.length, 0);
+
+    // …but the nib touching down does open it.
+    const contact = new PointerEvent('pointermove', { bubbles: true, pointerId: 9, pointerType: 'pen', buttons: 1, pressure: 0.5 });
+    s._onMove(contact);
+    ok('tap · a pen in contact does open it', s._lastPen > 0, 'lastPen ' + s._lastPen);
+  }
+  {
+    // A three-finger tap is six events with a hand between them — the first
+    // thresholds were mouse-tight and missed real taps.
+    const s = makeSurface([], { pageZoom: true });
+    s.setPageZoom(3);
+    tap(s, 3);
+    near('tap · a three-finger tap reports what it did', s.getPageZoom(), 1, 0.001);
+    const flash = s.host.querySelector('.nx-sk-tapflash');
+    ok('tap · and says so on the pad', !!flash && flash.textContent === 'Page width',
+       flash ? flash.textContent : 'no flash element');
+  }
+  {
     // View mode: the drawing is read-only, so a stray tap must not edit it.
     const s = drawn(1, { pageZoom: true });
     s.setLocked(true);

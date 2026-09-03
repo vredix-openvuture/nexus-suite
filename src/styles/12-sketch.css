@@ -614,6 +614,27 @@
 .nx-skpane.is-zoomed .nx-sk-zoompill { opacity: 1; }
 body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
 
+/* What a finger tap just did. Bottom LEFT so it never sits under the zoom pill,
+   and pointer-transparent so it can never swallow the next stroke. */
+.nx-sk-tapflash {
+  position: absolute;
+  left: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+  padding: 6px 12px;
+  border-radius: var(--nx-r-pill);
+  border: var(--nx-hairline);
+  background: var(--background-secondary);
+  color: var(--nx-fg, var(--text-normal));
+  font-size: var(--font-ui-smaller);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity .12s ease, transform .12s ease;
+}
+.nx-sk-tapflash.is-on { opacity: 1; transform: none; }
+
 /* Zoom popover — the same two steps a pinch does, for a pen or a mouse. */
 .nx-sk-zoompop { min-width: 190px; }
 .nx-sk-zoomrow {
