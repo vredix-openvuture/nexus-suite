@@ -1,5 +1,7 @@
 # Nexus Suite
 
+> **Work in progress.** This is a personal project under active development. Things change and break between releases; use it at your own risk.
+
 One Obsidian plugin instead of a dozen. Every module is a toggle, so you only
 run what you use.
 
