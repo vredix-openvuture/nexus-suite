@@ -3,12 +3,11 @@
 /* ============================================================================
  *  NEXUS SUITE · lib · the paper planner
  *  A month on one screen with what each day is FOR, the way a paper calendar
- *  works. Deliberately not the tasks module and not the agenda: those answer
- *  "what is due", this answers "what is this month for".
+ *  works: not "what is due" but "what is this month for".
  *
  *  The fence holds only WHERE to look — which month, which view. The text of a
  *  day lives in that day's own note (lib/daytext.js), which is the same place
- *  the calendar page writes it, so the two are one thing seen twice.
+ *  the mini calendar reads it from, so the two are one thing seen twice.
  *
  *      view: month
  *      month: 2026-09

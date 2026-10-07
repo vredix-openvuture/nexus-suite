@@ -6,9 +6,9 @@
  *  server, writing files, rotating backups. The decisions all live next door in
  *  vaultsync.js, which is pure — this file only carries them out.
  *
- *  Credentials never go into the vault. They live in localStorage next to the
- *  task-account ones (plugin.getCredential), for the same reason: data.json is
- *  a file in the vault, and the vault is the thing being synced.
+ *  Credentials never go into the vault. They live in localStorage
+ *  (plugin.getCredential): data.json is a file in the vault, and the vault is
+ *  the thing being synced.
  * ========================================================================== */
 
 const { Notice, TFile, TFolder, moment } = require('obsidian');

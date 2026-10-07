@@ -2374,7 +2374,7 @@ module.exports = class NexusSuite extends Plugin {
     if (this.app.vault.getAbstractFileByPath(path)) path = quicknote.notePath(folder, title, stamp);
     const body = quicknote.noteBody(lines, {
       recorded: moment().format('YYYY-MM-DDTHH:mm'),
-      seconds: meta && meta.seconds, engine: meta && meta.engine, task: meta && meta.task,
+      seconds: meta && meta.seconds, engine: meta && meta.engine,
     });
     const file = await this.app.vault.create(path, body);
     if (cfg.openAfter !== false) this.app.workspace.getLeaf(false).openFile(file);
@@ -2704,18 +2704,13 @@ module.exports = class NexusSuite extends Plugin {
     const enterBtn = pad.createDiv({ cls: 'nx-sketch-enter', attr: { 'aria-label': 'Edit sketch' } });
     setIcon(enterBtn, 'pencil');
     enterBtn.onclick = () => setMode('edit');
-    // Compact code-block toolbar. Rebuildable, so a change made elsewhere in the
-    // same sketch can be reflected back into it.
-    const buildInlineBar = () => {
-      bar.empty();
-      this._buildSketchBar(bar, surface, s, {
-        mode: 'compact',
-        // Leaving edit → view crops to content (setMode), then persist that height.
-        onDone: () => { setMode('view'); if (surface.strokes.length) surface.persist(); },
-        onSplit: true, sketchId: () => state.id, notePath: ctx && ctx.sourcePath,
-      });
-    };
-    buildInlineBar();
+    // Compact code-block toolbar.
+    this._buildSketchBar(bar, surface, s, {
+      mode: 'compact',
+      // Leaving edit → view crops to content (setMode), then persist that height.
+      onDone: () => { setMode('view'); if (surface.strokes.length) surface.persist(); },
+      onSplit: true, sketchId: () => state.id, notePath: ctx && ctx.sourcePath,
+    });
     // This pad is now the live one for that id — so the NEXT re-render hands
     // over from here instead of from a stale predecessor.
     if (state.id) (this._sketchLive = this._sketchLive || {})[state.id] = surface;

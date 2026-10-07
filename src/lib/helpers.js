@@ -194,8 +194,8 @@ function nxPropValues(app, key) {
 
 /* ── Week start ──────────────────────────────────────────────────────────────
    One vault-wide setting (Settings → Mini calendar → "Week starts on") decides
-   where a week begins for EVERY calendar surface: the mini calendar's month
-   grid and the planner block. moment's own startOf('week') follows the app
+   where a week begins for the mini calendar's month grid (a planner block sets
+   its own with `weekstart:`). moment's own startOf('week') follows the app
    locale, which is why these wrappers exist — they take the setting when it has
    one and fall back to the locale otherwise. moment's global locale is
    deliberately left alone: it belongs to Obsidian and every other plugin.

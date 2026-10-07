@@ -79,7 +79,7 @@ show('A · pinned, full-size editor',
 
 show('A · pinned, in a note',
      'Same row, fewer buttons — background / auto-extend / clear sit in the ⋯ menu.',
-     { mode: 'compact', onDone: () => {}, onFullscreen: () => {} });
+     { mode: 'compact', onDone: () => {} });
 
 const marker = show('A · the highlighter’s own options',
      'Its settings button, its own sizes, its own colours.',
@@ -99,11 +99,11 @@ show('B · reveal, before the first tap',
 
 show('Phone width · pinned',
      'Tools scroll sideways, actions stay pinned right, the ⋯ menu holds the rest.',
-     { mode: 'compact', onDone: () => {}, onFullscreen: () => {} }, null, 'narrow');
+     { mode: 'compact', onDone: () => {} }, null, 'narrow');
 
 show('Phone width · trimmed to three buttons',
      'A device set to pen + eraser only; everything else moved into the menu.',
-     { mode: 'compact', onDone: () => {}, onFullscreen: () => {} },
+     { mode: 'compact', onDone: () => {} },
      s => { s.bar = { mode: 'pinned', compact: ['pen', 'eraser'], full: null }; }, 'narrow');
 </script>
 </body></html>

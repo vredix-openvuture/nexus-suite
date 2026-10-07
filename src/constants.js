@@ -127,7 +127,7 @@ const DEFAULT_SETTINGS = {
     sources: [{ id: 'paper', label: 'Paper (camera)', folder: 'Inbox/Paper', enabled: true }],
     excalidraw: { enabled: true } },
   quicksketch: { enabled: true, folder: 'Inbox/Quicksketch', ratio: '16:9',
-    paper: 'paper',       // native | paper | white | black — solid fill + matching grid colour; per-note override via frontmatter `sketch-bg`
+    paper: 'paper',       // native | paper | white | black — solid fill + matching grid colour
     /* What SHAPE the paper is, which is a different question from its colour:
          endless    one sheet of a fixed width, growing downward forever
          sectioned  the same, cut into A4 pages with a gap — real page edges

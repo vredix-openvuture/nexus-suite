@@ -2452,7 +2452,6 @@ class NexusSketchSurface {
   }
   /* Write a pending change out now. Safe to call when nothing is pending. */
   flush() { if (this._commitT || this._commitMaxT) this._fire(); }
-  /* Call when the pad goes away for good (view closed, overlay torn down). */
   /* Let go of everything that outlives the element — pending timers, the fling,
      the resize observer — WITHOUT writing anything back. For a pad that has been
      superseded: a code block re-renders while it may still be being drawn on, its
@@ -2463,6 +2462,7 @@ class NexusSketchSurface {
     if (this._ro) { try { this._ro.disconnect(); } catch (e) {} this._ro = null; }
     window.clearTimeout(this._tapFlashT);
   }
+  /* Call when the pad goes away for good: write what is pending, then let go. */
   destroy() { this.flush(); this.teardown(); }
 
   /* Dark-paper ink inversion. `_inkColor` is applied everywhere a stroke colour

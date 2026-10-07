@@ -4,7 +4,7 @@
  *  NEXUS SUITE · views · the planner block
  *  Renders a ```nexus-planner``` block: a month (or a week) of what each day is
  *  FOR, writable in place. The fence says which month; the text of a day lives
- *  in that day's own note, exactly where the calendar page keeps it — one store,
+ *  in that day's own note, where the mini calendar reads it — one store,
  *  two views. See lib/daytext.js.
  * ========================================================================== */
 
@@ -193,8 +193,7 @@ class NexusPlanner {
       if (input && input.isConnected) { input.value = text; input.focus(); }
       return;
     }
-    // The calendar page and the mini calendar show the same text. A metadata
-    // event reaches them too, but only once Obsidian gets around to firing it.
+    // The mini calendar shows the same text. A metadata event reaches it too, but only once Obsidian gets around to firing it.
     if (typeof this.plugin.refreshCalendarViews === 'function') this.plugin.refreshCalendarViews();
   }
 }

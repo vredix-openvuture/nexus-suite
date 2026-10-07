@@ -44,7 +44,7 @@ const bar = barWrap.createDiv('nx-sketch-bar');
 const pad = wrap.createDiv('nx-sketch-pad');
 pad.style.height = '80px';
 const surface = surf(pad);
-plugin._buildSketchBar(bar, surface, s, { mode:'compact', onDone:()=>{}, onFullscreen:()=>{} });
+plugin._buildSketchBar(bar, surface, s, { mode:'compact', onDone:()=>{} });
 
 const sub = bar.nextElementSibling;
 ok('options row landed inside the collapse wrapper', sub.parentElement === barWrap, sub.parentElement.className);

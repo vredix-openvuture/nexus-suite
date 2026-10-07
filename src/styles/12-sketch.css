@@ -185,8 +185,8 @@
 .nx-sk-color-custom { background: var(--background-primary); color: var(--text-muted); }
 .nx-sk-color-custom .svg-icon { width: 12px; height: 12px; }
 
-/* Popovers (pen type / custom colour / background). Sit ABOVE the full-window
-   overlay (which uses --layer-modal) so toolbar popovers stay clickable there. */
+/* Popovers (pen type / custom colour / background). Fixed, and above the
+   modal layer, so no pane or dialog edge can clip or cover them. */
 .nx-sk-pop {
   position: fixed;
   z-index: calc(var(--layer-modal, 100) + 50);
