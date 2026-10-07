@@ -6,7 +6,6 @@
  * ========================================================================== */
 
 const { Modal, SuggestModal } = require('obsidian');
-const { nxMultiRow } = require('../lib/inputs.js');
 
 /* Small text prompt (e.g. for the filename). openAndGet() → Promise<string|null> */
 class NexusNameModal extends Modal {

@@ -21,6 +21,7 @@ const sel = require('../lib/sketchselect.js');
 const canvas = require('../lib/sketchcanvas.js');
 const objects = require('../lib/sketchobjects.js');
 const gestures = require('../lib/sketchgestures.js');
+const { parseColor, rgbToHex } = require('../lib/color.js');
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const LOGICAL_W = 1600;          // fixed logical canvas width (viewBox units)
@@ -377,19 +378,6 @@ function paperTexDefsStr(filtId, patId) {
     + `</pattern>`;
 }
 
-/* Parse #rgb / #rrggbb / rgb() / rgba() → { r, g, b (0-255), a (0-1) } or null. */
-function parseColor(c) {
-  if (typeof c !== 'string') return null;
-  c = c.trim();
-  let m = c.match(/^#([0-9a-f]{3})$/i);
-  if (m) { const h = m[1]; return { r: parseInt(h[0] + h[0], 16), g: parseInt(h[1] + h[1], 16), b: parseInt(h[2] + h[2], 16), a: 1 }; }
-  m = c.match(/^#([0-9a-f]{6})$/i);
-  if (m) { const h = m[1]; return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: 1 }; }
-  m = c.match(/^rgba?\(([^)]+)\)$/i);
-  if (m) { const p = m[1].split(',').map(x => parseFloat(x.trim())); if (p.length >= 3 && p.every(n => !isNaN(n))) return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; }
-  return null;
-}
-
 /* Split a colour into an OPAQUE colour + its alpha. The live layers always paint
    opaque and hand the alpha to their wrapper element, so a chunk seam or a
    tail/chunk overlap can never composite darker than the committed stroke. */
@@ -416,7 +404,7 @@ function lumInvertColor(color) {
   const q = x => Math.max(0, Math.min(255, Math.round(x * 255)));
   const rr = q(R), gg = q(G), bb = q(B);
   if (c.a != null && c.a < 1) return `rgba(${rr},${gg},${bb},${c.a})`;
-  return '#' + [rr, gg, bb].map(v => v.toString(16).padStart(2, '0')).join('');
+  return rgbToHex(rr, gg, bb);
 }
 
 /* Parse a sidecar back into its data object from the <metadata> JSON. Returns

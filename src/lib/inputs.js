@@ -5,7 +5,7 @@
  *  Autocomplete, multi-row, property-rule rows/groups, icon field.
  * ========================================================================== */
 
-const { Menu, Setting, setIcon } = require('obsidian');
+const { Setting, setIcon } = require('obsidian');
 const { NexusIconPickerModal } = require('../modals/pickers.js');
 
 /* Live suggestion list under an input. suggestFn() returns all candidates,

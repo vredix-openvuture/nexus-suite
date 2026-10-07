@@ -7,7 +7,7 @@
 
 const { EditorSuggest, Modal, Setting, SuggestModal, setIcon } = require('obsidian');
 const { NX_BUILTIN_CALLOUTS } = require('../constants.js');
-const { nxHexToRgb, nxRgbToHex } = require('../lib/helpers.js');
+const { nxHexToRgb, nxRgbToHex } = require('../lib/color.js');
 const { nxIconField } = require('../lib/inputs.js');
 
 /* Edit ONE callout (type id + icon + base/light/dark color) with a live preview. */

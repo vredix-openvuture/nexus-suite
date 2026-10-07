@@ -347,6 +347,25 @@ localStorage.removeItem('nexus-suite-sketchbar');
 }
 
 
+// ── 15b · the colour picker reads what it is given ─────────────────────────
+{
+  const picker = (initial) => {
+    const host = document.createElement('div'); document.body.appendChild(host);
+    const seen = { change: [], commit: [] };
+    new window.NexusSuite({}, {})._buildColorPicker(host, initial, (c) => seen.change.push(c), (c) => seen.commit.push(c));
+    return { host, seen, hex: host.querySelector('.nx-cp-hex') };
+  };
+  const a = picker('#3366cc');
+  eq('picker · starts on the colour it was given', a.hex.value.toLowerCase(), '#3366cc');
+  a.hex.value = '#f00'; a.hex.onchange();
+  eq('picker · a typed short hex is committed as the full one', a.seen.commit.pop(), '#ff0000');
+  a.hex.value = 'rgba(0, 128, 0, 0.5)'; a.hex.onchange();
+  eq('picker · rgba keeps its alpha', a.seen.commit.pop(), 'rgba(0, 128, 0, 0.5)');
+  const b = picker('var(--nope)');
+  eq('picker · something unreadable starts on near-black', b.hex.value.toLowerCase(), '#2f2f2f');
+  a.host.remove(); b.host.remove();
+}
+
 // ── 16 · the palette hands Obsidian its own accent ─────────────────────────
 {
   const hsl = window.nxHexToHsl;

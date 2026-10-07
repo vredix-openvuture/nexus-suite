@@ -11,7 +11,7 @@ const { NexusCalendarView } = require('./views/calendar.js');
 const { NexusSketchPaneView } = require('./views/sketchpane.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
 const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, SCRATCH_VIEW, SIDE_CAPTURE_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
-const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxHexToHsl, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
+const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
 const { NexusPlanner } = require('./views/plannerblock.js');
 const { NexusVaultSync } = require('./lib/vaultsyncrun.js');
 const { WebDavClient } = require('./lib/webdav.js');
@@ -33,6 +33,7 @@ const penGestures = require('./lib/sketchgestures.js');
 const sketchExport = require('./lib/sketchexport.js');
 const { cssAttrValue, escapeRegExp } = require('./lib/text.js');
 const { attachHoldMenu } = require('./lib/holdmenu.js');
+const { nxHexToHsl, parseColor, rgbToHex } = require('./lib/color.js');
 const { ensureFolder, safeFileName, uniquePath } = require('./lib/vaultpaths.js');
 const sketchSearch = require('./lib/sketchsearch.js');
 const quicknote = require('./lib/quicknote.js');
@@ -1858,11 +1859,8 @@ module.exports = class NexusSuite extends Plugin {
       const isTriplet = /^\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}$/.test(t);
       if (triplet) {
         if (isTriplet) return t;
-        const m = t.match(/^#([0-9a-f]{6})$/i);
-        if (m) return [0, 2, 4].map(i => parseInt(m[1].slice(i, i + 2), 16)).join(', ');
-        const m3 = t.match(/^#([0-9a-f]{3})$/i);
-        if (m3) return [0, 1, 2].map(i => parseInt(m3[1][i] + m3[1][i], 16)).join(', ');
-        return t;
+        const c = parseColor(t);
+        return c ? [c.r, c.g, c.b].map(Math.round).join(', ') : t;
       }
       return isTriplet ? 'rgb(' + t + ')' : t;
     };
@@ -2785,20 +2783,11 @@ module.exports = class NexusSuite extends Plugin {
       if (d) { if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
       return [h, mx ? d / mx : 0, mx];
     };
-    const parse = (str) => {
-      str = String(str || '').trim();
-      let m = /^#([0-9a-f]{3})$/i.exec(str);
-      if (m) { const t = m[1]; return [parseInt(t[0] + t[0], 16), parseInt(t[1] + t[1], 16), parseInt(t[2] + t[2], 16), 1]; }
-      m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(str);
-      if (m) return [parseInt(m[1].slice(0, 2), 16), parseInt(m[1].slice(2, 4), 16), parseInt(m[1].slice(4, 6), 16), m[2] != null ? parseInt(m[2], 16) / 255 : 1];
-      m = /^rgba?\(([^)]+)\)$/i.exec(str);
-      if (m) { const p = m[1].split(',').map(x => parseFloat(x)); return [p[0] | 0, p[1] | 0, p[2] | 0, (p[3] != null && !isNaN(p[3])) ? p[3] : 1]; }
-      return [47, 47, 47, 1];
-    };
-
-    const init = parse(initial);
-    let hsv = rgb2hsv(init[0], init[1], init[2]);
-    let h = hsv[0], s = hsv[1], v = hsv[2], a = init[3], last = '';
+    // Anything unreadable (a var(), a typo) starts the picker on near-black.
+    const read = (str) => parseColor(String(str || '')) || { r: 47, g: 47, b: 47, a: 1 };
+    const init = read(initial);
+    let hsv = rgb2hsv(init.r, init.g, init.b);
+    let h = hsv[0], s = hsv[1], v = hsv[2], a = init.a, last = '';
 
     const wheel = host.createDiv('nx-cp-wheel');
     const ring = wheel.createDiv('nx-cp-ring');
@@ -2814,7 +2803,7 @@ module.exports = class NexusSuite extends Plugin {
     const CENTER = 108, R = 89, SV = 104;   // wheel is 216px; SV square 104px centred
     const toStr = () => {
       const rgb = hsv2rgb(h, s, v);
-      if (a >= 0.999) return '#' + rgb.map(n => n.toString(16).padStart(2, '0')).join('');
+      if (a >= 0.999) return rgbToHex(rgb[0], rgb[1], rgb[2]);
       return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${Math.round(a * 100) / 100})`;
     };
     const paint = (emit) => {
@@ -2854,7 +2843,7 @@ module.exports = class NexusSuite extends Plugin {
     drag(sv, (x, y, r) => { s = clamp01(x / r.width); v = clamp01(1 - y / r.height); });
     drag(alpha, (x, y, r) => { a = clamp01(x / r.width); alphaThumb.style.left = (a * r.width) + 'px'; });
 
-    hexInp.onchange = () => { const p = parse(hexInp.value); const c = rgb2hsv(p[0], p[1], p[2]); h = c[0]; s = c[1]; v = c[2]; a = p[3]; paint(true); if (onCommit) onCommit(last); };
+    hexInp.onchange = () => { const p = read(hexInp.value); const c = rgb2hsv(p.r, p.g, p.b); h = c[0]; s = c[1]; v = c[2]; a = p.a; paint(true); if (onCommit) onCommit(last); };
 
     requestAnimationFrame(() => { const aw = alpha.getBoundingClientRect().width || 212; alphaThumb.style.left = (a * aw) + 'px'; });
     paint(false);
@@ -3420,7 +3409,7 @@ module.exports = class NexusSuite extends Plugin {
       pop.createDiv('nx-sk-menu-sep');
       const add = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol', text: '＋ Section here' });
       add.onclick = async () => {
-        const { NexusConfirmModal, NexusNameModal } = require('./modals/misc.js');
+        const { NexusNameModal } = require('./modals/misc.js');
         const at = surface.viewCenter();
         closePop();
         const title = await new NexusNameModal(plugin.app, 'Name this section', '').openAndGet();

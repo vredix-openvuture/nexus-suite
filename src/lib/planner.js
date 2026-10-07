@@ -17,7 +17,6 @@
  *  nothing writes them any more.
  * ========================================================================== */
 
-const blockedit = require('./blockedit.js');
 
 const RE_ENTRY = /^\s*(\d{4}-\d{2}-\d{2})\s*:\s?(.*)$/;
 const RE_CONFIG = /^\s*([a-z][a-z-]*)\s*:\s?(.*)$/i;
