@@ -150,6 +150,35 @@ function viewFor(plugin, file) {
      view.contentEl.querySelectorAll('.nx-sketch-open').length, 0);
 }
 
+{
+  /* Holding the corner button offers where the drawing should open. It runs
+     through lib/holdmenu.js now: a press that MOVES is a scroll, not a hold, and
+     the click after a completed hold must not also switch to the drawing. */
+  const t = makeApp({ sketch: 'sk-8' });
+  const view = viewFor(t.plugin, t.file);
+  t.plugin.mountSketchControl(view);
+  const btn = view.contentEl.querySelector('.nx-sketch-open');
+  const press = (x, y) => btn.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, bubbles: true }));
+  const wait = (ms) => new Promise(r => window.setTimeout(r, ms));
+  window.__menus = [];
+  btn.dispatchEvent(new MouseEvent('contextmenu', { clientX: 5, clientY: 6, bubbles: true, cancelable: true }));
+  eq('hold · right click opens the four places', (window.__menus[0] || { items: [] }).items.map(i => i.title),
+     ['Switch to sketch', 'Open to the left', 'Open to the right', 'Open in a new tab']);
+  window.__menus = [];
+  press(10, 10); await wait(650);
+  eq('hold · a long press opens it too', window.__menus.length, 1);
+  const before = t.app.workspace.leaves.map(l => l.viewType).join();
+  btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  await wait(20);
+  eq('hold · the click after the hold does not also switch', t.app.workspace.leaves.map(l => l.viewType).join(), before);
+  window.__menus = [];
+  press(10, 10);
+  btn.dispatchEvent(new PointerEvent('pointermove', { clientX: 40, clientY: 10, bubbles: true }));
+  await wait(650);
+  eq('hold · a press that moves is a scroll, not a hold', window.__menus.length, 0);
+}
+
 
 // ── The pages of a note ────────────────────────────────────────────────────
 {

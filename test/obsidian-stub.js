@@ -97,8 +97,26 @@ class MarkdownView {}
 class FuzzySuggestModal {}
 class SuggestModal {}
 class EditorSuggest {}
-class Menu {}
-class MenuItem {}
+/* A menu records what it was given and where it was shown (window.__menus),
+   so a test can assert on a menu nobody can see. */
+class MenuItem {
+  setTitle(t) { this.title = t; return this; }
+  setIcon(i) { this.icon = i; return this; }
+  onClick(fn) { this.click = fn; return this; }
+  setChecked(v) { this.checked = v; return this; }
+  setDisabled(v) { this.disabled = v; return this; }
+  setSection() { return this; }
+  setWarning() { return this; }
+}
+class Menu {
+  constructor() { this.items = []; }
+  addItem(fn) { const item = new MenuItem(); fn(item); this.items.push(item); return this; }
+  addSeparator() { return this; }
+  showAtPosition(at) { this.shownAt = at; (window.__menus = window.__menus || []).push(this); return this; }
+  showAtMouseEvent(e) { return this.showAtPosition({ x: e.clientX, y: e.clientY }); }
+  hide() { return this; }
+  onHide() { return this; }
+}
 class ButtonComponent {}
 class Platform {}
 /* Enough of moment for the code under test. Called with NO argument it is a

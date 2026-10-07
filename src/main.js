@@ -32,6 +32,7 @@ const sketchObjects = require('./lib/sketchobjects.js');
 const penGestures = require('./lib/sketchgestures.js');
 const sketchExport = require('./lib/sketchexport.js');
 const { cssAttrValue, escapeRegExp } = require('./lib/text.js');
+const { attachHoldMenu } = require('./lib/holdmenu.js');
 const { ensureFolder, safeFileName, uniquePath } = require('./lib/vaultpaths.js');
 const sketchSearch = require('./lib/sketchsearch.js');
 const quicknote = require('./lib/quicknote.js');
@@ -3857,34 +3858,19 @@ module.exports = class NexusSuite extends Plugin {
      because on a tablet there is no second mouse button, and a plain tap already
      means the obvious thing. `open(side)` does the work. */
   _attachHoldMenu(btn, open, clickOpens) {
-    const menu = (evt) => {
+    const menu = (x, y) => {
       const m = new Menu();
       m.addItem(i => i.setTitle('Switch to sketch').setIcon('pencil-line').onClick(() => open('same')));
       m.addItem(i => i.setTitle('Open to the left').setIcon('panel-left').onClick(() => open('left')));
       m.addItem(i => i.setTitle('Open to the right').setIcon('panel-right').onClick(() => open('right')));
       m.addItem(i => i.setTitle('Open in a new tab').setIcon('file-plus').onClick(() => open('tab')));
-      if (evt && evt.clientX != null) m.showAtPosition({ x: evt.clientX, y: evt.clientY });
+      if (x != null) m.showAtPosition({ x, y });
       else { const r = btn.getBoundingClientRect(); m.showAtPosition({ x: r.left, y: r.bottom }); }
     };
-    btn.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); menu(e); });
-    if (clickOpens) btn.onclick = (e) => { e.stopPropagation(); menu(e); };
-    let holdT = null, held = false;
-    const start = (e) => {
-      held = false;
-      window.clearTimeout(holdT);
-      holdT = window.setTimeout(() => { held = true; menu(e); }, 500);
-    };
-    const cancel = () => window.clearTimeout(holdT);
-    btn.addEventListener('pointerdown', start);
-    btn.addEventListener('pointerup', cancel);
-    btn.addEventListener('pointerleave', cancel);
-    btn.addEventListener('pointercancel', cancel);
-    // Swallow the click that follows a completed hold, so it doesn't ALSO run
-    // the button's plain click behind the menu.
-    // stopPropagation would not do it: the button's own onclick sits on the very
-    // same element, and only stopImmediatePropagation reaches a sibling listener.
-    btn.addEventListener('click', (e) => { if (held) { e.preventDefault(); e.stopImmediatePropagation(); held = false; } }, true);
+    attachHoldMenu(btn, menu);
+    if (clickOpens) btn.onclick = (e) => { e.stopPropagation(); menu(e.clientX, e.clientY); };
   }
+
 
   /* The note a drawing belongs to, opened NEXT TO it: text on one side, paper
      on the other. Reuses a leaf that already holds the note rather than opening
