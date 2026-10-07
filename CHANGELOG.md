@@ -2,6 +2,14 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## Unreleased
+
+### Added
+
+- **Book capture.** ISBN scan or entry, DNB/Open Library/Google Books lookup, a
+  note from your own template with the cover saved into the vault; fill the empty
+  fields of an existing book note.
+
 ## 0.32.0 — 2026-10-07
 
 ### Added

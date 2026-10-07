@@ -27,6 +27,7 @@ run what you use.
 | **Planner** | A whole month of day texts, in a block | — |
 | **Vault sync** | The whole vault to a WebDAV server, with daily backups | Syncthing, Obsidian Sync |
 | **Chatter** | A note you speak instead of type | — |
+| **Book capture** | A book note from its ISBN: scan the barcode, the cover comes with it | — |
 | **Workspaces** | Save and switch pane layouts | — |
 
 Built for a card-based vault layout and designed to work on mobile as well as
@@ -704,6 +705,49 @@ or with the browser engine on a device whose browser has no recogniser, the
 button is dead and the reason stands where the status line would be. On a
 desktop, a command naming a program that is not installed says exactly that
 instead of `spawn … ENOENT`.
+
+## Book capture
+
+Two commands, off until the module is switched on in *Settings → Book capture*.
+
+- *Capture book* takes an ISBN (camera scan, a photo of the barcode, or typed),
+  looks the book up and writes a note from your own template. The cover is saved
+  into the vault and linked.
+- *Fill book from ISBN* works on the open note and fills only the fields that are
+  empty or missing. A value that is already there is never replaced. All-digit
+  values become numbers.
+
+**The template is any note in the vault.** Nothing about your library is fixed in
+code: template, folders, file name patterns and the property names for ISBN and
+cover come from the settings. Placeholders: `{{isbn}}` `{{title}}` `{{subtitle}}`
+`{{author}}` `{{authors}}` `{{publisher}}` `{{year}}` `{{pages}}` `{{language}}`
+`{{description}}` `{{genres}}` `{{cover}}` `{{date}}`, plus `{{ask:Label|a,b,c}}`
+(a choice) and `{{ask:Label}}` (free text), asked in the preview. `{{authors}}`
+and `{{genres}}` are lists: a block list line like `  - {{genres}}` repeats once
+per item, and a flow list like `tags: [{{genres}}]` works as well. A list line
+that ends up empty is dropped. *Create example template* writes a starter.
+
+**Profiles** hold one template with its folders, so *Book*, *eBook* and
+*Audiobook* can differ. The profile whose folder contains a note is used for fill.
+
+**Sources** are DNB, Open Library and Google Books, asked in parallel (8 s each).
+For each field the first source in your order that has it wins; covers are
+collected from all of them. German titles are mostly in DNB, English ones in
+Open Library. `{{language}}` is the first source's code, so it differs: DNB
+`ger`, Google `de`, Open Library none.
+
+**Google Books needs an API key.** Anonymous requests are answered with HTTP 429,
+so without a key the source is skipped. The key is stored per device, never in
+`data.json`.
+
+**Covers.** When the template uses `{{cover}}`, *Create* stays disabled until a
+cover is chosen: one of the found covers, or *Own image* (a file from the device,
+an image from the vault, or a URL). A note is never written with a missing cover.
+Cover files and notes never overwrite: a name that exists gets ` (2)`, ` (3)`.
+
+The settings show whether this device has a camera and a native barcode reader.
+Without them, the typed and photo paths work as before. Untested on a device
+until the tablet check is done.
 
 ## Build & source layout
 
