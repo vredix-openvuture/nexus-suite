@@ -60,9 +60,14 @@ function parseOpenLibrary(json, isbn) {
    DNB delivers decomposed (NFD) umlauts, which are composed here. */
 function parseDnb(xml, isbn) {
   const doc = new DOMParser().parseFromString(String(xml || ''), 'application/xml');
-  const fields = [...doc.getElementsByTagNameNS('*', 'datafield')];
-  if (!fields.length) return null;
-  const clean = s => String(s || '').normalize('NFC').replace(/[\u0098\u009c]/g, '').replace(/\s*[/:;,.]\s*$/, '').trim();
+  // An SRU answer can hold several MARC records; only the first one is read.
+  const firstField = doc.getElementsByTagNameNS('*', 'datafield')[0];
+  if (!firstField) return null;
+  const fields = [...firstField.parentNode.getElementsByTagNameNS('*', 'datafield')];
+  const strip = (s, tail) => String(s || '').normalize('NFC').replace(/[\u0098\u009c]/g, '').replace(tail, '').trim();
+  const clean = s => strip(s, /\s*[/:;,.]\s*$/);
+  const cleanName = s => strip(s, /\s*[/:;,]\s*$/);   // keeps the dot of an initial: "J. R. R."
+
   const subs = (tag, code) => fields.filter(f => f.getAttribute('tag') === tag)
     .flatMap(f => [...f.getElementsByTagNameNS('*', 'subfield')])
     .filter(s => s.getAttribute('code') === code).map(s => clean(s.textContent));
@@ -79,7 +84,7 @@ function parseDnb(xml, isbn) {
       return f.getAttribute('tag') === '100' || roles.some(x => /aut|Verfasser/i.test(x));
     })
     .map(f => [...f.getElementsByTagNameNS('*', 'subfield')].find(s => s.getAttribute('code') === 'a'))
-    .filter(Boolean).map(s => flip(clean(s.textContent)));
+    .filter(Boolean).map(s => flip(cleanName(s.textContent)));
   r.authors = uniq(people);
   r.publisher = first('264', 'b') || first('260', 'b');
   r.year = yearOf(first('264', 'c') || first('260', 'c'));

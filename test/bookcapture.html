@@ -190,6 +190,17 @@ const E = window.ean13Lib;
   eq('dnb · language', d.language, 'ger');
   eq('dnb · subjects become genres', d.genres, ['Führungspsychologie']);
   eq('dnb · the MVB cover', d.covers, ['https://portal.dnb.de/opac/mvb/cover?isbn=9783423343824']);
+
+  // several MARC records: only the first one is read
+  const rec1 = dnbXml.match(/<record xmlns="http:\/\/www\.loc\.gov\/MARC21\/slim"[\s\S]*?<\/record>/)[0];
+  const rec2 = rec1.replace(/(tag="100"[^>]*>(?:(?!<\/datafield>)[\s\S])*?code="a">)[^<]*/, '$1Other, Person').replace(/(tag="650"[^>]*>(?:(?!<\/datafield>)[\s\S])*?code="a">)[^<]*/g, '$1Other Subject');
+  const two = dnbXml.replace(rec1, rec1 + rec2);
+  ok('dnb · two-record fixture really differs', two.includes('Other, Person'));
+  const d2 = S.parseDnb(two, '9783423343824');
+  eq('dnb · authors only from the first record', d2.authors, ['Wolfgang Schmidbauer']);
+  eq('dnb · genres only from the first record', d2.genres, ['Führungspsychologie']);
+  const initials = S.parseDnb(rec1.replace(/(tag="100"[^>]*>(?:(?!<\/datafield>)[\s\S])*?code="a">)[^<]*/, '$1Tolkien, J. R. R.'), 'x');
+  eq('dnb · initials keep their dot', initials.authors, ['J. R. R. Tolkien']);
   eq('dnb · no record is null', S.parseDnb(dnbEmpty, '9780140328721'), null);
 
   const o = S.parseOpenLibrary(olJson, '9780140328721');
@@ -227,6 +238,9 @@ const E = window.ean13Lib;
   eq('query · status per source', q.status.map(s => [s.id, s.ok, s.found]),
      [['dnb', true, true], ['openlibrary', true, false], ['google', false, false]]);
   eq('query · a timeout is named', q.status[2].error, 'timeout');
+  const fake500 = async () => ({ status: 500, text: '', json: null });
+  const q500 = await S.queryAll('9783423343824', [{ id: 'openlibrary' }], { request: fake500, timeoutMs: 50 });
+  eq('query · an HTTP error is named', [q500.status[0].ok, q500.status[0].error], [false, 'HTTP 500']);
   const noKey = await S.queryAll('9783423343824', [{ id: 'google' }], { request: fake, timeoutMs: 50 });
   eq('query · google without a key is skipped, not called', noKey.status[0].error, 'no API key');
 
