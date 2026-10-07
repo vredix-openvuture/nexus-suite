@@ -29,37 +29,33 @@ A rename is finished when the module file has no rule left that sets `height`,
 
 | Legacy class | Modifiers it needs | File |
 |---|---|---|
-| `.nx-banner-btn` | `is-icon` (+ absolute position) | `02-banner.css` |
-| `.nx-bg-btn` | `is-icon` (+ absolute position) | `02-banner.css` / `06-note-decor.css` |
-| `.nx-sketch-open` | `is-icon` (+ absolute position) | `02-banner.css` / `12-sketch.css` |
-| `.nx-sep-toggle` | `is-sm` | `02-banner.css` |
+| `.nx-banner-btn` | `is-icon` (+ absolute position) | `02a-note-corners.css` |
+| `.nx-bg-btn` | `is-icon` (+ absolute position) | `02a-note-corners.css` / `06-note-decor.css` |
+| `.nx-sketch-open` | `is-icon` (+ absolute position) | `02a-note-corners.css` / `12-sketch.css` |
+| `.nx-sep-toggle` | `is-sm` | `02b-image-separator.css` |
 | `.nx-cal-nav button` | `is-quiet is-sm` | `03-calendar.css` |
-| `.nx-home-btn` | — (keeps the hero's accent tint) | `04-homepage.css` |
-| `.nx-home-btn-icononly` | `is-icon` | `04-homepage.css` / `10-hero-callouts-image.css` |
-| `.nx-home-topbar .nx-home-btn` | `is-icon is-quiet` | `04-homepage.css` |
-| `.nx-qn-save` | `is-primary` | `04-homepage.css` |
+| `.nx-home-btn` | — (keeps the hero's accent tint) | `04-homepage.css` / `10-home-hero.css` |
+| `.nx-home-btn-icononly` | `is-icon` | `04-homepage.css` / `10-home-hero.css` |
+| `.nx-home-topbar .nx-home-btn` | `is-icon is-quiet` | `04-homepage.css` / `10-home-hero.css` |
 | `.nx-confirm-bar button` | — | `04-homepage.css` |
 | `.nx-timer-btn` | `is-icon` | `04-homepage.css` |
 | `.nx-orph-more` | `is-icon is-sm is-quiet` | `04-homepage.css` |
 | `.nx-home-gear-corner` | `is-icon is-sm` (+ scrim) | `04-homepage.css` |
 | `.nx-cardcfg-check` | `is-sm` | `05-modals.css` |
 | `.nx-search-chip` | `is-sm` | `05-modals.css` |
-| `.nx-prop-toggle` | `is-icon is-sm is-quiet` | `05-modals.css` |
-| `.nx-banner-drag-done` | `is-icon is-primary` | `05-modals.css` |
+| `.nx-prop-toggle` | `is-icon is-sm is-quiet` | `06-note-decor.css` |
+| `.nx-banner-drag-done` | `is-icon is-primary` | `02-banner.css` |
 | `.nx-bgstep-btn` | `is-icon is-sm` | `06-note-decor.css` |
 | `.nx-banner-import-bar button` | — | `07-banner-modal.css` |
 | `.nx-ws-act` | `is-icon is-sm` (+ scrim) | `08-workspace.css` |
 | `.nx-ink-pdf-nav` | `is-quiet` | `11-ink.css` |
-| `.nx-ink-tile-edit` | `is-icon is-sm` (+ scrim) | `11-ink.css` |
 | `.nx-sk-btn` | `is-icon is-quiet` | `12-sketch.css` |
 | `.nx-sk-subpen` | `is-icon is-quiet` | `12-sketch.css` |
 | `.nx-sk-fav` | `is-icon is-quiet` | `12-sketch.css` |
-| `.nx-sk-penchip` | `is-icon is-quiet` | `12-sketch.css` |
 | `.nx-sk-stepbtn` | `is-icon is-sm` | `12-sketch.css` |
 | `.nx-sk-menuitem-x` | `is-icon is-sm is-quiet` | `12-sketch.css` |
 | `.nx-sk-palette-add` | `is-icon` + `.nx-list-add` | `12-sketch.css` |
 | `.nx-sketch-enter` | `is-icon` (+ opaque ground) | `12-sketch.css` |
-| `.nx-skpick-note` | — | `12-sketch.css` |
 | `.nx-tagren-bar button` | — | `14-explorer-companions.css` |
 | `.nx-kb-tool` | `is-icon is-quiet` (also the folder board's view buttons and gear) | `20-kanban.css` |
 | `.nx-kb-col-menu` | `is-icon is-sm is-quiet` | `20-kanban.css` |
@@ -67,17 +63,15 @@ A rename is finished when the module file has no rule left that sets `height`,
 | `.nx-kb-add` | `.nx-list-add` | `20-kanban.css` |
 | `.nx-pl-tool` | `is-icon is-sm is-quiet` | `22-planner.css` |
 | `.nx-pl-open` | `is-icon is-sm is-quiet` | `22-planner.css` |
-| `.nx-qn-record` | — | `22-planner.css` |
+| `.nx-qn-record` | — | `22a-quicknote.css` |
 
 ## Fields → `.nx-input`
 
 | Legacy class | Modifier | File |
 |---|---|---|
-| `.nx-qn-input` | `is-grow` (textarea) | `04-homepage.css` |
 | `.nx-banner-import-input` | `is-grow` | `07-banner-modal.css` |
 | `.nx-sk-notetext` | `is-grow` (textarea) | `12-sketch.css` |
 | `.nx-cp-hex` | `is-grow` | `12-sketch.css` |
-| `.nx-skpick-search` | `is-grow` | `12-sketch.css` |
 | `.nx-tagren-input` | `is-grow` | `14-explorer-companions.css` |
 | `.nx-kb-search` | `is-short` | `20-kanban.css` |
 

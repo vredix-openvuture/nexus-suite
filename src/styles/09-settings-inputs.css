@@ -431,3 +431,31 @@ p.setting-item-description.nx-folded.is-open {
 /* The connection list in Settings → Vault sync (moved here from the removed
    calendar-page stylesheet). */
 .nx-set-list { display: flex; flex-direction: column; margin: 4px 0 8px; }
+
+/* ── CALLOUTS settings ── */
+.nx-callout-swatch {
+  display: inline-block; width: 12px; height: 12px; border-radius: var(--nx-r-circle);
+  margin: 0 8px -1px 0; vertical-align: middle;
+  background: var(--sw, var(--background-modifier-border));
+  box-shadow: 0 0 0 1px var(--background-modifier-border);
+}
+.nx-callout-swatch-icon { margin-left: 6px; opacity: .6; }
+.nx-callout-swatch-icon .svg-icon { width: 15px; height: 15px; vertical-align: middle; }
+/* Live preview inside the edit modal */
+.nx-callout-preview {
+  display: flex; align-items: center; gap: var(--nx-sp-2);
+  margin: 14px 0 4px; padding: 10px 14px;
+  border-left: calc(var(--nx-bw) * 3) solid var(--sw, var(--interactive-accent));
+  border-radius: 0 var(--nx-radius) var(--nx-radius) 0;
+  background: color-mix(in srgb, var(--sw, var(--interactive-accent)) 8%, transparent);
+  color: var(--sw, var(--text-normal));
+  font-weight: 700;
+}
+.nx-callout-preview-icon .svg-icon { width: 18px; height: 18px; }
+.nx-callout-suggest { display: flex; align-items: center; }
+.nx-callout-suggest-icon { margin-right: var(--nx-sp-2); opacity: .8; display: inline-flex; }
+.nx-callout-suggest-icon .svg-icon { width: 16px; height: 16px; vertical-align: middle; }
+.nx-callout-h {
+  margin: 22px 0 2px; font-size: .82em; text-transform: uppercase;
+  letter-spacing: .06em; opacity: .6;
+}

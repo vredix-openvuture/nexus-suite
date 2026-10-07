@@ -1,0 +1,67 @@
+/* ── THE THREE NOTE-CORNER BUTTONS ────────────────────────────────────────────
+   Set the banner · set the note background · open the note's sketch. Three
+   classes because the JS names them separately; ONE look, because they sit in
+   one row in the same corner. Their rule lives here — 06-note-decor.css and
+   12-sketch.css only add the offset that puts each one in its own slot.
+
+   Legacy aliases of .nx-btn.is-icon (00-tokens.css): the geometry below is that
+   rule, and every value is a token, so the whole plugin still changes in one
+   place. The markup moves to `nx-btn is-icon` in a later pass — the full fold
+   list is docs/token-migration.md. */
+.view-content:has(> .nx-banner-btn),
+.view-content:has(> .nx-bg-btn) { position: relative; }
+.nx-banner-btn,
+.nx-bg-btn,
+.nx-sketch-open {
+  position: absolute; top: 10px; z-index: 20;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--nx-ctl-h); height: var(--nx-ctl-h); padding: 0;
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  cursor: pointer; box-shadow: none; opacity: .5;
+  color: var(--nx-fg-muted, var(--text-muted));
+  /* Over a note, not over chrome: a scrim instead of the flat surface token, so
+     the icon survives whatever the note's own background is. */
+  background: color-mix(in srgb, var(--background-primary) 65%, transparent);
+  backdrop-filter: blur(4px);
+  transition: opacity .12s ease, color .12s ease, background .12s ease;
+}
+.nx-banner-btn { right: 16px; }
+.nx-banner-btn:hover,
+.nx-bg-btn:hover,
+.nx-sketch-open:hover { opacity: 1; color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-3); }
+.nx-banner-btn .svg-icon,
+.nx-bg-btn .svg-icon,
+.nx-sketch-open .svg-icon { width: 16px; height: 16px; }
+
+/* ── The three corner buttons ON TOP OF an image ──────────────────────────────
+   Over the note's own background a muted, half-transparent pill reads fine. Over
+   a BANNER it doesn't: the pill is tinted with --background-primary and the icon
+   with --text-muted, so on a bright or busy photo both wash out into the picture
+   (and on a dark photo they sink into it). A photo has no predictable colour, so
+   the buttons stop deriving theirs from the theme and bring their own contrast:
+   a dark scrim, a white icon, and a drop-shadow that keeps the strokes readable
+   even where the scrim sits on a light area. Only while a banner is present —
+   plain notes keep the discreet look. */
+.nx-has-banner > .nx-banner-btn,
+.nx-has-banner > .nx-bg-btn,
+.nx-has-banner > .nx-sketch-open {
+  opacity: .9;
+  color: #fff;
+  background: rgba(18, 16, 22, .5);
+  backdrop-filter: blur(8px) saturate(.9);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .4), inset 0 0 0 1px rgba(255, 255, 255, .16);
+}
+.nx-has-banner > .nx-banner-btn:hover,
+.nx-has-banner > .nx-bg-btn:hover,
+.nx-has-banner > .nx-sketch-open:hover {
+  opacity: 1; color: #fff;
+  background: rgba(18, 16, 22, .74);
+}
+.nx-has-banner > .nx-banner-btn .svg-icon,
+.nx-has-banner > .nx-bg-btn .svg-icon,
+.nx-has-banner > .nx-sketch-open .svg-icon {
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, .55));
+}
+/* A note that HAS a drawing stays accent-coloured, but on the accent's bright
+   variant so it survives the dark scrim. */
+.nx-has-banner > .nx-sketch-open.is-active { color: var(--text-accent); }

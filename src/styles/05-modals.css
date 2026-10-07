@@ -53,57 +53,39 @@
 .nx-search-snippet { font-size: .82em; color: var(--text-muted); margin-top: 2px; }
 .nx-search-snippet mark { background: color-mix(in srgb, var(--text-accent) 30%, transparent); color: var(--text-normal); border-radius: var(--nx-r-tile); padding: 0 2px; }
 
-/* ── PROPERTY HIDER — Toggle-Icon neben „Add property" ── */
-/* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
-.nx-prop-toggle {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
-  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
-  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
-  cursor: pointer; box-shadow: none;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
-  margin-left: 2px;
-  background: transparent; border-color: transparent;
-  color: var(--nx-fg-muted, var(--text-muted)); opacity: .65;
+/* ── NexusPopupMenu — card action menu as a centered modal window ── */
+.nx-popmenu-modal { max-width: 460px; }
+.nx-popmenu-modal-title {
+  margin: 0 0 12px; font-size: 1.35em; font-weight: 800;
+  color: var(--nx-accent-fg, var(--text-accent));
 }
-.nx-prop-toggle:hover { opacity: 1; color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
-.nx-prop-toggle.is-active { opacity: 1; color: var(--text-accent); }
-.nx-prop-toggle .svg-icon { width: 15px; height: 15px; }
+.nx-popmenu-modal-list { display: flex; flex-direction: column; gap: 2px; }
+/* Legacy alias of .nx-row (00-tokens.css) — one action in the card menu. */
+.nx-popmenu-item {
+  display: flex; align-items: center; gap: var(--nx-sp-3);
+  min-height: var(--nx-row-h);
+  padding: var(--nx-sp-1) var(--nx-sp-2);
+  border-radius: var(--nx-r-tile);
+  cursor: pointer; color: var(--nx-fg, var(--text-normal));
+}
+.nx-popmenu-item:hover { background: var(--nx-sf-1); }
+.nx-popmenu-item.is-disabled { opacity: .4; cursor: default; }
+.nx-popmenu-item.is-disabled:hover { background: none; }
+.nx-popmenu-item.is-warning { color: var(--text-error); }
+.nx-popmenu-icon { display: inline-flex; flex: 0 0 auto; opacity: .85; }
+.nx-popmenu-icon .svg-icon { width: 17px; height: 17px; }
+.nx-popmenu-label { flex: 1 1 auto; }
+.nx-popmenu-check { display: inline-flex; margin-left: auto; opacity: .8; }
+.nx-popmenu-check .svg-icon { width: 15px; height: 15px; }
+.nx-popmenu-sep { height: 1px; margin: 7px 4px; background: var(--nx-border, var(--background-modifier-border)); }
 
-/* Hide the bar banner once scrolled past the banner height */
-.workspace-tab-header-container.nx-bar-has-banner.nx-bar-banner-off {
-  background-image: none !important;
+/* ── Vault image picker + slideshow config ── */
+.nx-vaultimg-suggest { display: flex; align-items: center; gap: 10px; }
+.nx-vaultimg-thumb {
+  width: 40px; height: 40px; object-fit: cover; border-radius: var(--nx-r-tile); flex: 0 0 auto;
+  background: var(--background-secondary);
 }
-
-/* ── BANNER DRAG-OVERLAY ── */
-.nx-banner-drag {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 25;
-  cursor: grab; user-select: none;
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--interactive-accent) 60%, transparent);
-}
-.nx-banner-drag:active { cursor: grabbing; }
-.nx-banner-drag-hint {
-  position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-  background: color-mix(in srgb, var(--background-primary) 80%, transparent);
-  color: var(--text-normal); font-size: 0.8em; padding: 3px 10px;
-  border-radius: var(--nx-r-pill); backdrop-filter: blur(4px); pointer-events: none;
-}
-/* Legacy alias of .nx-btn.is-icon.is-primary (00-tokens.css). It was a circle;
-   an ordinary button is not a circle, so it is the same tile as the rest. */
-.nx-banner-drag-done {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
-  height: var(--nx-ctl-h);
-  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
-  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
-  cursor: pointer; box-shadow: none;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-  position: absolute; top: 8px; right: 10px;
-  width: var(--nx-ctl-h); padding: 0;
-  background: var(--nx-accent, var(--interactive-accent));
-  border-color: transparent;
-  color: var(--nx-on-accent, var(--text-on-accent));
-}
-.nx-banner-drag-done .svg-icon { width: 16px; height: 16px; }
-
-/* The add-a-server dialog: Save sits at the right, under the fields. */
-.nx-account-foot { display: flex; align-items: center; gap: var(--nx-sp-2); margin-top: 16px; }
+.nx-vaultimg-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-imgcfg-list { margin-bottom: 6px; }
+.nx-home-imgcard-clickable { cursor: pointer; }
+.nx-home-imgcard-slideshow .nx-home-imgcard-img { transition: opacity .35s ease; }

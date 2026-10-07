@@ -1,0 +1,36 @@
+/* ── Timer sidebar (running timers outside the dashboard) ── */
+.nx-timers-view .view-content { padding: 0; }
+.nx-timers-inner { display: flex; flex-direction: column; gap: 10px; padding: var(--nx-sp-3); }
+.nx-timers-empty { color: var(--text-muted); text-align: center; padding: 24px 8px; font-size: .9em; }
+.nx-timers-item {
+  border: var(--nx-hairline);
+  border-radius: var(--nx-radius);
+  background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 10%, var(--background-secondary));
+  padding: var(--nx-sp-3) var(--nx-sp-2);
+}
+.nx-timers-cap { text-align: center; color: var(--text-muted); font-size: .85em; margin-bottom: var(--nx-sp-1); }
+.nx-timers-item .nx-home-live { padding: var(--nx-sp-1); gap: 6px; }
+.nx-timers-item .nx-timer-disp { font-size: clamp(1.6em, 8vw, 2.4em); }
+/* The panel owns its own timers; a running dashboard timer is only visiting,
+   so it carries no remove button and says so by sitting a shade back. */
+.nx-timers-item { position: relative; }
+.nx-timers-item.is-mirrored { opacity: .82; }
+.nx-timers-del { position: absolute; top: var(--nx-sp-1); right: var(--nx-sp-1); opacity: 0; }
+.nx-timers-item:hover .nx-timers-del,
+.nx-timers-del:focus-visible { opacity: 1; }
+/* No hover on a tablet, so the control cannot hide behind one. */
+body.is-mobile .nx-timers-del { opacity: 1; }
+
+/* ── Ablauf-Popup ── */
+.nx-timerdone { text-align: center; padding: 8px 6px 4px; }
+.nx-timerdone-icon { font-size: 2.6em; line-height: 1; margin-bottom: var(--nx-sp-2); }
+.nx-timerdone-title { margin: 0 0 6px; font-size: 1.3em; }
+.nx-timerdone-msg { margin: 0 0 4px; color: var(--text-muted); font-size: 1.02em; }
+.nx-timerdone-actions { margin-top: var(--nx-sp-4); display: flex; justify-content: center; }
+.nx-timerdone-actions button { min-width: 96px; }
+.nx-timerdone-actions button.is-disabled { opacity: .5; cursor: not-allowed; }
+.nx-timerdone-pause {
+  margin: 10px 0 0; font-variant-numeric: tabular-nums; font-weight: 600;
+  color: var(--nx-accent-fg, var(--text-accent));
+}
+.nx-timerdone-pause.is-done { color: var(--color-green, var(--text-success)); }

@@ -1,3 +1,25 @@
+/* ── PROPERTY HIDER — Toggle-Icon neben „Add property" ── */
+/* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
+.nx-prop-toggle {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
+  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
+  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
+  cursor: pointer; box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
+  margin-left: 2px;
+  background: transparent; border-color: transparent;
+  color: var(--nx-fg-muted, var(--text-muted)); opacity: .65;
+}
+.nx-prop-toggle:hover { opacity: 1; color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
+.nx-prop-toggle.is-active { opacity: 1; color: var(--text-accent); }
+.nx-prop-toggle .svg-icon { width: 15px; height: 15px; }
+
+/* Hide the bar banner once scrolled past the banner height */
+.workspace-tab-header-container.nx-bar-has-banner.nx-bar-banner-off {
+  background-image: none !important;
+}
+
 /* ── NOTE BACKGROUND (grid / lined / dotted) ──
    Pattern via background-size tiling (more even than repeating-gradient),
    period = integer line height --nx-bg-line. Very subtle. */
@@ -127,4 +149,3 @@
    itself is one of the three corner buttons defined in 02-banner.css; only its
    position in the row belongs to this module. */
 .nx-bg-btn { right: 52px; }
-
