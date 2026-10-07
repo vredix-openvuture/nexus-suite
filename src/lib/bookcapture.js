@@ -7,30 +7,8 @@
  * ========================================================================== */
 
 const { toIsbn13 } = require('./ean13.js');
+const { safeFileName, uniquePath, nameTakenAnywhere } = require('./vaultpaths.js');
 const tpl = require('./booktemplate.js');
-
-function safeFileName(s, fallback = 'Untitled') {
-  const cleaned = String(s || '').replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ')
-    .trim().replace(/^\.+/, '').trim();
-  const out = Array.from(cleaned).slice(0, 120).join('').replace(/[. ]+$/, '');
-  return out || fallback;
-}
-
-function uniquePath(exists, folder, base, ext) {
-  const dir = String(folder || '').replace(/\/+$/, '');
-  const at = (name) => (dir ? dir + '/' : '') + name + '.' + ext;
-  if (!exists(at(base))) return at(base);
-  for (let n = 2; ; n++) if (!exists(at(base + ' (' + n + ')'))) return at(base + ' (' + n + ')');
-}
-
-/* An `exists` for uniquePath that counts a file name as taken when ANY file in
-   the vault has it, ignoring case: `[[Dune.jpg]]` resolves by name, so a second
-   Dune.jpg in another folder would make the link point at the wrong image. */
-function nameTakenAnywhere(paths) {
-  const names = new Set();
-  for (const p of paths) names.add(String(p).slice(String(p).lastIndexOf('/') + 1).toLowerCase());
-  return path => names.has(String(path).slice(String(path).lastIndexOf('/') + 1).toLowerCase());
-}
 
 function inFolder(path, folder) {
   const dir = String(folder || '').replace(/\/+$/, '');

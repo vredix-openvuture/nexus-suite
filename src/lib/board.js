@@ -21,6 +21,7 @@
 
 const { Notice, setIcon } = require('obsidian');
 const { bucketKind, kindVar } = require('./kanbanblock.js');
+const { stripFrontmatter } = require('./text.js');
 
 const OPEN = 'open';
 /* Labels only: the id is the slugged label and the kind is read off the name,
@@ -102,7 +103,7 @@ async function fillExcerpts(app, notes, el) {
     let text = '';
     try {
       const raw = await app.vault.cachedRead(f);
-      text = raw.replace(/^---\n[\s\S]*?\n---\n?/, '')
+      text = stripFrontmatter(raw)
         .split('\n').map(l => l.trim())
         .find(l => l && !/^[#>\-*=`|]/.test(l)) || '';
     } catch (e) { console.warn('[nexus-suite] board excerpt', f.path, e); }

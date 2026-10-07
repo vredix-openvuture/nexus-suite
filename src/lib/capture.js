@@ -11,6 +11,8 @@
  *  test/capture.html.
  * ========================================================================== */
 
+const { stripFrontmatter } = require('./text.js');
+
 const inkpages = require('./inkpages.js');
 
 /* The three orders. `new` is the default: a capture hub is a place you come to
@@ -33,16 +35,6 @@ function parseStamp(value) {
   const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T_ ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(s);
   if (!m) return null;
   return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)).getTime();
-}
-
-/* A note read from the vault still has its frontmatter block on the front. */
-function stripFrontmatter(text) {
-  const s = String(text == null ? '' : text).replace(/\r/g, '');
-  if (!s.startsWith('---')) return s;
-  const close = s.indexOf('\n---', 3);
-  if (close < 0) return s;
-  const nl = s.indexOf('\n', close + 1);
-  return nl < 0 ? '' : s.slice(nl + 1);
 }
 
 /* The preview line of a spoken note. A transcript has no title of its own, so

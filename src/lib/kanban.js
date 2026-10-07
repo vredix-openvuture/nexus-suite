@@ -31,6 +31,7 @@ const { Notice, TFile, setIcon } = require('obsidian');
 const blockedit = require('./blockedit.js');
 const block = require('./kanbanblock.js');
 const edit = require('./kanbanedit.js');
+const { safeFileName, uniquePath } = require('./vaultpaths.js');
 const { parseKanban, stringifyKanban, kindVar } = block;
 const { blockSource } = edit;
 
@@ -164,33 +165,15 @@ class NexusKanban {
     const name = await new NexusNameModal(this.app, 'Name of the board', 'Board').openAndGet();
     if (!name) return;
     const folder = (this.s.boardsFolder || '').replace(/^\/|\/$/g, '');
-    if (folder) await this.ensureFolder(folder);
-    const path = this.freePath((folder ? folder + '/' : '') + this.sanitize(name) + '.md');
+    if (folder) await this.plugin.ensureFolderPath(folder);
+    const path = uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), folder, safeFileName(name, 'Board'), 'md');
     const file = await this.app.vault.create(path, '# ' + name + '\n\n' + this.blockText(name));
     this.app.workspace.getLeaf(false).openFile(file);
   }
 
   /* ---- vault helpers ------------------------------------------------------ */
 
-  sanitize(name) { return String(name || '').replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim(); }
-  freePath(path) {
-    const dot = path.lastIndexOf('.');
-    const base = path.slice(0, dot), ext = path.slice(dot);
-    for (let i = 1; i < 500; i++) {
-      const p = i === 1 ? base + ext : base + ' ' + i + ext;
-      if (!this.app.vault.getAbstractFileByPath(p)) return p;
-    }
-    return base + ' ' + Date.now().toString(36) + ext;
-  }
-  async ensureFolder(path) {
-    const ad = this.app.vault.adapter;
-    let cur = '';
-    for (const part of String(path).split('/')) {
-      if (!part) continue;
-      cur = cur ? cur + '/' + part : part;
-      try { if (!(await ad.exists(cur))) await ad.mkdir(cur); } catch (e) {}
-    }
-  }
+
   noteByName(name) {
     if (!name) return null;
     return this.app.metadataCache.getFirstLinkpathDest(name, '') || null;

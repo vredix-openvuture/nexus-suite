@@ -19,6 +19,7 @@
  * ========================================================================== */
 
 const objects = require('./sketchobjects.js');
+const { escapeRegExp } = require('./text.js');
 
 const PAGES_KEY = 'ink-pages';
 const FILE_KEY = 'ink-file';
@@ -151,7 +152,7 @@ function embedNames(note) {
 }
 
 function embedLine(name) {
-  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const esc = escapeRegExp(name);
   return new RegExp('^[ \\t]*!\\[\\[(?:[^\\]|#]*\\/)?' + esc + '(?:[|#][^\\]]*)?\\]\\][ \\t]*\\r?\\n?', 'gm');
 }
 

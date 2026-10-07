@@ -327,7 +327,7 @@ class NexusActionConfigModal extends Modal {
       });
     if (it.kind === 'note') {
       new Setting(contentEl).setName('Note').setDesc('Note name (suggestions as you type)')
-        .addText(t => { t.setValue(it.arg || ''); t.onChange(async v => { it.arg = v; await save(); }); nxAutocomplete(t.inputEl, () => this.view._allNames(), v => { it.arg = v; save(); }); });
+        .addText(t => { t.setValue(it.arg || ''); t.onChange(async v => { it.arg = v; await save(); }); nxAutocomplete(t.inputEl, () => this.plugin._allNames(), v => { it.arg = v; save(); }); });
     } else if (it.kind === 'command') {
       new Setting(contentEl).setName('Command').setDesc('Obsidian command name (suggestions as you type)')
         .addText(t => {
@@ -422,7 +422,7 @@ class NexusHabitConfigModal extends Modal {
       .addText(t => {
         t.setPlaceholder('steps').setValue(it.prop || '');
         t.onChange(async v => { it.prop = v.trim(); await save(); });
-        nxAutocomplete(t.inputEl, () => this.view._allPropKeys(), v => { it.prop = v.trim(); save(); });
+        nxAutocomplete(t.inputEl, () => this.plugin._allPropKeys(), v => { it.prop = v.trim(); save(); });
       });
     new Setting(contentEl).setName('Type').addDropdown(dd => dd
       .addOption('number', 'Number').addOption('checkbox', 'Checkbox')

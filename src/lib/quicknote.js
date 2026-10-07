@@ -19,6 +19,8 @@
  *  and how the transcript is tidied.
  * ========================================================================== */
 
+const { safeFileName } = require('./vaultpaths.js');
+
 const ENGINES = [
   { id: 'local', label: 'A program on this machine', note: 'Runs the command below on the recording. Nothing is uploaded. Desktop only.' },
   { id: 'browser', label: 'The browser\'s own recogniser', note: 'No install and it works on mobile, but most browsers send the audio to their vendor to do it.' },
@@ -42,13 +44,12 @@ function cleanTranscript(raw) {
 function titleFrom(lines, fallback) {
   const first = (lines && lines.length) ? lines[0] : '';
   const words = String(first).split(/\s+/).filter(Boolean).slice(0, 8).join(' ');
-  const clean = words.replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/^\.+/, '');
-  return clean.slice(0, 60) || fallback || 'Chatter';
+  return safeFileName(words, fallback || 'Chatter', 60);
 }
 
 function notePath(folder, title, stamp) {
   const dir = String(folder || 'Inbox/Quicknote').replace(/\/+$/, '');
-  const safe = String(title).replace(/[\\/:*?"<>|#^[\]]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Chatter';
+  const safe = safeFileName(title, 'Chatter');
   return dir + '/' + safe + (stamp ? ' ' + stamp : '') + '.md';
 }
 

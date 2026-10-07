@@ -13,6 +13,7 @@
 
 const { Notice, TFile, moment } = require('obsidian');
 const { bucketKind, cardTitle } = require('./kanbanblock.js');
+const { safeFileName, uniquePath } = require('./vaultpaths.js');
 
 /* ---- the seam ------------------------------------------------------------
    A source answers only two questions: where the cards come from, and where a
@@ -241,7 +242,7 @@ async function createNote(mod, cfg, bi, ci, el, ctx) {
   const boardFile = boardPath ? mod.app.vault.getAbstractFileByPath(boardPath) : null;
   let folder = (cfg.notes || mod.s.notesFolder || '').replace(/^\/|\/$/g, '');
   if (!folder && boardFile && boardFile.parent && boardFile.parent.path !== '/') folder = boardFile.parent.path;
-  if (folder) await mod.ensureFolder(folder);
+  if (folder) await mod.plugin.ensureFolderPath(folder);
 
   let body = '';
   if (cfg.template) {
@@ -260,7 +261,7 @@ async function createNote(mod, cfg, bi, ci, el, ctx) {
     fm.push('---', '', '# ' + title, '');
     body = fm.join('\n');
   }
-  const path = mod.freePath((folder ? folder + '/' : '') + mod.sanitize(title) + '.md');
+  const path = uniquePath(p => !!mod.app.vault.getAbstractFileByPath(p), folder, safeFileName(title), 'md');
   const file = await mod.app.vault.create(path, body);
   card.link = file.basename;
   if (card.text === file.basename) card.text = '';

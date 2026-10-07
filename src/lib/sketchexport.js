@@ -16,6 +16,8 @@
  *  only the fallback for a runtime without it.
  * ========================================================================== */
 
+const { safeFileName } = require('./vaultpaths.js');
+
 const EXPORT_FORMATS = [
   { id: 'svg', label: 'SVG', ext: 'svg', note: 'Vector, and the same file the sketch is already stored as.' },
   { id: 'png', label: 'PNG', ext: 'png', note: 'A picture, at whatever scale you pick.' },
@@ -126,13 +128,7 @@ function rgbaToRgbOnWhite(rgba) {
 /* A file name that is a name and not a path: no separators, no leading dot, and
    never empty, because "" silently becomes a hidden file. */
 function exportFileName(title, ext, stamp) {
-  const base = String(title || '')
-    .replace(/[\\/:*?"<>|#^[\]]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^\.+/, '')
-    .slice(0, 80);
-  return (base || 'Sketch') + (stamp ? ' ' + stamp : '') + '.' + ext;
+  return safeFileName(title, 'Sketch', 80) + (stamp ? ' ' + stamp : '') + '.' + ext;
 }
 
 module.exports = {

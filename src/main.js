@@ -31,6 +31,8 @@ const notesketches = require('./lib/notesketches.js');
 const sketchObjects = require('./lib/sketchobjects.js');
 const penGestures = require('./lib/sketchgestures.js');
 const sketchExport = require('./lib/sketchexport.js');
+const { escapeRegExp } = require('./lib/text.js');
+const { ensureFolder, safeFileName, uniquePath } = require('./lib/vaultpaths.js');
 const sketchSearch = require('./lib/sketchsearch.js');
 const quicknote = require('./lib/quicknote.js');
 const extcommand = require('./lib/extcommand.js');
@@ -180,7 +182,7 @@ module.exports = class NexusSuite extends Plugin {
     this.registerMarkdownCodeBlockProcessor('columns', (source, el, ctx) => {
       if (!this.settings.columns.enabled) { el.createEl('pre').createEl('code', { text: source }); return; }
       const delim = (this.settings.columns.delimiter || '===').trim();
-      const re = new RegExp('^\\s*' + delim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$');
+      const re = new RegExp('^\\s*' + escapeRegExp(delim) + '\\s*$');
       const parts = source.split('\n');
       const cols = [[]];
       for (const line of parts) { if (re.test(line)) cols.push([]); else cols[cols.length - 1].push(line); }
@@ -1664,10 +1666,7 @@ module.exports = class NexusSuite extends Plugin {
           const picked = await new NexusBannerImportModal(this, this.bannerFileName(origName, noteFile)).openAndGet();
           if (!picked) { finish(null); return; }
           const dir = await this.ensureBannerGroup(picked.group);
-          const base = (picked.name.trim() || origName).replace(/[\\/:*?"<>|]/g, '_');
-          const mk = (n) => (dir ? dir + '/' : '') + base + (n ? '-' + n : '') + '.' + ext;
-          let dest = mk(0), i = 1;
-          while (this.app.vault.getAbstractFileByPath(dest)) dest = mk(i++);
+          const dest = uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), dir, safeFileName(picked.name.trim() || origName, 'Banner'), ext);
           finish(await this.app.vault.createBinary(dest, await f.arrayBuffer()));
         } catch (e) {
           new Notice(NX_MODULES.banner.name + ': import failed (' + e.message + ')');
@@ -2419,17 +2418,10 @@ module.exports = class NexusSuite extends Plugin {
     ].join('\n'));
     return path;
   }
-  /* Create a folder and its parents. The sketch module has its own version for
-     its own folder; this is the general one. */
-  async ensureFolderPath(folder) {
-    const adapter = this.app.vault.adapter;
-    let at = '';
-    for (const part of String(folder).split('/')) {
-      if (!part) continue;
-      at = at ? at + '/' + part : part;
-      try { if (!(await adapter.exists(at))) await adapter.mkdir(at); } catch (e) {}
-    }
-  }
+  /* Create a folder and its parents (see lib/vaultpaths.js for why one segment
+     at a time). Throws, naming the folder, when it cannot. */
+  ensureFolderPath(folder) { return ensureFolder(this.app.vault.adapter, folder); }
+
 
   async openSketchSearch() {
     const { NexusSketchSearchModal } = require('./modals/sketchsearch.js');
@@ -2965,11 +2957,8 @@ module.exports = class NexusSuite extends Plugin {
     await this.ensureSketchFolder();
     const stamp = moment().format('YYYY-MM-DD HHmm');
     const spec = sketchExport.EXPORT_FORMATS.find(f => f.id === format) || sketchExport.EXPORT_FORMATS[0];
-    const name = sketchExport.exportFileName(surface.title, spec.ext, stamp);
-    let path = folder + '/' + name;
-    for (let n = 2; this.app.vault.getAbstractFileByPath(path) && n < 100; n++) {
-      path = folder + '/' + sketchExport.exportFileName(surface.title, spec.ext, stamp + ' ' + n);
-    }
+    const base = sketchExport.exportFileName(surface.title, spec.ext, stamp).replace(/\.[^.]+$/, '');
+    const path = uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), folder, base, spec.ext);
     if (format === 'svg') await this.app.vault.create(path, surface.toSVGString());
     else {
       const bytes = format === 'pdf'
@@ -4077,8 +4066,7 @@ module.exports = class NexusSuite extends Plugin {
   async createSketchNote() {
     if (!this.settings.quicksketch || this.settings.quicksketch.enabled === false) { new Notice(NX_MODULES.quicksketch.name + ' is switched off.'); return; }
     const stamp = moment().format('YYYY-MM-DD HH.mm');
-    let base = 'Sketch ' + stamp, path = base + '.md', i = 2;
-    while (this.app.vault.getAbstractFileByPath(path)) path = base + ' ' + (i++) + '.md';
+    const path = uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), '', 'Sketch ' + stamp, 'md');
     const id = 'sk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const file = await this.app.vault.create(path, '---\nsketch: ' + id + '\n---\n');
     await this.saveSketch(id, emptySketchSVG(this._newSketchPresets()));
@@ -4202,10 +4190,7 @@ module.exports = class NexusSuite extends Plugin {
       const dir = (paper.folder || 'Inbox/Paper').replace(/\/$/, '');
       if (!this.app.vault.getAbstractFileByPath(dir)) { try { await this.app.vault.createFolder(dir); } catch (e) {} }
       const ext = ((f.name.split('.').pop() || 'jpg').toLowerCase()).replace(/[^a-z0-9]/g, '') || 'jpg';
-      const base = 'Scan ' + moment().format('YYYY-MM-DD HHmmss');
-      const mk = (n) => dir + '/' + base + (n ? '-' + n : '') + '.' + ext;
-      let path = mk(0), i = 1;
-      while (this.app.vault.getAbstractFileByPath(path)) path = mk(i++);
+      const path = uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), dir, 'Scan ' + moment().format('YYYY-MM-DD HHmmss'), ext);
       this._inkPending.add(path);
       await this.app.vault.createBinary(path, await f.arrayBuffer());
     };
@@ -4559,13 +4544,9 @@ module.exports = class NexusSuite extends Plugin {
      filename, so this never needs to touch (or trust) the image. */
   async _renameInkSidecar(file, name) {
     const dirPath = file.parent && file.parent.path && file.parent.path !== '/' ? file.parent.path + '/' : '';
-    const slug = String(name).trim().replace(/[\\/:*?"<>|]/g, '-');
-    if (!slug) return file;
-    const mk = (n) => dirPath + slug + (n ? ' ' + n : '') + '.md';
-    const dest0 = mk(0);
-    if (dest0 === file.path) return file;
-    let dest = dest0, i = 1;
-    while (this.app.vault.getAbstractFileByPath(dest)) dest = mk(i++);
+    const slug = safeFileName(name, '');
+    if (!slug || dirPath + slug + '.md' === file.path) return file;
+    const dest = uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), dirPath, slug, 'md');
     await this.app.fileManager.renameFile(file, dest);
     return this.app.vault.getAbstractFileByPath(dest) || file;
   }

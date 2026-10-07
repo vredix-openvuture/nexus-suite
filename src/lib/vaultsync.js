@@ -16,6 +16,8 @@
  *  without a server.
  * ========================================================================== */
 
+const { escapeRegExp } = require('./text.js');
+
 /* The record of the last agreement keeps BOTH sides, not one.
 
    This is not a detail. A file uploaded to a server comes back with the
@@ -205,14 +207,13 @@ function makeSkip(options) {
     for (const pattern of extra) {
       if (pattern.endsWith('/') ? p.indexOf(pattern) === 0 : p === pattern) return true;
       if (pattern.indexOf('*') >= 0) {
-        const re = new RegExp('^' + pattern.split('*').map(escapeRe).join('.*') + '$');
+        const re = new RegExp('^' + pattern.split('*').map(escapeRegExp).join('.*') + '$');
         if (re.test(p)) return true;
       }
     }
     return false;
   };
 }
-function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
 /* ── Backups ────────────────────────────────────────────────────────────────
    One archive a day, and only so many kept. Named so that sorting the names

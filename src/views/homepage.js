@@ -10,7 +10,8 @@ const { NexusActionConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, N
 const capture = require('../lib/capture.js');
 const scratch = require('../lib/scratch.js');
 const { CARD_DEFS, HOME_VIEW, NX_DEFAULT_ACTIONS, NX_GREETINGS, NX_MODULES, WMO, WMO_ICON } = require('../constants.js');
-const { getDailyNoteSettings, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxPinMenuItem, nxPropValues, openDailyNote, renderMd } = require('../lib/helpers.js');
+const { getDailyNoteSettings, nxPinMenuItem, openDailyNote, renderMd } = require('../lib/helpers.js');
+const { stripFrontmatter } = require('../lib/text.js');
 const { NexusImageAdjustModal, NexusImageConfigModal } = require('../modals/image.js');
 const { KIND_ICON, nxBuildRefIndex, nxCanvasRefs, nxFormatSize, nxKindOf } = require('../lib/orphans.js');
 const { NexusConfirmModal, NexusNameModal } = require('../modals/misc.js');
@@ -268,13 +269,6 @@ class NexusHomepageView extends ItemView {
     };
     return active.some(group => group.every(test));
   }
-  /* ---- Suggestion sources (for autocomplete in the config fields) ----
-     Same implementations the plugin object exposes — see lib/helpers.js. */
-  _allPropKeys() { return nxAllPropKeys(this.app); }
-  _propValues(key) { return nxPropValues(this.app, key); }
-  _allFolders() { return nxAllFolders(this.app); }
-  _allTags() { return nxAllTags(this.app); }
-  _allNames() { return nxAllNames(this.app); }
   _cmpField(a, b) {
     if (a == null && b == null) return 0; if (a == null) return 1; if (b == null) return -1;
     const ma = moment(String(a).slice(0, 10), 'YYYY-MM-DD', false), mb = moment(String(b).slice(0, 10), 'YYYY-MM-DD', false);
@@ -672,7 +666,7 @@ class NexusHomepageView extends ItemView {
     this.app.vault.cachedRead(file).then(txt => {
       if (!prev.isConnected) return;
       // Frontmatter is metadata, not writing — the preview starts at the prose.
-      const src = String(txt).replace(/^---\n[\s\S]*?\n---\n?/, '').split('\n').slice(0, lines).join('\n');
+      const src = stripFrontmatter(txt).split('\n').slice(0, lines).join('\n');
       renderMd(this.plugin, src || '*(empty note)*', prev, file.path);
     }).catch(() => {});
   }

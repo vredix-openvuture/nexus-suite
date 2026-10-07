@@ -15,6 +15,7 @@ const { Notice, TFile, TFolder, moment } = require('obsidian');
 const sync = require('./vaultsync.js');
 const zip = require('./zip.js');
 const { WebDavClient } = require('./webdav.js');
+const { ensureFolder } = require('./vaultpaths.js');
 
 const BACKUP_FOLDER = '_backups';
 // Written by the removed "Shared vault" presence notes. Still skipped, so a
@@ -308,31 +309,9 @@ class NexusVaultSync {
     await this.app.vault.adapter.writeBinary(path, res.arrayBuffer);
   }
 
-  /* Create a folder and every parent it needs, one segment at a time.
+  // One segment at a time: the mobile adapter refuses a missing parent.
+  ensureLocalFolder(folder) { return ensureFolder(this.app.vault.adapter, folder); }
 
-     `adapter.mkdir` is NOT the same call on both platforms: asked for
-     "Tasks/Items" where "Tasks" does not exist yet, the desktop creates both
-     and the mobile adapter refuses. So the device that downloads a vault it
-     does not have yet — the second device, which is the whole point of the
-     sync — failed on every file in a folder deeper than one level, while the
-     device that uploads never noticed. The rest of the plugin already builds
-     folders this way (`kanban.ensureFolder`, `plugin.ensureFolderPath`); the
-     sync was the one place that did not. */
-  async ensureLocalFolder(folder) {
-    const adapter = this.app.vault.adapter;
-    let at = '';
-    for (const part of String(folder || '').split('/')) {
-      if (!part) continue;
-      at = at ? at + '/' + part : part;
-      if (await adapter.exists(at)) continue;
-      try { await adapter.mkdir(at); }
-      catch (e) {
-        // Two files in the same new folder race each other; the loser only has
-        // to care if the folder is still not there afterwards.
-        if (!(await adapter.exists(at))) throw new Error('could not create the folder "' + at + '": ' + (e && e.message ? e.message : 'unknown'));
-      }
-    }
-  }
   async removeLocal(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile || file instanceof TFolder) {

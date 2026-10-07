@@ -11,6 +11,7 @@
  * ========================================================================== */
 
 const { Notice } = require('obsidian');
+const { escapeRegExp } = require('./text.js');
 
 const clean = (t) => String(t || '').trim().replace(/^#/, '').replace(/^\/|\/$/g, '');
 
@@ -55,7 +56,7 @@ function nxFilesWithTag(app, tag) {
 function nxRewriteInline(text, from, to) {
   const src = clean(from);
   if (!src) return text;
-  const esc = src.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const esc = escapeRegExp(src);
   const TAGCH = '[\\p{L}\\p{N}_-]';
   // #tag plus its whole nested path, and only when what follows can't be part
   // of a tag — so #project matches in "#project/web" and "#project." but not
