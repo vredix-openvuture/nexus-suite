@@ -1,4 +1,4 @@
-/* ── PROPERTY HIDER — Toggle-Icon neben „Add property" ── */
+/* ── PROPERTY HIDER — toggle icon next to "Add property" ── */
 /* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
 .nx-prop-toggle {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);

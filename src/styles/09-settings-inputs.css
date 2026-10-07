@@ -235,7 +235,7 @@
 .nx-proprow-key,
 .nx-proprow-val { flex: 1 1 0; min-width: 0; }
 
-/* ── Gruppierter Property-Filter ── */
+/* ── Grouped property filter ── */
 .nx-propgroups { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; }
 .nx-propgroup {
   display: flex; flex-direction: column; gap: var(--nx-sp-1);

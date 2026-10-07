@@ -21,7 +21,7 @@
 /* No hover on a tablet, so the control cannot hide behind one. */
 body.is-mobile .nx-timers-del { opacity: 1; }
 
-/* ── Ablauf-Popup ── */
+/* ── Timer done dialog ── */
 .nx-timerdone { text-align: center; padding: 8px 6px 4px; }
 .nx-timerdone-icon { font-size: 2.6em; line-height: 1; margin-bottom: var(--nx-sp-2); }
 .nx-timerdone-title { margin: 0 0 6px; font-size: 1.3em; }

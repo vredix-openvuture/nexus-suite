@@ -1,6 +1,6 @@
 /* ── Hero action bar: tools equal size, Save/Refresh set apart on the right ── */
-.nx-home-actions { gap: 48px !important; }              /* klare Trennung primary ↔ tools */
-.nx-home-actions-grp { gap: 12px !important; }          /* Buttons innerhalb einer Gruppe */
+.nx-home-actions { gap: 48px !important; }              /* a clear gap between primary and tools */
+.nx-home-actions-grp { gap: 12px !important; }          /* buttons inside one group */
 /* Icon-only variant of the same button — the square is the one control height,
    so it cannot drift away from the labelled buttons beside it. */
 .nx-home-btn.nx-home-btn-icononly {
@@ -41,7 +41,7 @@
   border: var(--nx-hairline) !important;
 }
 
-/* ── Button-Stile (Klasse am Hero) ── */
+/* ── Button styles (class on the hero) ── */
 .nx-home-hero.nx-btn-round .nx-home-btn { border-radius: var(--nx-r-pill); }
 .nx-home-hero.nx-btn-noborder .nx-home-btn { border-color: transparent !important; }
 .nx-home-hero.nx-btn-flat .nx-home-btn {

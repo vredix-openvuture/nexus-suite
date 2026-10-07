@@ -405,7 +405,7 @@
 .nx-timer-btn:hover { background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 28%, transparent); }
 .nx-timer-btn .svg-icon { width: 17px; height: 17px; }
 .nx-timer-btn.nx-timer-dismiss { border-color: var(--color-green, var(--interactive-accent)); color: var(--color-green, var(--text-success)); }
-/* Abgelaufener Timer: Anzeige hervorheben (sanft pulsierend) */
+/* A finished timer: its display pulses gently */
 .nx-timer.is-done .nx-timer-disp { color: var(--color-red, var(--text-error)); animation: nx-timer-flash 1s ease-in-out infinite; }
 @keyframes nx-timer-flash { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
