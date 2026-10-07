@@ -2476,7 +2476,6 @@ class NexusSketchSurface {
     // Only lift near-black ink (all channels dim); vivid colours stay punchy.
     return (Math.max(rgb.r, rgb.g, rgb.b) / 255 < INK_LIFT_MAXV) ? lumInvertColor(c) : c;
   }
-  setInvertOnDark(v) { this.invertOnDark = !!v; this._updateInvert(); this._renderStrokes(); this._drawLive(); }
 
   /* ── public control surface (wired to the toolbar in main.js) ── */
   setColor(c) { this.color = c; }
@@ -2575,7 +2574,6 @@ class NexusSketchSurface {
     }
     if (this.onZoom) this.onZoom(this.getPageZoom());
   }
-  getPaperType() { return this.paperType; }
   /* Switch the paper preset (native/white/black): swaps the solid fill rect and
      repaints the pattern in the mode's matching grid colour. */
   setPaper(mode) {

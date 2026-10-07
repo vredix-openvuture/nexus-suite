@@ -92,7 +92,6 @@ function ellipsePoly(from, to, steps) {
    a drag never composes three separate operations that each round differently.
    Points are always derived from the ORIGINAL snapshot, never from the last
    frame, or a slow drag would accumulate rounding into visible drift. */
-const IDENTITY = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
 
 function matMul(m, n) {
   return {
@@ -127,7 +126,6 @@ function transformPoints(points, m) {
 
 /* Handles: eight around the box, plus one on a stalk above it for rotation.
    Named rather than indexed — `nw` survives a refactor, `handles[0]` does not. */
-const HANDLE_IDS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const ROTATE_STALK = 26;   // viewBox units above the top edge
 
 function handlePositions(box) {
@@ -268,8 +266,8 @@ function transformShape(shape, m) {
 module.exports = {
   pointInPolygon, polyBounds, strokeBounds, selectionBounds, hitStrokes,
   rectPoly, ellipsePoly,
-  IDENTITY, matMul, translate, scaleAround, rotateAround, applyPoint, matScale,
+  matMul, translate, scaleAround, rotateAround, applyPoint, matScale,
   transformPoints, handlePositions, anchorFor, handleMatrix, handleAt, pointInBox,
   shapeControlPoints, moveShapeControl, transformShape,
-  HANDLE_IDS, ROTATE_STALK, MIN_SCALE,
+  ROTATE_STALK, MIN_SCALE,
 };

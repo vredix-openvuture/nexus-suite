@@ -221,61 +221,6 @@ function nxPropsToRules(str) {
   });
 }
 
-/* Structured property filter: per row [property] [value], with an AND/OR
-   toggle in between. A new empty row appears automatically. onChange receives
-   the cleaned-up rule array. */
-
-/* Structured property filter: per row [property] [value], with an AND/OR
-   toggle in between. A new empty row appears automatically. onChange receives
-   the cleaned-up rule array. */
-function nxPropRows(parent, name, desc, rules, onChange) {
-  new Setting(parent).setName(name).setDesc(desc || '').setClass('nx-multirow-head');
-  const wrap = parent.createDiv('nx-proprows');
-  const data = (Array.isArray(rules) ? rules : []).map(r => ({ key: r.key || '', value: r.value || '', conn: r.conn || 'and' }));
-  data.push({ key: '', value: '', conn: 'and' });   // empty row at the end
-
-  const commit = () => onChange(
-    data.filter(r => String(r.key).trim() || String(r.value).trim())
-        .map(r => ({ key: String(r.key).trim(), value: String(r.value).trim(), conn: r.conn || 'and' }))
-  );
-
-  const rebuild = (focus) => {
-    wrap.empty();
-    data.forEach((r, i) => {
-      const row = wrap.createDiv('nx-proprow');
-      const k = row.createEl('input', { cls: 'nx-proprow-key', attr: { type: 'text', placeholder: 'Property (e.g. status)' } });
-      const v = row.createEl('input', { cls: 'nx-proprow-val', attr: { type: 'text', placeholder: 'Value (empty = exists; "a, b" = OR)' } });
-      k.value = r.key; v.value = r.value;
-      const del = row.createDiv('nx-proprow-del'); setIcon(del, 'x'); del.setAttribute('aria-label', 'Remove row');
-      const onInput = (field, inp) => {
-        r[field] = inp.value;
-        const wasLast = (i === data.length - 1);
-        commit();
-        if (wasLast && (r.key || r.value)) { data.push({ key: '', value: '', conn: 'and' }); rebuild({ i, field, pos: inp.selectionStart }); }
-      };
-      k.addEventListener('input', () => onInput('key', k));
-      v.addEventListener('input', () => onInput('value', v));
-      del.onclick = () => { if (data.length > 1) data.splice(i, 1); else { r.key = ''; r.value = ''; } commit(); rebuild(); };
-      // Connector to the next row (not after the last)
-      if (i < data.length - 1) {
-        const conn = wrap.createDiv('nx-propconn');
-        ['and', 'or'].forEach(val => {
-          const b = conn.createEl('button', { cls: 'nx-propconn-btn' + (r.conn === val ? ' is-active' : ''), text: val === 'and' ? 'AND' : 'OR' });
-          b.onclick = () => { r.conn = val; commit(); rebuild(); };
-        });
-      }
-      if (focus && focus.i === i) {
-        const inp = focus.field === 'key' ? k : v;
-        inp.focus(); try { inp.setSelectionRange(focus.pos, focus.pos); } catch (_) {}
-      }
-    });
-  };
-  rebuild();
-  return wrap;
-}
-
-/* Flat rules → groups (split at 'or' connectors). */
-
 /* Flat rules → groups (split at 'or' connectors). */
 function nxPropRulesToGroups(rules) {
   const groups = []; let cur = [];
@@ -286,9 +231,6 @@ function nxPropRulesToGroups(rules) {
   if (cur.length) groups.push(cur);
   return groups;
 }
-
-/* Grouped property filter: group boxes (AND inside), OR between them, plus
-   "+ OR group". Property & value fields with live suggestions (autocomplete). */
 
 /* Grouped property filter: group boxes (AND inside), OR between them, plus
    "+ OR group". Property & value fields with live suggestions (autocomplete). */
@@ -337,8 +279,6 @@ function nxPropGroups(plugin, parent, name, desc, groups, onChange) {
   rebuild();
   return host;
 }
-
-/* Icon picker: the preview button opens a searchable popup grid. */
 
 /* Icon picker: the preview button opens a searchable popup grid. */
 function nxIconField(app, parent, name, desc, getVal, onChange, def) {
@@ -421,4 +361,4 @@ function nxFoldDescriptions(root) {
   });
 }
 
-module.exports = { nxCollapseSections, nxBlockExample, nxAutocomplete, nxFoldDescriptions, nxMultiRow, nxPropsToRules, nxPropRows, nxPropRulesToGroups, nxPropGroups, nxIconField };
+module.exports = { nxCollapseSections, nxBlockExample, nxAutocomplete, nxFoldDescriptions, nxMultiRow, nxPropsToRules, nxPropRulesToGroups, nxPropGroups, nxIconField };

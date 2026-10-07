@@ -158,31 +158,6 @@ function plannerTemplate(today) {
   return 'view: month\nmonth: ' + monthOf(today);
 }
 
-/* ── Where a month lives ────────────────────────────────────────────────────
-   A month resolves to ONE note — a folder plus a file-name pattern, both from
-   the settings — so the calendar and the ```nexus-planner``` block are two
-   views of one file instead of two stores that can disagree.
-
-   Only month-level tokens are substituted. Anything else is left as typed, so
-   `YYYY-MM-DD` names every month `…-DD` — the settings tab prints the resolved
-   path under the field, which is where such a pattern is meant to be caught. */
-const MONTHS_SHORT = MONTHS.map(name => name.slice(0, 3));
-const RE_MONTH_TOKEN = /YYYY|YY|MMMM|MMM|MM/g;
-
-function formatMonthName(pattern, month) {
-  const m = /^(\d{4})-(\d{2})$/.exec(String(month || ''));
-  if (!m) return '';
-  const idx = +m[2] - 1;
-  if (idx < 0 || idx > 11) return '';
-  return String(pattern || 'YYYY-MM').replace(RE_MONTH_TOKEN, (tok) => {
-    if (tok === 'YYYY') return m[1];
-    if (tok === 'YY') return m[1].slice(2);
-    if (tok === 'MMMM') return MONTHS[idx];
-    if (tok === 'MMM') return MONTHS_SHORT[idx];
-    return m[2];
-  });
-}
-
 function monthsInRange(startIso, endIso) {
   const first = monthOf(startIso), last = monthOf(endIso);
   if (!/^\d{4}-\d{2}$/.test(first) || !/^\d{4}-\d{2}$/.test(last)) return [];
@@ -196,25 +171,10 @@ function monthsInRange(startIso, endIso) {
   return out;
 }
 
-/* The FIRST nexus-planner block in a note is the month's plan. A second one is
-   left alone: a note is allowed to show the same month twice, and guessing
-   which of them is "the" plan is worse than always answering the same way. */
-function findPlannerBlock(text) {
-  const lines = String(text == null ? '' : text).split('\n');
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim().indexOf('```nexus-planner') !== 0) continue;
-    let end = i + 1;
-    while (end < lines.length && lines[end].trim().indexOf('```') !== 0) end++;
-    return { start: i, end, body: lines.slice(i + 1, end).join('\n') };
-  }
-  return null;
-}
-function fencePlanner(body) { return '```nexus-planner\n' + body + '\n```'; }
-
 module.exports = {
   RE_ENTRY, WEEKDAYS_MON, WEEKDAYS_SUN, MONTHS, MONTH_ROWS,
   toDate, toIso, addDays, monthOf, monthLabel, addMonths,
   weekdayIndex, startOfWeek, monthGrid, weekDays,
   parsePlanner, stringifyPlanner, setEntry, plannerTemplate,
-  formatMonthName, monthsInRange, findPlannerBlock, fencePlanner,
+  monthsInRange,
 };
