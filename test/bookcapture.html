@@ -295,7 +295,7 @@ const E = window.ean13Lib;
   const data = window.bookTemplateLib.bookData({ title: 'T', authors: ['X'], genres: [] }, { isbn: '978', cover: 'c.jpg', date: '' });
   const note = { author: 'Someone', cover: '', type: ['a'], tags: [] };
   eq('fill · only empty or missing keys, never existing values',
-     B.fillProposals(tpl, data, { Rating: '5' }, note),
+     B.fillProposals(tpl, data, { Rating: '5' }, note).map(p => ({ key: p.key, value: p.value })),
      [{ key: 'isbn', value: '978' }, { key: 'cover', value: '[[c.jpg]]' }, { key: 'rating', value: '5' }, { key: 'tags', value: ['books'] }]);
   eq('fill · asks only for keys that are empty', B.fillAsks(tpl, note), [{ label: 'Rating', options: [] }]);
 
@@ -358,6 +358,47 @@ const E = window.ean13Lib;
     bc.profiles[0].name = 'Changed';
     ok('load · editing the live settings leaves the defaults alone', d.profiles[0].name === 'Books');
   }
+}
+// ── final review fixes ────────────────────────────────────────────────────
+{
+  const T = window.bookTemplateLib, B = window.bookCaptureLib, S = window.bookSourcesLib;
+  // A cover name taken anywhere in the vault (any case) is taken: [[Dune.jpg]] must be unambiguous.
+  const taken = B.nameTakenAnywhere(['Other/dune.JPG', 'Books/Notes.md']);
+  eq('cover · a name used elsewhere in the vault counts as taken',
+     B.uniquePath(taken, 'Books/covers', 'Dune', 'jpg'), 'Books/covers/Dune (2).jpg');
+  eq('cover · a free name stays', B.uniquePath(taken, 'Books/covers', 'Emma', 'jpg'), 'Books/covers/Emma.jpg');
+
+  // Fill: flow lists become arrays, flow maps are not proposed, quoted values stay text.
+  const data = T.bookData({ title: 'T', authors: ['X'], genres: ['SF', 'Classic'], pages: '412' }, { isbn: '9783423343824', cover: '', date: '' });
+  const props = B.fillProposals('---\ntags: [book, {{genres}}]\nisbn: "{{isbn}}"\npages: {{pages}}\nmeta: {a: {{pages}}}\n---\n', data, {}, {});
+  const byKey = k => props.find(p => p.key === k);
+  eq('fill · a flow list is proposed as a list', byKey('tags') && byKey('tags').value, ['book', 'SF', 'Classic']);
+  ok('fill · a flow map is not proposed', !byKey('meta'), JSON.stringify(props));
+  eq('fill · a quoted value stays text', B.fillValue(byKey('isbn'), ''), '9783423343824');
+  eq('fill · an unquoted all-digit value becomes a number', B.fillValue(byKey('pages'), ''), 412);
+  eq('fill · list items typed per item', B.fillValue(B.fillProposals('---\nn: [1, "2"]\n---\n', data, {}, {})[0], ''), [1, '2']);
+  eq('fill · the cover stand-in is replaced', B.fillValue({ key: 'cover', value: '[[\u0000cover]]', quoted: true }, 'Dune.jpg'), '[[Dune.jpg]]');
+
+  eq('fill · an ask inside a flow list stays one ask', B.fillAsks('---\nf: [{{ask:F|a,b}}]\n---\n', {}), [{ label: 'F', options: ['a', 'b'] }]);
+  eq('fill · an unquoted [[link]] is a link, not a list',
+     B.fillProposals('---\ncover: [[{{cover}}]]\n---\n', T.bookData({}, { isbn: '1', cover: 'Dune.jpg', date: '' }), {}, {})[0].value, '[[Dune.jpg]]');
+
+  // Values inside a flow list are escaped per item.
+  eq('flow · items with commas and colons are quoted one by one',
+     T.render('---\ntags: [{{genres}}]\n---\n', { genres: ['Sci-Fi, Classic', 'A: B'] }).split('\n')[1],
+     'tags: ["Sci-Fi, Classic", "A: B"]');
+
+  // A folder is not a template.
+  eq('validate · a folder as template does not exist', B.validateProfile({ template: 'Templates', folder: '', coverFolder: '' },
+     { exists: () => true, isFile: () => false, templateText: null }), ['Template "Templates" does not exist.']);
+
+  // Only raster images are covers; an unknown source id is an error, not Google.
+  const img = async ({ url }) => ({ status: 200, headers: { 'content-type': url }, arrayBuffer: new Uint8Array(5000).buffer });
+  eq('cover · svg is not a cover', await S.loadImage('image/svg+xml', { request: img }), null);
+  ok('cover · webp is', !!(await S.loadImage('image/webp', { request: img })));
+  let called = false;
+  const unk = await S.queryAll('9783423343824', [{ id: 'nope' }], { request: async () => { called = true; return { status: 200, json: {} }; }, timeoutMs: 50 });
+  eq('query · an unknown source is an error', [unk.status[0].ok, unk.status[0].error, called], [false, 'unknown source', false]);
 }
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
 for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }

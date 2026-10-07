@@ -80,6 +80,7 @@ function renderFmLine(line, data, answers) {
   // quote the whole result only if YAML needs it. Unknown placeholders stay raw.
   // A value opening with `[` or a single `{` is a YAML flow collection: keep it raw.
   const valuePart = item ? item[2] : kv ? kv[2] : null;
+  const inFlowList = valuePart !== null && /^\[(?!\[)/.test(valuePart.trim());
   if (valuePart !== null && !/["']/.test(valuePart) && !/^(\[|\{(?!\{))/.test(valuePart.trim())
       && tokens.every(m => parseToken(m[1]).kind !== 'unknown')) {
     const prefix = item ? item[1] : kv[1] + ' ';
@@ -99,6 +100,8 @@ function renderFmLine(line, data, answers) {
       const sq = !dq && (before.match(/'/g) || []).length % 2 === 1;
       if (dq) s = s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       else if (sq) s = s.replace(/'/g, "''");
+      // Inside `[…]` every value is its own item, quoted on its own when needed.
+      else if (inFlowList) s = [].concat(v).map(x => oneLine(x)).filter(Boolean).map(yamlScalar).join(', ');
     }
     out += line.slice(last, m.index) + s;
     last = m.index + m[0].length;
@@ -131,9 +134,30 @@ function unquote(s) {
   if (/^'.*'$/.test(s)) return s.slice(1, -1).replace(/''/g, "'");
   return s;
 }
+const isQuoted = s => /^(".*"|'.*')$/.test(s);
 
-/* Top-level keys of a frontmatter block, enough for templates: scalars and
-   `- item` lists. Not a YAML parser, and does not pretend to be one. */
+/* `[a, "b, c"]` → its items, split on commas outside quotes and outside
+   `{{…}}`, so `[{{ask:Format|a,b}}]` in a template stays one item. */
+function flowItems(s) {
+  const items = [];
+  let cur = '', q = '', depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) { cur += c; if (c === '\\' && q === '"') cur += s[++i] || ''; else if (c === q) q = ''; }
+    else if (c === '"' || c === "'") { q = c; cur += c; }
+    else if (c === '{' || c === '[') { depth++; cur += c; }
+    else if (c === '}' || c === ']') { depth--; cur += c; }
+    else if (c === ',' && depth <= 0) { items.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  items.push(cur.trim());
+  return items.filter(x => x !== '');
+}
+
+/* Top-level keys of a frontmatter block, enough for templates: scalars,
+   `- item` lists and `[a, b]` flow lists. `quoted` says which values were
+   written in quotes (they stay text); a `{…}` flow map is kept as raw text and
+   marked `flowMap`. Not a YAML parser, and does not pretend to be one. */
 function frontmatterEntries(text) {
   const { fm } = splitFrontmatter(text);
   if (fm === null) return [];
@@ -141,11 +165,26 @@ function frontmatterEntries(text) {
   let cur = null;
   for (const line of fm.split(/\r?\n/)) {
     const kv = /^([^\s#-][^:]*):\s*(.*)$/.exec(line);
-    if (kv) { cur = { key: kv[1].trim(), value: unquote(kv[2].trim()) }; out.push(cur); continue; }
+    if (kv) {
+      const raw = kv[2].trim();
+      cur = { key: kv[1].trim() };
+      if (/^\[(?!\[).*\]$/.test(raw)) {   // `[[link]]` is a wikilink, not a list
+        const items = flowItems(raw.slice(1, -1));
+        cur.value = items.map(unquote); cur.quoted = items.map(isQuoted);
+      } else {
+        cur.value = unquote(raw); cur.quoted = isQuoted(raw);
+        if (/^\{(?!\{)/.test(raw)) cur.flowMap = true;
+      }
+      out.push(cur); continue;
+    }
     const it = /^\s*-\s+(.*)$/.exec(line);
     if (it && cur) {
-      if (!Array.isArray(cur.value)) cur.value = cur.value === '' ? [] : [cur.value];
-      cur.value.push(unquote(it[1].trim()));
+      if (!Array.isArray(cur.value)) {
+        cur.value = cur.value === '' ? [] : [cur.value];
+        cur.quoted = cur.value.length ? [cur.quoted] : [];
+      }
+      const raw = it[1].trim();
+      cur.value.push(unquote(raw)); cur.quoted.push(isQuoted(raw));
     }
   }
   return out;

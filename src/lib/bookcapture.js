@@ -23,6 +23,15 @@ function uniquePath(exists, folder, base, ext) {
   for (let n = 2; ; n++) if (!exists(at(base + ' (' + n + ')'))) return at(base + ' (' + n + ')');
 }
 
+/* An `exists` for uniquePath that counts a file name as taken when ANY file in
+   the vault has it, ignoring case: `[[Dune.jpg]]` resolves by name, so a second
+   Dune.jpg in another folder would make the link point at the wrong image. */
+function nameTakenAnywhere(paths) {
+  const names = new Set();
+  for (const p of paths) names.add(String(p).slice(String(p).lastIndexOf('/') + 1).toLowerCase());
+  return path => names.has(String(path).slice(String(path).lastIndexOf('/') + 1).toLowerCase());
+}
+
 function inFolder(path, folder) {
   const dir = String(folder || '').replace(/\/+$/, '');
   return !dir || path.startsWith(dir + '/');
@@ -56,12 +65,25 @@ function isEmptyValue(v) {
 }
 
 /* What a fill may write: template keys the note lacks or has empty, with the
-   value the template would have produced. Existing values are never touched. */
+   value the template would have produced. Existing values are never touched.
+   A `{…}` flow map is not understood here, so it is never proposed. */
 function fillProposals(templateText, data, answers, noteFm) {
   const fm = noteFm || {};
   return tpl.frontmatterEntries(tpl.render(templateText, data, answers))
-    .filter(e => isEmptyValue(fm[e.key]) && !isEmptyValue(e.value))
-    .map(e => ({ key: e.key, value: e.value }));
+    .filter(e => !e.flowMap && isEmptyValue(fm[e.key]) && !isEmptyValue(e.value))
+    .map(e => ({ key: e.key, value: e.value, quoted: e.quoted }));
+}
+
+/* The value a fill writes for one proposal, typed as create's YAML would read
+   it: an unquoted all-digit value is a number, a quoted one stays text. The
+   "\u0000cover" stand-in becomes the cover link, once that file exists. */
+function fillValue(proposal, coverLink) {
+  const one = (v, quoted) => {
+    const t = String(v).replace('\u0000cover', coverLink || '');
+    return !quoted && /^\d+$/.test(t) ? Number(t) : t;
+  };
+  const { value, quoted } = proposal;
+  return Array.isArray(value) ? value.map((v, i) => one(v, Array.isArray(quoted) && quoted[i])) : one(value, quoted === true);
 }
 
 function fillAsks(templateText, noteFm) {
@@ -78,7 +100,7 @@ function fillAsks(templateText, noteFm) {
 function validateProfile(p, ctx) {
   const problems = [];
   if (!p.template) problems.push('No template chosen.');
-  else if (!ctx.exists(p.template)) problems.push('Template "' + p.template + '" does not exist.');
+  else if (!(ctx.isFile || ctx.exists)(p.template)) problems.push('Template "' + p.template + '" does not exist.');
   for (const [key, label] of [['folder', 'Folder'], ['coverFolder', 'Cover folder']])
     if (p[key] && !ctx.exists(p[key])) problems.push(label + ' "' + p[key] + '" does not exist.');
   if (ctx.templateText != null)
@@ -90,5 +112,5 @@ function canCreate(usesCover, chosenCover) {
   return !usesCover || !!chosenCover;
 }
 
-module.exports = { safeFileName, uniquePath, findDuplicates, profileForPath, isEmptyValue,
-  fillProposals, fillAsks, validateProfile, canCreate };
+module.exports = { safeFileName, uniquePath, nameTakenAnywhere, findDuplicates, profileForPath, isEmptyValue,
+  fillProposals, fillValue, fillAsks, validateProfile, canCreate };

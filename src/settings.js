@@ -5,7 +5,7 @@
  *  Plugin settings tab.
  * ========================================================================== */
 
-const { Notice, PluginSettingTab, Setting, moment, setIcon } = require('obsidian');
+const { Notice, PluginSettingTab, Setting, TFile, moment, setIcon } = require('obsidian');
 const { NexusCalloutModal } = require('./modals/callout.js');
 const { SEARCH_FIELDS } = require('./modals/search.js');
 const { NexusWorkspaceModal } = require('./modals/workspace.js');
@@ -786,6 +786,7 @@ class NexusSettingsTab extends PluginSettingTab {
 
     const app = this.plugin.app;
     const exists = (p) => !!app.vault.getAbstractFileByPath(p.replace(/\/+$/, ''));
+    const isFile = (p) => app.vault.getAbstractFileByPath(p) instanceof TFile;   // a folder is no template
 
     e.createEl('h3', { text: 'Profiles' });
     e.createEl('p', { cls: 'setting-item-description',
@@ -808,7 +809,7 @@ class NexusSettingsTab extends PluginSettingTab {
 
       const row = new Setting(box).setName('Check');
       app.vault.adapter.read(p.template).catch(() => null).then(tplText => {
-        const problems = bookCaptureLib.validateProfile(p, { exists, templateText: p.template ? tplText : null });
+        const problems = bookCaptureLib.validateProfile(p, { exists, isFile, templateText: p.template ? tplText : null });
         row.setDesc(problems.length ? problems.join(' ') : 'Ready.');
         row.settingEl.toggleClass('is-warning', problems.length > 0);
       });

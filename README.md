@@ -712,10 +712,14 @@ Two commands, off until the module is switched on in *Settings → Book capture*
 
 - *Capture book* takes an ISBN (camera scan, a photo of the barcode, or typed),
   looks the book up and writes a note from your own template. The cover is saved
-  into the vault and linked.
+  into the vault and linked. With the module on, it also gets a ribbon icon,
+  which appears after the plugin is reloaded (or Obsidian restarted).
 - *Fill book from ISBN* works on the open note and fills only the fields that are
-  empty or missing. A value that is already there is never replaced. All-digit
-  values become numbers.
+  empty or missing. A value that is already there is never replaced. Values are
+  typed the way the created note's YAML would read them: an unquoted all-digit
+  value (`pages: {{pages}}`) becomes a number, a quoted one (`isbn: "{{isbn}}"`)
+  stays text, and a flow list (`tags: [book, {{genres}}]`) is written as a list.
+  A `{…}` flow map is never filled.
 
 **The template is any note in the vault.** Nothing about your library is fixed in
 code: template, folders, file name patterns and the property names for ISBN and
@@ -724,8 +728,9 @@ cover come from the settings. Placeholders: `{{isbn}}` `{{title}}` `{{subtitle}}
 `{{description}}` `{{genres}}` `{{cover}}` `{{date}}`, plus `{{ask:Label|a,b,c}}`
 (a choice) and `{{ask:Label}}` (free text), asked in the preview. `{{authors}}`
 and `{{genres}}` are lists: a block list line like `  - {{genres}}` repeats once
-per item, and a flow list like `tags: [{{genres}}]` works as well. A list line
-that ends up empty is dropped. *Create example template* writes a starter.
+per item, and a flow list like `tags: [{{genres}}]` works as well: each value
+becomes its own item, quoted on its own when it holds a comma, colon or quote.
+A list line that ends up empty is dropped. *Create example template* writes a starter.
 
 **Profiles** hold one template with its folders, so *Book*, *eBook* and
 *Audiobook* can differ. The profile whose folder contains a note is used for fill.
@@ -737,17 +742,28 @@ Open Library. `{{language}}` is the first source's code, so it differs: DNB
 `ger`, Google `de`, Open Library none.
 
 **Google Books needs an API key.** Anonymous requests are answered with HTTP 429,
-so without a key the source is skipped. The key is stored per device, never in
-`data.json`.
+so without a key the source is left out of the lookup (not reported as
+unavailable). The key is stored per device, never in `data.json`.
 
 **Covers.** When the template uses `{{cover}}`, *Create* stays disabled until a
 cover is chosen: one of the found covers, or *Own image* (a file from the device,
 an image from the vault, or a URL). A note is never written with a missing cover.
+Covers are JPEG, PNG, WebP or GIF; anything else a URL returns is refused.
 Cover files and notes never overwrite: a name that exists gets ` (2)`, ` (3)`.
+A new cover's name is also unique across the whole vault, ignoring case, so a
+`Dune.jpg` in another folder makes the new one `Dune (2).jpg`. `{{cover}}` is the
+shortest link text that finds exactly that file from the note, with extension —
+usually the file name, a path when a picked vault image shares its name with
+another file. If the note cannot be written, a cover file written for it is
+removed again, so a retry keeps the name. The preview shows the ISBN read-only
+above the fields, and a template path that points at a folder counts as missing.
 
 The settings show whether this device has a camera and a native barcode reader.
-Without them, the typed and photo paths work as before. Untested on a device
-until the tablet check is done.
+Without a camera, the dialog shows the ISBN field and the *Photo* button instead
+of the live view: type the number, or photograph the barcode with the device's
+camera app and pick that image. Without a native reader, the plugin's own
+EAN-13 decoder reads the camera frames and photos. Untested on a device until the
+tablet check is done.
 
 ## Build & source layout
 

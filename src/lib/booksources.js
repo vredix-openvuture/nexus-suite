@@ -111,7 +111,8 @@ function withTimeout(promise, ms) {
 
 async function querySource(id, isbn, key, opts) {
   const meta = SOURCES.find(s => s.id === id);
-  if (meta && meta.needsKey && !key) throw new Error('no API key');
+  if (!meta) throw new Error('unknown source');
+  if (meta.needsKey && !key) throw new Error('no API key');
   const request = opts.request || requestUrl;
   const res = await withTimeout(request({ url: urlFor(id, isbn, key), throw: false }), opts.timeoutMs || 8000);
   if (res.status !== 200) throw new Error('HTTP ' + res.status);
@@ -149,6 +150,8 @@ function merge(records) {
 
 const EXT = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 function extFor(type) { return EXT[type] || 'jpg'; }
+// What Obsidian shows as an image and a cover file may be. SVG is not one: it is a document.
+const COVER_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
 function headerOf(headers, name) {
   for (const k of Object.keys(headers || {})) if (k.toLowerCase() === name) return headers[k];
@@ -163,7 +166,7 @@ async function loadImage(url, opts = {}) {
     const res = await withTimeout(request({ url, throw: false }), opts.timeoutMs || 8000);
     const type = String(headerOf(res.headers, 'content-type')).split(';')[0].trim().toLowerCase();
     const bytes = res.arrayBuffer;
-    if (res.status !== 200 || !/^image\//.test(type) || !bytes || bytes.byteLength < 1000) return null;
+    if (res.status !== 200 || !COVER_TYPES.includes(type) || !bytes || bytes.byteLength < 1000) return null;
     return { bytes, type, ext: extFor(type) };
   } catch (e) { return null; }
 }

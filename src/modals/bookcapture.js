@@ -8,7 +8,7 @@
  *  the note cannot fail on the network.
  * ========================================================================== */
 
-const { Modal, Notice, setIcon, moment } = require('obsidian');
+const { Modal, Notice, TFile, setIcon, moment } = require('obsidian');
 const ean13 = require('../lib/ean13.js');
 const tpl = require('../lib/booktemplate.js');
 const sources = require('../lib/booksources.js');
@@ -66,9 +66,12 @@ class NexusBookCaptureModal extends Modal {
     this.profile = this.s.profiles[i];
     this.s.lastProfile = i;
     await this.plugin.saveSettings();
+    if (this.closed) return;
     const tf = this.app.vault.getAbstractFileByPath(this.profile.template || '');
-    if (!tf) { new Notice('Nexus: the template "' + (this.profile.template || '') + '" does not exist — Settings → Book capture.'); this.close(); return; }
+    // A folder at that path is no template either.
+    if (!(tf instanceof TFile)) { new Notice('Nexus: the template "' + (this.profile.template || '') + '" does not exist — Settings → Book capture.'); this.close(); return; }
     this.templateText = await this.app.vault.read(tf);
+    if (this.closed) return;
     this.templateInfo = tpl.scan(this.templateText);
     if (this.mode === 'fill') {
       this.noteFm = (this.app.metadataCache.getFileCache(this.file) || {}).frontmatter || {};
@@ -152,7 +155,10 @@ class NexusBookCaptureModal extends Modal {
     try {
       const el = this.view('Looking up ' + isbn + '…');
       const key = (this.plugin.getCredential('googlebooks') || {}).secret || '';
-      const enabled = this.s.sources.filter(x => x.on !== false).map(x => ({ id: x.id, key: x.id === 'google' ? key : undefined }));
+      // A source that needs a key and has none is left out quietly; the settings explain it.
+      const needsKey = id => (sources.SOURCES.find(x => x.id === id) || {}).needsKey;
+      const enabled = this.s.sources.filter(x => x.on !== false && !(needsKey(x.id) && !key))
+        .map(x => ({ id: x.id, key: x.id === 'google' ? key : undefined }));
       const { records, status } = await sources.queryAll(isbn, enabled);
       if (this.closed) return;
       this.status = status;
@@ -162,6 +168,7 @@ class NexusBookCaptureModal extends Modal {
         el.createEl('p', { text: 'Loading covers…' });
         const loaded = await sources.loadCovers(this.record.covers);
         if (this.closed) return;   // nothing was turned into an object URL yet
+        for (const c of this.covers) if (c.objectUrl && !c.vaultFile) URL.revokeObjectURL(c.objectUrl);
         this.covers = loaded;
         for (const c of this.covers) c.objectUrl = URL.createObjectURL(new Blob([c.bytes], { type: c.type }));
       }
@@ -186,13 +193,19 @@ class NexusBookCaptureModal extends Modal {
     return !this.existingCoverName();
   }
 
-  /* File name of the cover the note already links to, or '' when there is none. */
+  /* Link text of the cover the note already links to, or '' when there is none. */
   existingCoverName() {
     const raw = [].concat(this.noteFm[this.profile.coverProperty] || '')[0];
     if (!raw) return '';
     const link = String(raw).replace(/^!?\[\[|\]\]$/g, '').split('|')[0];
     const f = this.app.metadataCache.getFirstLinkpathDest(link, this.file.path);
-    return f ? f.name : '';
+    return f ? this.linkText(f, this.file.path) : '';
+  }
+
+  /* What {{cover}} becomes: the shortest link text that finds exactly this
+     file from the note, with extension — a bare name can match another image. */
+  linkText(file, notePath) {
+    return this.app.metadataCache.fileToLinktext(file, notePath, false);
   }
 
   chosenCover() { return this.covers[this.coverIndex] || null; }
@@ -206,6 +219,9 @@ class NexusBookCaptureModal extends Modal {
     const grid = el.createDiv('nx-bc-grid');
     if (this.wantCover) this.renderCovers(grid.createDiv('nx-bc-covers'));
     const form = grid.createDiv('nx-bc-form');
+    const isbnRow = form.createDiv('nx-bc-field');
+    isbnRow.createEl('label', { text: 'ISBN' });
+    isbnRow.createEl('input', { type: 'text', attr: { readonly: '' } }).value = this.isbn;
 
     // The fields, editable (this.edit is what the template reads from).
     for (const [k, label] of EDITABLE) {
@@ -317,33 +333,39 @@ class NexusBookCaptureModal extends Modal {
       { isbn: this.isbn, cover: coverName || '', date: moment().format('YYYY-MM-DD') });
   }
 
-  /* Write the chosen cover and return its vault file name. A vault image is
-     used where it is; bytes are written once, never over an existing file. */
+  /* Write the chosen cover and return its file, or null when none is chosen.
+     A vault image is used where it is. New bytes are written once, under a name
+     no other file in the vault has (in any case), so its link stays unique. */
   async writeCover() {
     const c = this.chosenCover();
-    if (!c) return '';
-    if (c.vaultFile) return c.vaultFile.name;
+    if (!c) return null;
+    if (c.vaultFile) return c.vaultFile;
     const folder = (this.profile.coverFolder || '').replace(/\/+$/, '');
     if (folder) await this.plugin.ensureFolderPath(folder);
     const base = flow.safeFileName(tpl.renderName(this.profile.coverName || '{{title}}', this.dataFor('')));
-    const path = flow.uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), folder, base, c.ext);
-    await this.app.vault.createBinary(path, c.bytes);
-    return path.slice(path.lastIndexOf('/') + 1);
+    const takenName = flow.nameTakenAnywhere(this.app.vault.getFiles().map(f => f.path));
+    const path = flow.uniquePath(p => takenName(p) || !!this.app.vault.getAbstractFileByPath(p), folder, base, c.ext);
+    return this.app.vault.createBinary(path, c.bytes);
   }
 
   async create() {
     this.createBtn.disabled = true;
+    let newCover = null, note = null;
     try {
-      const cover = this.wantCover ? await this.writeCover() : '';
-      const data = this.dataFor(cover);
+      const coverFile = this.wantCover ? await this.writeCover() : null;
+      if (coverFile && !this.chosenCover().vaultFile) newCover = coverFile;
       const folder = (this.profile.folder || '').replace(/\/+$/, '');
       if (folder) await this.plugin.ensureFolderPath(folder);
-      const base = flow.safeFileName(tpl.renderName(this.profile.fileName || '{{title}}', data), this.isbn);
+      const base = flow.safeFileName(tpl.renderName(this.profile.fileName || '{{title}}', this.dataFor(coverFile ? coverFile.name : '')), this.isbn);
       const path = flow.uniquePath(p => !!this.app.vault.getAbstractFileByPath(p), folder, base, 'md');
-      const file = await this.app.vault.create(path, tpl.render(this.templateText, data, this.answers));
-      await this.app.workspace.getLeaf(false).openFile(file);
+      const data = this.dataFor(coverFile ? this.linkText(coverFile, path) : '');
+      note = await this.app.vault.create(path, tpl.render(this.templateText, data, this.answers));
+      await this.app.workspace.getLeaf(false).openFile(note);
       this.close();
     } catch (err) {
+      // No note, no orphan: a cover written for it goes again, so a retry keeps its name.
+      if (newCover && !note) await this.app.vault.delete(newCover)
+        .catch(e => console.warn('Nexus book capture: could not remove the unused cover ' + newCover.path, e));
       new Notice('Nexus: could not write the note — ' + (err && err.message || err));
       this.createBtn.disabled = false;
     }
@@ -352,7 +374,7 @@ class NexusBookCaptureModal extends Modal {
   showFill() {
     // No cover being written: {{cover}} means the note's own existing cover file.
     const coverName = this.wantCover
-      ? (this.chosenCover() ? (this.chosenCover().vaultFile ? this.chosenCover().vaultFile.name : '\u0000cover') : '')
+      ? (this.chosenCover() ? (this.chosenCover().vaultFile ? this.linkText(this.chosenCover().vaultFile, this.file.path) : '\u0000cover') : '')
       : this.existingCoverName();
     // A cover link to a file that is gone counts as empty — that is what fill is for.
     const brokenCover = this.wantCover && this.coverMissing();
@@ -380,13 +402,12 @@ class NexusBookCaptureModal extends Modal {
       try {
         // The placeholder name stands in for a cover not written yet; only now is it written.
         const needsWrite = proposals.some(p => picked.has(p.key) && [].concat(p.value).some(v => String(v).includes('\u0000cover')));
-        const cover = needsWrite ? await this.writeCover() : '';
-        // Digits-only values become numbers, as create renders them.
-        const typed = (v, c) => { const t = String(v).replace('\u0000cover', c); return /^\d+$/.test(t) ? Number(t) : t; };
+        const coverFile = needsWrite ? await this.writeCover() : null;
+        const cover = coverFile ? this.linkText(coverFile, this.file.path) : '';
         await this.app.fileManager.processFrontMatter(this.file, fm => {
           for (const p of proposals) if (picked.has(p.key)
               && (flow.isEmptyValue(fm[p.key]) || (brokenCover && p.key === this.profile.coverProperty)))
-            fm[p.key] = Array.isArray(p.value) ? p.value.map(v => typed(v, cover)) : typed(p.value, cover);
+            fm[p.key] = flow.fillValue(p, cover);
         });
         new Notice('Nexus: filled ' + picked.size + ' field(s).');
         this.close();
