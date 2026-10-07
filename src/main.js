@@ -477,6 +477,13 @@ module.exports = class NexusSuite extends Plugin {
     // ensure deep defaults per module
     for (const k of Object.keys(DEFAULT_SETTINGS))
       this.settings[k] = Object.assign({}, DEFAULT_SETTINGS[k], (data && data[k]) || {});
+    { // The merge is one level deep: copy the book-capture lists so edits never reach the defaults.
+      const bc = this.settings.bookCapture;
+      bc.profiles = (bc.profiles || []).map(p => Object.assign({}, p));
+      bc.sources = (bc.sources || []).map(x => Object.assign({}, x));
+      for (const d of DEFAULT_SETTINGS.bookCapture.sources)
+        if (!bc.sources.some(x => x.id === d.id)) bc.sources.push(Object.assign({}, d, { on: true }));
+    }
     /* Migration: the sync connection and its schedule were vault-wide, so every device read the one the last sync happened to
        deliver. They move into this device's bag; the vault-wide keys are left
        untouched, because the OTHER device reads the same data.json and still

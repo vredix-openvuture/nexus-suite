@@ -43,7 +43,9 @@ class BookScanner {
     this.video.setAttribute('playsinline', '');
     this.video.muted = true;
     this.video.srcObject = this.stream;
-    await this.video.play();
+    try { await this.video.play(); }
+    catch (e) { if (this.stopped) return; throw e; }
+    if (this.stopped) return;
     this.detector = await makeDetector();
     this.next();
   }
@@ -53,14 +55,17 @@ class BookScanner {
   async tick() {
     if (this.stopped) return;
     let code = null, trusted = false;
-    try {
-      if (this.detector) {
+    if (this.detector) {
+      try {
         const found = await this.detector.detect(this.video);
         const hit = found.find(b => ean13.isBookCode(b.rawValue));
         if (hit) { code = hit.rawValue; trusted = true; }
-      }
-      if (!code) code = this.decodeFrame();
-    } catch (e) { /* a frame that cannot be read is just skipped */ }
+      } catch (e) { this.detector = null; }   // our own decoder takes over from here
+    }
+    if (!code) {
+      try { code = this.decodeFrame(); } catch (e) { /* a frame that cannot be read is just skipped */ }
+    }
+    if (this.stopped) return;
     if (code && ean13.isBookCode(code)) {
       this.hits[code] = (this.hits[code] || 0) + 1;
       if (trusted || this.hits[code] >= 2) { this.stop(); this.onCode(code); return; }
@@ -107,20 +112,21 @@ function loadImage(blob) {
 /* A photo from the gallery or the camera app: every row and column, because
    nobody holds the phone straight for a photo. */
 async function decodeFile(blob) {
-  let bmp;   // an HTMLImageElement
-  try { bmp = await loadImage(blob); } catch (e) { return null; }
+  let img;
+  try { img = await loadImage(blob); } catch (e) { return null; }
+  if (!img.naturalWidth || !img.naturalHeight) return null;
   const detector = await makeDetector();
   if (detector) {
     try {
-      const hit = (await detector.detect(bmp)).find(b => ean13.isBookCode(b.rawValue));
+      const hit = (await detector.detect(img)).find(b => ean13.isBookCode(b.rawValue));
       if (hit) return hit.rawValue;
     } catch (e) { /* fall through to our own decoder */ }
   }
-  const scale = Math.min(1, 1600 / Math.max(bmp.naturalWidth, bmp.naturalHeight));
+  const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
   const c = document.createElement('canvas');
-  c.width = Math.round(bmp.naturalWidth * scale); c.height = Math.round(bmp.naturalHeight * scale);
+  c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
   const g = c.getContext('2d', { willReadFrequently: true });
-  g.drawImage(bmp, 0, 0, c.width, c.height);
+  g.drawImage(img, 0, 0, c.width, c.height);
   return ean13.decodeImage(g.getImageData(0, 0, c.width, c.height), { columns: true });
 }
 

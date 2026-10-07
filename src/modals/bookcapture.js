@@ -149,30 +149,37 @@ class NexusBookCaptureModal extends Modal {
     if (this.busy) return;
     this.busy = true;
     this.isbn = isbn;
-    const el = this.view('Looking up ' + isbn + '…');
-    const key = (this.plugin.getCredential('googlebooks') || {}).secret || '';
-    const enabled = this.s.sources.filter(x => x.on !== false).map(x => ({ id: x.id, key: x.id === 'google' ? key : undefined }));
-    const { records, status } = await sources.queryAll(isbn, enabled);
-    if (this.closed) return;
-    this.status = status;
-    this.record = sources.merge(records);
-    const wantCover = this.templateInfo.usesCover && (this.mode === 'create' || this.coverMissing());
-    if (wantCover) {
-      el.createEl('p', { text: 'Loading covers…' });
-      const loaded = await sources.loadCovers(this.record.covers);
-      if (this.closed) return;   // nothing was turned into an object URL yet
-      this.covers = loaded;
-      for (const c of this.covers) c.objectUrl = URL.createObjectURL(new Blob([c.bytes], { type: c.type }));
+    try {
+      const el = this.view('Looking up ' + isbn + '…');
+      const key = (this.plugin.getCredential('googlebooks') || {}).secret || '';
+      const enabled = this.s.sources.filter(x => x.on !== false).map(x => ({ id: x.id, key: x.id === 'google' ? key : undefined }));
+      const { records, status } = await sources.queryAll(isbn, enabled);
+      if (this.closed) return;
+      this.status = status;
+      this.record = sources.merge(records);
+      const wantCover = this.templateInfo.usesCover && (this.mode === 'create' || this.coverMissing());
+      if (wantCover) {
+        el.createEl('p', { text: 'Loading covers…' });
+        const loaded = await sources.loadCovers(this.record.covers);
+        if (this.closed) return;   // nothing was turned into an object URL yet
+        this.covers = loaded;
+        for (const c of this.covers) c.objectUrl = URL.createObjectURL(new Blob([c.bytes], { type: c.type }));
+      }
+      this.wantCover = wantCover;
+      this.coverIndex = 0;   // with no covers, index 0 IS the "own image" slot
+      // Built once: "Back" from the fill review must keep the user's corrections.
+      const r = this.record;
+      this.edit = { title: r.title, subtitle: r.subtitle, author: r.authors.join(', '),
+        publisher: r.publisher, year: r.year, pages: r.pages, language: r.language,
+        genres: r.genres.join(', '), description: r.description };
+      this.showPreview();
+    } catch (err) {
+      if (this.closed) return;
+      new Notice('Lookup failed: ' + (err && err.message || err));
+      this.showScanner();
+    } finally {
+      this.busy = false;
     }
-    this.wantCover = wantCover;
-    this.coverIndex = 0;   // with no covers, index 0 IS the "own image" slot
-    // Built once: "Back" from the fill review must keep the user's corrections.
-    const r = this.record;
-    this.edit = { title: r.title, subtitle: r.subtitle, author: r.authors.join(', '),
-      publisher: r.publisher, year: r.year, pages: r.pages, language: r.language,
-      genres: r.genres.join(', '), description: r.description };
-    this.busy = false;
-    this.showPreview();
   }
 
   coverMissing() {

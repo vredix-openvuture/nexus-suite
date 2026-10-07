@@ -336,6 +336,29 @@ const E = window.ean13Lib;
         isbnProperty: 'isbn', coverProperty: 'cover' }]);
   eq('settings · every source, in the default order', d.sources.map(s => s.id), window.bookSourcesLib.SOURCES.map(s => s.id));
 }
+// ── pre-merge hardening ───────────────────────────────────────────────────
+{
+  const T = window.bookTemplateLib, B = window.bookCaptureLib || window.bookcaptureLib;
+  const line = (l, d) => T.render('---\n' + l + '\n---\n', Object.assign({ genres: [], year: '', title: '' }, d)).split('\n')[1];
+  eq('flow · a list of placeholders stays a flow list', line('tags: [{{genres}}]', { genres: ['A', 'B'] }), 'tags: [A, B]');
+  eq('flow · a map keeps its raw value', line('k: {k: {{year}}}', { year: 2007 }), 'k: {k: 2007}');
+  eq('name · trailing dot goes', B.safeFileName('Foo.'), 'Foo');
+  eq('name · trailing dots and spaces go', B.safeFileName('Foo. . '), 'Foo');
+  const cut = B.safeFileName('a'.repeat(119) + '\u{1F600}\u{1F600}');
+  ok('name · an emoji at the cut is not split', !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(cut) && !/(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(cut), JSON.stringify(cut));
+  eq('photo · an image without size', await window.bookScanLib.decodeFile(new Blob(['<svg xmlns="http://www.w3.org/2000/svg"></svg>'], { type: 'image/svg+xml' })), null);
+    {
+    const plugin = new window.NexusSuite({}, {});
+    plugin.loadData = async () => ({ bookCapture: { enabled: true, sources: [{ id: 'dnb', on: false }] } });
+    try { await plugin.loadSettings(); } catch (e) { /* later migrations may need a real app */ }
+    const bc = plugin.settings && plugin.settings.bookCapture, d = window.DEFAULT_SETTINGS.bookCapture;
+    ok('load · profiles are copies of the defaults', !!bc && bc.profiles[0] !== d.profiles[0] && bc.profiles !== d.profiles);
+    ok('load · saved source choice survives', !!bc && bc.sources.find(x => x.id === 'dnb').on === false);
+    eq('load · sources missing from the save are appended', bc && bc.sources.map(x => x.id).sort(), d.sources.map(x => x.id).sort());
+    bc.profiles[0].name = 'Changed';
+    ok('load · editing the live settings leaves the defaults alone', d.profiles[0].name === 'Books');
+  }
+}
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
 for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }
 out.push('', fail ? fail + ' FAILED, ' + pass + ' passed' : 'ALL GREEN (' + pass + ')');

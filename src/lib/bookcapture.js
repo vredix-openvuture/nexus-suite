@@ -10,8 +10,9 @@ const { toIsbn13 } = require('./ean13.js');
 const tpl = require('./booktemplate.js');
 
 function safeFileName(s, fallback = 'Untitled') {
-  const out = String(s || '').replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ')
-    .trim().replace(/^\.+/, '').trim().slice(0, 120).trim();
+  const cleaned = String(s || '').replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ')
+    .trim().replace(/^\.+/, '').trim();
+  const out = Array.from(cleaned).slice(0, 120).join('').replace(/[. ]+$/, '');
   return out || fallback;
 }
 

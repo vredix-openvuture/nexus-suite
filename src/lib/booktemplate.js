@@ -78,8 +78,9 @@ function renderFmLine(line, data, answers) {
   }
   // Unquoted value with placeholders mixed into literal text: render it, then
   // quote the whole result only if YAML needs it. Unknown placeholders stay raw.
+  // A value opening with `[` or a single `{` is a YAML flow collection: keep it raw.
   const valuePart = item ? item[2] : kv ? kv[2] : null;
-  if (valuePart !== null && !/["']/.test(valuePart)
+  if (valuePart !== null && !/["']/.test(valuePart) && !/^(\[|\{(?!\{))/.test(valuePart.trim())
       && tokens.every(m => parseToken(m[1]).kind !== 'unknown')) {
     const prefix = item ? item[1] : kv[1] + ' ';
     const val = yamlScalar(renderPlain(valuePart, data, answers));
