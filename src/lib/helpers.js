@@ -25,12 +25,18 @@ function getDailyNoteSettings(app) {
   };
 }
 
+/* Where the daily note for a date lives, per the Daily Notes settings. */
+function dailyNotePath(app, date) {
+  const { format, folder } = getDailyNoteSettings(app);
+  return (folder ? folder + '/' : '') + date.format(format) + '.md';
+}
+
 /* The daily note for a date, created from the daily-note template if it is not
    there yet. Split out of openDailyNote because writing a day's text has to be
    able to make the note without also jumping to it. */
 async function ensureDailyNote(app, date) {
-  const { format, folder, template } = getDailyNoteSettings(app);
-  const path = (folder ? folder + '/' : '') + date.format(format) + '.md';
+  const { folder, template } = getDailyNoteSettings(app);
+  const path = dailyNotePath(app, date);
   const existing = app.vault.getAbstractFileByPath(path);
   if (existing) return existing;
   if (folder && !app.vault.getAbstractFileByPath(folder)) {
@@ -193,4 +199,4 @@ function nxPinMenuItem(plugin, menu, key) {
     .onClick(() => plugin.setTabPinned(key, !on)));
 }
 
-module.exports = { renderMd, getDailyNoteSettings, ensureDailyNote, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxStartOfWeek, nxWeekdayLabels, nxWeekStartDow };
+module.exports = { renderMd, getDailyNoteSettings, dailyNotePath, ensureDailyNote, openDailyNote, nxInkZoomStart, nxInkZoomMove, nxInkZoomEnd, nxPdfDestPage, nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxEndOfWeek, nxMonthGridRange, nxPinMenuItem, nxPropValues, nxStartOfWeek, nxWeekdayLabels, nxWeekStartDow };

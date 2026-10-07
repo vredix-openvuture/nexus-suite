@@ -14,7 +14,7 @@
  *  template if you have one — the same thing clicking the day number does.
  * ========================================================================== */
 
-const { getDailyNoteSettings, ensureDailyNote } = require('./helpers.js');
+const { dailyNotePath, ensureDailyNote } = require('./helpers.js');
 
 const DEFAULT_KEY = 'important';
 
@@ -22,11 +22,6 @@ function dayTextKey(plugin) {
   const s = (plugin && plugin.settings && plugin.settings.calendar) || {};
   const key = String(s.dayTextKey == null ? DEFAULT_KEY : s.dayTextKey).trim();
   return key || DEFAULT_KEY;
-}
-
-function dailyNotePath(app, date) {
-  const { format, folder } = getDailyNoteSettings(app);
-  return (folder ? folder + '/' : '') + date.format(format) + '.md';
 }
 
 function dailyNoteFor(app, date) {
