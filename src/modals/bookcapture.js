@@ -41,6 +41,7 @@ class NexusBookCaptureModal extends Modal {
   }
 
   onClose() {
+    this.closed = true;
     if (this.scanner) this.scanner.stop();
     for (const c of this.covers) if (c.objectUrl) URL.revokeObjectURL(c.objectUrl);
     this.contentEl.empty();
@@ -145,29 +146,37 @@ class NexusBookCaptureModal extends Modal {
   }
 
   async lookup(isbn) {
+    if (this.busy) return;
+    this.busy = true;
     this.isbn = isbn;
     const el = this.view('Looking up ' + isbn + '…');
     const key = (this.plugin.getCredential('googlebooks') || {}).secret || '';
     const enabled = this.s.sources.filter(x => x.on !== false).map(x => ({ id: x.id, key: x.id === 'google' ? key : undefined }));
     const { records, status } = await sources.queryAll(isbn, enabled);
+    if (this.closed) return;
     this.status = status;
     this.record = sources.merge(records);
     const wantCover = this.templateInfo.usesCover && (this.mode === 'create' || this.coverMissing());
     if (wantCover) {
       el.createEl('p', { text: 'Loading covers…' });
-      this.covers = await sources.loadCovers(this.record.covers);
+      const loaded = await sources.loadCovers(this.record.covers);
+      if (this.closed) return;   // nothing was turned into an object URL yet
+      this.covers = loaded;
       for (const c of this.covers) c.objectUrl = URL.createObjectURL(new Blob([c.bytes], { type: c.type }));
     }
     this.wantCover = wantCover;
     this.coverIndex = 0;   // with no covers, index 0 IS the "own image" slot
+    // Built once: "Back" from the fill review must keep the user's corrections.
+    const r = this.record;
+    this.edit = { title: r.title, subtitle: r.subtitle, author: r.authors.join(', '),
+      publisher: r.publisher, year: r.year, pages: r.pages, language: r.language,
+      genres: r.genres.join(', '), description: r.description };
+    this.busy = false;
     this.showPreview();
   }
 
   coverMissing() {
-    const raw = [].concat(this.noteFm[this.profile.coverProperty] || '')[0];
-    if (!raw) return true;
-    const link = String(raw).replace(/^!?\[\[|\]\]$/g, '').split('|')[0];
-    return !this.app.metadataCache.getFirstLinkpathDest(link, this.file.path);
+    return !this.existingCoverName();
   }
 
   /* File name of the cover the note already links to, or '' when there is none. */
@@ -183,7 +192,7 @@ class NexusBookCaptureModal extends Modal {
 
   showPreview() {
     const el = this.view(this.mode === 'fill' ? 'Fill ' + this.file.basename : 'New book · ' + (this.profile.name || ''));
-    const failed = this.status.filter(s => !s.ok).map(s => (sources.SOURCES.find(x => x.id === s.id) || {}).label + ': ' + s.error);
+    const failed = this.status.filter(s => !s.ok).map(s => ((sources.SOURCES.find(x => x.id === s.id) || {}).label || s.id) + ': ' + s.error);
     if (!this.status.some(s => s.found)) el.createDiv({ cls: 'nx-bc-status is-warning', text: 'No source knows this ISBN. Fill in what you know.' });
     if (failed.length) el.createDiv({ cls: 'nx-bc-status', text: 'Unavailable — ' + failed.join(' · ') });
 
@@ -191,10 +200,7 @@ class NexusBookCaptureModal extends Modal {
     if (this.wantCover) this.renderCovers(grid.createDiv('nx-bc-covers'));
     const form = grid.createDiv('nx-bc-form');
 
-    // The fields, editable. The record is what the template reads from.
-    this.edit = { title: this.record.title, subtitle: this.record.subtitle, author: this.record.authors.join(', '),
-      publisher: this.record.publisher, year: this.record.year, pages: this.record.pages, language: this.record.language,
-      genres: this.record.genres.join(', '), description: this.record.description };
+    // The fields, editable (this.edit is what the template reads from).
     for (const [k, label] of EDITABLE) {
       const row = form.createDiv('nx-bc-field');
       row.createEl('label', { text: label });
@@ -228,7 +234,7 @@ class NexusBookCaptureModal extends Modal {
   }
 
   refreshCreate() {
-    if (this.createBtn) this.createBtn.disabled = !flow.canCreate(this.wantCover, this.chosenCover());
+    if (this.createBtn) this.createBtn.disabled = this.mode === 'create' && !flow.canCreate(this.wantCover, this.chosenCover());
   }
 
   renderCovers(box) {
@@ -238,7 +244,7 @@ class NexusBookCaptureModal extends Modal {
     const stage = box.createDiv('nx-bc-cover-stage');
     if (!own) {
       stage.createEl('img', { attr: { src: this.covers[this.coverIndex].objectUrl } });
-      box.createDiv({ cls: 'nx-bc-cover-src', text: (sources.SOURCES.find(s => s.id === this.covers[this.coverIndex].source) || {}).label || '' });
+      box.createDiv({ cls: 'nx-bc-cover-src', text: (sources.SOURCES.find(s => s.id === this.covers[this.coverIndex].source) || {}).label || this.covers[this.coverIndex].source || '' });
     } else {
       stage.addClass('is-own');
       stage.createDiv({ text: this.covers.length ? 'Own image' : 'No cover found — choose one' });
@@ -265,10 +271,10 @@ class NexusBookCaptureModal extends Modal {
   }
 
   pickDeviceImage(box) {
-    const picker = document.body.createEl('input', { type: 'file', attr: { accept: 'image/*' } });
-    picker.style.display = 'none';
+    const picker = document.createElement('input');   // detached: nothing to clean up if the dialog is cancelled
+    picker.type = 'file'; picker.accept = 'image/*';
     picker.onchange = async () => {
-      const f = picker.files && picker.files[0]; picker.remove();
+      const f = picker.files && picker.files[0];
       if (!f) return;
       const type = f.type || 'image/jpeg';
       this.addOwnCover({ source: 'own', bytes: await f.arrayBuffer(), type, ext: sources.extFor(type) }, box);
@@ -368,11 +374,12 @@ class NexusBookCaptureModal extends Modal {
         // The placeholder name stands in for a cover not written yet; only now is it written.
         const needsWrite = proposals.some(p => picked.has(p.key) && [].concat(p.value).some(v => String(v).includes('\u0000cover')));
         const cover = needsWrite ? await this.writeCover() : '';
+        // Digits-only values become numbers, as create renders them.
+        const typed = (v, c) => { const t = String(v).replace('\u0000cover', c); return /^\d+$/.test(t) ? Number(t) : t; };
         await this.app.fileManager.processFrontMatter(this.file, fm => {
           for (const p of proposals) if (picked.has(p.key)
               && (flow.isEmptyValue(fm[p.key]) || (brokenCover && p.key === this.profile.coverProperty)))
-            fm[p.key] = Array.isArray(p.value) ? p.value.map(v => String(v).replace('\u0000cover', cover))
-              : String(p.value).replace('\u0000cover', cover);
+            fm[p.key] = Array.isArray(p.value) ? p.value.map(v => typed(v, cover)) : typed(p.value, cover);
         });
         new Notice('Nexus: filled ' + picked.size + ' field(s).');
         this.close();
