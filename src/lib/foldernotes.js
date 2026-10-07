@@ -14,7 +14,7 @@
  *  excluded folders, and the folder-overview code block.
  * ========================================================================== */
 
-const { Notice, TFile, TFolder, moment, setIcon } = require('obsidian');
+const { Notice, TFile, moment, setIcon } = require('obsidian');
 
 const FN_TYPES = ['md', 'canvas', 'base'];
 

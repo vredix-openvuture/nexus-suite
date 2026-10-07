@@ -8,7 +8,6 @@
  * ========================================================================== */
 
 const { Modal, setIcon } = require('obsidian');
-const { IMG_EXT } = require('../constants.js');
 const { NexusPopupMenu } = require('./pickers.js');
 const { NexusNameModal } = require('./misc.js');
 

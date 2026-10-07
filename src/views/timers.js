@@ -7,7 +7,6 @@
 
 const { ItemView, Modal, Setting, setIcon } = require('obsidian');
 const { TIMER_VIEW } = require('../constants.js');
-const { NexusInkTagModal } = require('./ink.js');
 
 class NexusTimerSidebarView extends ItemView {
   constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this._liveEls = []; }

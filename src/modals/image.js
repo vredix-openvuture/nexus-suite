@@ -5,7 +5,7 @@
  *  Hero image config, vault image picker, zoom/crop adjust.
  * ========================================================================== */
 
-const { Modal, Setting, SuggestModal, setIcon } = require('obsidian');
+const { Modal, Setting, SuggestModal } = require('obsidian');
 const { IMG_EXT } = require('../constants.js');
 const { NexusNameModal } = require('./misc.js');
 

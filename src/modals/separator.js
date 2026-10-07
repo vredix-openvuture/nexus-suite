@@ -15,7 +15,6 @@
  * ========================================================================== */
 
 const { Modal, setIcon } = require('obsidian');
-const { NexusNameModal } = require('./misc.js');
 
 const UNGROUPED = 'Ungrouped';
 

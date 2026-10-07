@@ -5,7 +5,7 @@
  *  Per-card config: list, scratch, orphans, random, sketch, stat, action, hero, habit.
  * ========================================================================== */
 
-const { Modal, Setting, moment, setIcon } = require('obsidian');
+const { Modal, Setting, moment } = require('obsidian');
 const { NX_GREETINGS } = require('../constants.js');
 const { getDailyNoteSettings } = require('../lib/helpers.js');
 const { nxAutocomplete, nxIconField, nxMultiRow, nxPropGroups, nxPropRulesToGroups, nxPropsToRules } = require('../lib/inputs.js');
