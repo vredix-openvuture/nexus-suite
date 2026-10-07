@@ -97,8 +97,7 @@ class NexusSketchPaneView extends ItemView {
   async onClose() {
     if (this.surface) {
       try {
-        this.surface.setPageZoom(1);
-        this.surface.setHeight(0);
+        if (!this.surface.infinite) { this.surface.setPageZoom(1); this.surface.setHeight(0); }
         if (this.surface.strokes.length) this.surface.persist();
       } catch (e) {}
       this.surface.destroy();   // writes out anything the commit debounce still holds
@@ -128,6 +127,11 @@ class NexusSketchPaneView extends ItemView {
     const surface = new NexusSketchSurface(pad, {
       W: data.w, H: data.h, bg: data.bg || s.bg,
       paper: data.paper || null,
+      // The sidecar decides: one written before paper types existed is endless,
+      // and the setting has already had its say when that file was created.
+      paperType: data.paperType || 'endless',
+      sheetLandscape: !!data.sheetLandscape,
+      view: data.view || null,
       paperStyle: this.plugin._resolvePaperStyle(data, s),
       invertOnDark: s.invertOnDark !== false,
       ink: s.ink, paperWidth: s.paperWidth, penSizes: s.penSizes, pen: 'fountain',
@@ -143,31 +147,42 @@ class NexusSketchPaneView extends ItemView {
       objects: data.objects || [],
       sections: data.sections || [],
       ocr: data.ocr || [],
+      /* toSVGString writes the WHOLE metadata block, so anything the surface is
+         not handed is deleted by the next committed stroke. The name and the
+         book cover are engine-irrelevant and were being lost exactly that way. */
+      title: data.title || '',
+      cover: data.cover || null,
       resizable: true,
       onCommit: () => this.save(surface),
     });
     this.surface = surface;
 
-    // Endless paper: keep blank canvas below the last stroke so there is always
-    // room to keep writing.
+    /* Endless (and sectioned) paper: keep blank canvas below the last stroke so
+       there is always room to keep writing. A mindmap has no bottom to run out
+       of, and its stage does not scroll at all — the camera moves instead. */
     const onScroll = () => {
-      if (surface._resizing) return;
+      if (surface._resizing || surface.infinite) return;
       if (stage.scrollTop + stage.clientHeight > stage.scrollHeight - 260)
         surface.setHeight(surface.H + Math.round(stage.clientHeight * 0.9 * (surface.W / (pad.clientWidth || surface.W))));
     };
     stage.addEventListener('scroll', onScroll, { passive: true });
     const ensurePaper = () => {
+      if (surface.infinite) return;
       const padW = pad.clientWidth;
       if (!padW) { requestAnimationFrame(ensurePaper); return; }
       const want = Math.round(stage.clientHeight * 1.4 * (surface.W / padW));
       if (surface.H < want) surface.setHeight(want);
     };
     requestAnimationFrame(ensurePaper);
+    // Switching to or from a plane changes what the stage is: a scroller, or a
+    // window. The paper below the last stroke has to be (re)made either way.
+    surface.onPaperType = () => requestAnimationFrame(ensurePaper);
 
     // Always on screen: the read-out answers "what zoom am I at" before you
     // notice anything is off, and one tap is the way back to page width.
     const zoomPill = root.createDiv({ cls: 'nx-sk-zoompill', text: '100%' });
     zoomPill.onclick = () => surface.setPageZoom(1);
+    zoomPill.setText(Math.round(surface.getPageZoom() * 100) + '%');
     surface.onZoom = (z) => {
       // Shrunk counts as zoomed too — |z-1|, not z>1. The old test left the pill
       // dim and the stage un-scrollable for the whole 0.3–1 range.

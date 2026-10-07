@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>sketch tab — paper types</title>
+<link rel="stylesheet" href="plugin/styles.css">
+<style>
+:root {
+  --background-primary: #1e1e1e; --background-primary-alt: #262626;
+  --background-secondary: #252525; --background-secondary-alt: #1a1a1a;
+  --background-modifier-border: #3a3a3a; --text-on-accent: #fff;
+  --text-normal: #dcddde; --text-muted: #999; --text-faint: #666;
+  --text-accent: #fb6734; --interactive-accent: #fb6734;
+  --radius-m: 8px; --radius-s: 5px; --font-interface: system-ui, sans-serif;
+}
+body { margin: 0; background: #141414; color: #dcddde; font-family: system-ui, sans-serif; padding: 20px; }
+h2 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #888; margin: 20px 0 8px; font-weight: 700; }
+.pane { width: 520px; height: 340px; border: 1px solid #333; border-radius: 8px; overflow: hidden; }
+.svg-icon { display:block; width:17px; height:17px; }
+</style></head><body>
+<div id="stage"></div>
+<script src="bundle.js"></script>
+<script>
+const stage = document.getElementById('stage');
+const ink = (pts) => ({ color: '#2f2f2f', size: 5, thinning: .5, taper: 8, opacity: 1, pen: 'fountain', cap: 'round', points: pts });
+const scribble = (ox, oy) => ink([[ox,oy,.4],[ox+60,oy+40,.7],[ox+120,oy-10,.6],[ox+190,oy+55,.5],[ox+250,oy+10,.4]]);
+function pane(label, opts, after) {
+  const h = document.createElement('h2'); h.textContent = label; stage.appendChild(h);
+  const root = document.createElement('div'); root.className = 'pane nx-skpane'; stage.appendChild(root);
+  const stg = document.createElement('div'); stg.className = 'nx-skpane-stage'; root.appendChild(stg);
+  const pad = document.createElement('div'); pad.className = 'nx-sketch-pad'; stg.appendChild(pad);
+  const s = new window.NexusSketchSurface(pad, Object.assign({ W: 1600, H: 900, paper: 'paper',
+    bgType: 'grid', bgSize: 27, bgOpacity: .16, bgColor: '#334155', paperWidth: 1100 }, opts));
+  if (after) after(s, stg);
+  const info = document.createElement('div');
+  info.style.cssText = 'font:11px monospace;color:#7d7d7d;margin:4px 0 0';
+  info.textContent = 'stage scrollHeight=' + stg.scrollHeight + ' clientHeight=' + stg.clientHeight
+    + ' | pad ' + pad.clientWidth + 'x' + pad.clientHeight + ' | viewBox ' + s.svg.getAttribute('viewBox');
+  stage.appendChild(info);
+  return s;
+}
+pane('endless', { strokes: [scribble(120, 200)] });
+pane('sectioned (portrait)', { paperType: 'sectioned', strokes: [scribble(120, 200)] });
+pane('mindmap — stage must not scroll, pad must fill it',
+     { paperType: 'mindmap', strokes: [scribble(-300, -120), scribble(400, 500), scribble(900, -400)] },
+     (s) => { s.viewX = -600; s.viewY = -600; s.viewW = 2600; s._applyView(); });
+</script></body></html>

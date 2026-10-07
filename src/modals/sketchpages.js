@@ -78,6 +78,14 @@ class NexusSketchPagesModal extends Modal {
         // it gets a new one written, or gets taken out of the list.
         card.createDiv({ cls: 'nx-skpick-thumb nx-skpick-thumb-missing' });
       }
+      /* The page number belongs ON the picture, in its corner: the name is the
+         only thing worth a line of its own under the thumbnail, and a number
+         plus a name stacked below each other read as two competing titles. */
+      const idx = card.createDiv({ cls: 'nx-skpick-idx', text: String(i + 1) });
+      if (!file) {
+        idx.addClass('is-missing');
+        card.setAttribute('title', 'Page ' + (i + 1) + ' — the .svg file is missing');
+      }
       const named = (this.names || {})[id] || '';
       const name = card.createEl('input', {
         cls: 'nx-skpick-name nx-skpick-rename',
@@ -92,7 +100,6 @@ class NexusSketchPagesModal extends Modal {
         if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
         if (e.key === 'Escape') { e.preventDefault(); name.value = last; name.blur(); }
       };
-      card.createDiv({ cls: 'nx-skpick-meta', text: file ? 'Page ' + (i + 1) : 'Page ' + (i + 1) + ' — file missing' });
       const open = () => { this.close(); this.pane.goToPage(id); };
       card.onclick = open;
       card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };

@@ -49,12 +49,6 @@ class NexusQuickNoteModal extends Modal {
     this.preview = contentEl.createDiv('nx-qn-preview');
     this.preview.createSpan({ cls: 'nx-qn-hint', text: 'What you say lands here.' });
 
-    const row = contentEl.createDiv('nx-qn-row');
-    const asTask = row.createEl('label', { cls: 'nx-qn-check' });
-    this.taskBox = asTask.createEl('input', { attr: { type: 'checkbox' } });
-    this.taskBox.checked = !!this.s.asTask;
-    asTask.createSpan({ text: 'Track the note as a task' });
-
     contentEl.createDiv({ cls: 'nx-qn-engine',
       text: this.s.engine === 'browser'
         ? 'Using the browser\'s recogniser — on most builds that sends the audio to its vendor.'
@@ -171,7 +165,7 @@ class NexusQuickNoteModal extends Modal {
         return;
       }
       const path = await this.plugin.writeQuickNote(this.lines, {
-        seconds, engine: this.s.engine || 'local', task: this.taskBox.checked,
+        seconds, engine: this.s.engine || 'local',
       });
       new Notice('Nexus: written to ' + path);
       this.close();

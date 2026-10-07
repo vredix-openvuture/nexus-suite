@@ -10,6 +10,13 @@ class TFile {}
 class TFolder {}
 class TAbstractFile {}
 class Component {}
+/* Obsidian ties a rendered code block's lifetime to one of these: onunload fires
+   when the element goes away. The plugin uses it to stop a sketch pad's timers. */
+class MarkdownRenderChild extends Component {
+  constructor(containerEl) { super(); this.containerEl = containerEl; }
+  onload() {}
+  onunload() {}
+}
 class MarkdownView {}
 class FuzzySuggestModal {}
 class SuggestModal {}
@@ -134,7 +141,7 @@ function makeWorkspace(viewTypes) {
 module.exports = {
   makeWorkspace,
   Plugin, PluginSettingTab, Setting, Modal, ItemView, Notice, TFile, TFolder,
-  TAbstractFile, Component, MarkdownView, FuzzySuggestModal, SuggestModal, Menu,
+  TAbstractFile, Component, MarkdownRenderChild, MarkdownView, FuzzySuggestModal, SuggestModal, Menu,
   MenuItem, ButtonComponent, Platform, EditorSuggest, moment, requestUrl, normalizePath,
   debounce, setIcon, setTooltip, parseYaml, stringifyYaml, addIcon, getIcon,
   MarkdownRenderer: { render: async () => {}, renderMarkdown: async () => {} },

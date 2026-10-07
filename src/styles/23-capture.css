@@ -329,3 +329,118 @@ body.is-mobile .nx-cap-quicks { opacity: 1; }
   .nx-cap-pagethumb { width: 28px; height: 36px; }
   .nx-cap-pageacts { gap: 2px; }
 }
+
+/* ── The sketch shelf ──────────────────────────────────────────────────────
+   A sketchbook is drawn as a closed book, not as a thumbnail of its ink: a
+   stitched spine on the left, the cover in between, its page edges on the
+   right. A shelf answers which one is this and how thick is it; the drawing
+   itself is one tap away either way.
+
+   Every tone is MIXED FROM THE PALETTE, never a stored hex — a sidecar that
+   carried real colours would freeze one wallpaper into every book and go wrong
+   the moment the palette changed. The hex behind each var() is only what a
+   theme that sets no wallust variables falls back to. */
+.nx-cap-book {
+  --nx-bk-aubergine: color-mix(in srgb, var(--wl-color5, #C95E61) 24%, #241322);
+  --nx-bk-rainboots: color-mix(in srgb, var(--wl-color3, #4E68AB) 60%, #10142a);
+  --nx-bk-prussian:  color-mix(in srgb, var(--wl-color4, #1b3854) 86%, #0a141f);
+  --nx-bk-madder:    color-mix(in srgb, var(--wl-color1, #ce3737) 48%, #2a0f0d);
+  --nx-bk-claret:    color-mix(in srgb, var(--wl-color5, #C95E61) 48%, #240f14);
+  --nx-bk: var(--nx-bk-prussian);
+
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: var(--nx-hairline);
+  border-radius: 3px var(--nx-r-tile) var(--nx-r-tile) 3px;   /* nx-literal-ok: a bound spine edge is tighter than the fore edge — a picture of a book, not a control's corner */
+}
+.nx-cap-book[data-tone="aubergine"] { --nx-bk: var(--nx-bk-aubergine); }
+.nx-cap-book[data-tone="rainboots"] { --nx-bk: var(--nx-bk-rainboots); }
+.nx-cap-book[data-tone="prussian"]  { --nx-bk: var(--nx-bk-prussian); }
+.nx-cap-book[data-tone="madder"]    { --nx-bk: var(--nx-bk-madder); }
+.nx-cap-book[data-tone="claret"]    { --nx-bk: var(--nx-bk-claret); }
+
+.nx-cap-book-field { position: absolute; inset: 0; background-color: var(--nx-bk); }
+/* Solid is not "no pattern": it keeps the single light fall that stops a cover
+   from reading as a flat rectangle. */
+.nx-cap-book[data-pattern="solid"] .nx-cap-book-field {
+  background-image: linear-gradient(146deg, rgba(255, 255, 255, .10), transparent 62%);
+}
+.nx-cap-book[data-pattern="linen"] .nx-cap-book-field {
+  background-image:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, .055) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, .10) 0 1px, transparent 1px 3px);
+}
+.nx-cap-book[data-pattern="marble"] .nx-cap-book-field {
+  background-image:
+    radial-gradient(120% 70% at 18% 12%, rgba(255, 255, 255, .16), transparent 55%),
+    radial-gradient(90% 60% at 82% 78%, rgba(0, 0, 0, .30), transparent 60%),
+    repeating-linear-gradient(58deg, rgba(255, 255, 255, .05) 0 2px, transparent 2px 9px);
+}
+.nx-cap-book[data-pattern="ruled"] .nx-cap-book-field {
+  background-image: repeating-linear-gradient(0deg, rgba(255, 255, 255, .09) 0 1px, transparent 1px 8px);
+}
+
+.nx-cap-book-spine {
+  position: absolute; z-index: 2; inset: 0 auto 0 0; width: 13px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .42), rgba(255, 255, 255, .10) 55%, rgba(0, 0, 0, .34));
+  border-right: 1px solid rgba(0, 0, 0, .35);
+}
+/* The stitching. A dashed line down the middle of the spine and nothing else —
+   at 104px wide anything more detailed turns to mud. */
+.nx-cap-book-spine::after {
+  content: ''; position: absolute; inset: 10% auto 10% 50%; width: 1px;
+  transform: translateX(-.5px);
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .34) 0 4px, transparent 4px 9px);
+}
+
+.nx-cap-book-face {
+  position: absolute; z-index: 2; inset: 0; padding: var(--nx-sp-3) var(--nx-sp-2) var(--nx-sp-3) 19px;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+}
+/* Pressed into the cover: a dark line under a light one. Not the theme's text
+   colour — this sits on the cover, which knows nothing about the page behind
+   it. Three lines, because a book with a long name should still be readable
+   rather than trailing off after two words. */
+.nx-cap-book-name {
+  font-size: .74em; font-weight: 600; line-height: 1.25;
+  color: color-mix(in srgb, #fff 82%, var(--nx-bk));
+  text-shadow: 0 1px 0 rgba(0, 0, 0, .55), 0 -1px 0 rgba(255, 255, 255, .14);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+/* The fore edge: the pages you would run a thumb down. */
+.nx-cap-book-edges {
+  position: absolute; z-index: 3; inset: 4px 0 4px auto; width: 4px;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .30) 0 1px, rgba(0, 0, 0, .25) 1px 3px);
+}
+/* Above the fore edge (3) and the cover face (2), or the page strip paints over
+   the badge's right end — which is the end the number sits at. */
+.nx-cap-book .nx-cap-badge { z-index: 4; }
+.nx-cap-card.is-picked .nx-cap-book { outline: 2px solid var(--nx-accent, var(--interactive-accent)); outline-offset: 1px; }
+
+/* ── The cover picker ──────────────────────────────────────────────────────
+   Built from the tile's own class names, so the preview and the shelf can
+   never drift apart. */
+.nx-cover-preview { display: flex; justify-content: center; padding: var(--nx-sp-2) 0 var(--nx-sp-3); }
+.nx-cover-preview .nx-cap-book { width: 108px; aspect-ratio: 3 / 4; }
+.nx-cover-lbl {
+  font-size: .78em; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--nx-fg-muted, var(--text-muted));
+  margin-bottom: var(--nx-sp-1);
+}
+.nx-cover-tones { display: flex; gap: var(--nx-sp-2); margin-bottom: var(--nx-sp-3); }
+/* A swatch IS a control, so it takes the control radius rather than the book's
+   asymmetric one — it is a button showing a colour, not a picture of a book. */
+.nx-cover-sw {
+  flex: 1 1 0; aspect-ratio: 3 / 4; max-width: 56px;
+  border-radius: var(--nx-r-tile);
+  cursor: pointer;
+}
+.nx-cover-sw.is-on { outline: 2px solid var(--nx-accent, var(--interactive-accent)); outline-offset: 2px; }
+.nx-cover-pats { display: flex; flex-wrap: wrap; gap: var(--nx-sp-1); margin-bottom: var(--nx-sp-3); }
+.nx-cover-pat.is-on {
+  background: var(--nx-sf-2);
+  border-color: var(--nx-accent, var(--interactive-accent));
+  color: var(--nx-fg, var(--text-normal));
+}

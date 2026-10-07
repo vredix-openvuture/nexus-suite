@@ -58,8 +58,6 @@ const chatSrc = { path: 'Inbox/Quicknote/Buy the flux.md', basename: 'Buy the fl
 {
   const it = C.sketchItem(sketchDoc, { mtime: 9 });
   eq('sketch · the title is the display name', it.title, 'Firmware notes');
-  eq('sketch · how far along it is', it.sections, 3);
-  ok('sketch · whether it can be searched inside yet', it.hasOcr === true);
   eq('sketch · the stamp is the file, since a drawing has no frontmatter', it.stamp, 9);
   ok('sketch · a section is searchable', C.matchesQuery(it, 'irq'));
   ok('sketch · and so is read handwriting', C.matchesQuery(it, 'reset'));
@@ -444,6 +442,134 @@ const P = window.inkPagesLib;
   ok('pages · an embed the user added themselves is left alone', kept.indexOf('![[diagram.png]]') > 0);
   ok('pages · a name that merely CONTAINS a page name is not dropped',
      P.withPageEmbeds('![[xa.png]]\n![[a.png]]\n', [], ['a.png']).indexOf('![[xa.png]]') === 0);
+}
+
+// ── a sketch item is a BOOK, not a page ────────────────────────────────────
+{
+  const page = (id, title, extra) => Object.assign({
+    path: 'Inbox/Quicksketch/' + id + '.svg', id, display: title || id,
+    named: !!title, hasOcr: false, cover: null,
+    fields: { title: [], sections: [], notes: [], ocr: [] },
+  }, extra || {});
+
+  const one = page('sk-a', 'Physik LK');
+  const two = page('sk-b', '', { fields: { title: [], sections: ['irq'], notes: ['check the pull-ups'], ocr: [] } });
+  const three = page('sk-c', '', { hasOcr: true, fields: { title: [], sections: [], notes: [], ocr: ['reset line'] } });
+  const book = C.sketchItem(one, { mtime: 500 }, {
+    notePath: 'School/Physics.md', noteName: 'Physics',
+    paths: [one.path, two.path, three.path],
+    pageDocs: [two, three],
+  });
+
+  eq('book · the count is the note’s page list, not the sections in one file', book.pages, 3);
+  eq('book · every page is named, because a delete has to take them all',
+     book.paths, [one.path, two.path, three.path]);
+  eq('book · the card opens page one', book.path, one.path);
+  eq('book · and carries the note, without which the pane has no pages',
+     book.notePath, 'School/Physics.md');
+  ok('book · a word from page two finds the book', C.matchesQuery(book, 'pull-ups'));
+  ok('book · so does read handwriting from page three', C.matchesQuery(book, 'reset'));
+  ok('book · and the note’s own name', C.matchesQuery(book, 'physics'));
+
+  // The label is the bug this replaced: every sketch used to claim "one page".
+  eq('book · three pages say so', C.pagesLabel(book.pages), '3 pages');
+  eq('book · and one page is singular', C.pagesLabel(1), '1 page');
+  eq('book · a count of nothing still reads as one page, never "0 pages"', C.pagesLabel(0), '1 page');
+
+  // A drawing no note names is its own book of one — which is what it is.
+  const loose = C.sketchItem(page('sk-loose'), { mtime: 7 });
+  eq('book · a loose sketch is a book of one page', loose.pages, 1);
+  eq('book · and its page list is itself', loose.paths, ['Inbox/Quicksketch/sk-loose.svg']);
+  eq('book · with no note behind it', loose.notePath, '');
+
+  /* An id is an address, not a name. An unnamed sketch is better called by its
+     note — but a title written into the sidecar always wins. */
+  const unnamed = C.sketchItem(page('sk-x'), { mtime: 1 }, {
+    notePath: 'School/Physics.md', noteName: 'Physics', paths: ['Inbox/Quicksketch/sk-x.svg'], pageDocs: [],
+  });
+  eq('book · an unnamed sketch is called by its note', unnamed.title, 'Physics');
+  ok('book · and says the name was only borrowed', unnamed.named === false);
+  eq('book · a named one keeps its own name', book.title, 'Physik LK');
+  ok('book · and says the name was chosen', book.named === true);
+}
+
+// ── the cover: two names, never a colour ───────────────────────────────────
+{
+  const SC = window.sketchCover;
+
+  const a = SC.coverFor('sk-a1b2', null);
+  ok('cover · a sketch with none still gets one', SC.isTone(a.tone) && SC.isPattern(a.pattern));
+  eq('cover · and the same one every time', SC.coverFor('sk-a1b2', null).tone, a.tone);
+  ok('cover · which nobody chose', a.chosen === false);
+  // A flat shelf is the thing the hash is there to prevent.
+  {
+    const tones = ['sk-1', 'sk-2', 'sk-3', 'sk-4', 'sk-5', 'sk-6', 'sk-7', 'sk-8']
+      .map(id => SC.coverFor(id, null).tone);
+    ok('cover · and hashing spreads a shelf over more than one tone',
+       new Set(tones).size > 1, tones.join(','));
+  }
+
+  const picked = SC.coverFor('sk-a1b2', { tone: 'madder', pattern: 'marble' });
+  eq('cover · a chosen tone is used', picked.tone, 'madder');
+  eq('cover · and a chosen binding', picked.pattern, 'marble');
+  ok('cover · and it says so', picked.chosen === true);
+
+  /* Every field falls back on its own: one name from a future version must not
+     leave a book with no cover at all. */
+  const half = SC.coverFor('sk-a1b2', { tone: 'ultraviolet', pattern: 'ruled' });
+  eq('cover · an unknown tone falls back to the hashed one', half.tone, a.tone);
+  eq('cover · while the binding beside it is kept', half.pattern, 'ruled');
+  eq('cover · an unknown binding falls back to the default',
+     SC.coverFor('sk-a1b2', { tone: 'claret', pattern: 'holographic' }).pattern, SC.DEFAULT_PATTERN);
+  ok('cover · junk instead of a cover does not throw', !!SC.coverFor('sk-a1b2', 'blue').tone);
+
+  eq('cover · what gets stored is the choice', SC.coverValue('claret', 'marble'), { tone: 'claret', pattern: 'marble' });
+  /* The default binding is not written: a book that only picked a tone must
+     read the same as one written before bindings existed. */
+  eq('cover · the default binding is left out', SC.coverValue('claret', SC.DEFAULT_PATTERN), { tone: 'claret' });
+  eq('cover · and a reset writes nothing at all, so the hash takes over again',
+     SC.coverValue('', ''), undefined);
+  eq('cover · as does a pair of names nobody knows', SC.coverValue('mauve', 'holographic'), undefined);
+}
+
+// ── the sidecar keeps what the engine does not care about ──────────────────
+{
+  const empty = window.emptySketchSVG({});
+  const named = window.withSketchTitle(empty, 'Physik LK');
+  eq('sidecar · a rename is readable again', window.parseSketchSVG(named).title, 'Physik LK');
+
+  const covered = window.withSketchCover(named, { tone: 'madder', pattern: 'marble' });
+  const back = window.parseSketchSVG(covered);
+  eq('sidecar · so is a cover', back.cover, { tone: 'madder', pattern: 'marble' });
+  eq('sidecar · and setting one does not drop the name', back.title, 'Physik LK');
+  ok('sidecar · the strokes survive both', Array.isArray(back.strokes));
+
+  const cleared = window.withSketchCover(covered, undefined);
+  ok('sidecar · a reset removes the field rather than writing null',
+     window.parseSketchSVG(cleared).cover === undefined);
+  eq('sidecar · while an empty name clears the title the same way',
+     window.parseSketchSVG(window.withSketchTitle(covered, '')).title, undefined);
+
+  ok('sidecar · a file that is not a sketch is refused, not clobbered',
+     window.withSketchCover('<svg></svg>', { tone: 'claret' }) === null);
+
+  /* The trap this whole pair exists for: toSVGString writes the WHOLE metadata
+     block, so a field the surface is not handed is deleted by the next stroke.
+     Title and cover were being lost exactly that way. */
+  {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const surface = new window.NexusSketchSurface(host, {
+      W: 400, H: 300, title: 'Physik LK', cover: { tone: 'madder', pattern: 'marble' },
+      strokes: [{ color: '#111111', size: 4, thinning: 0, taper: 0, opacity: 1, pen: 'fountain', cap: 'round',
+                  points: [[20, 20, .5], [380, 280, .5]] }],
+    });
+    const round = window.parseSketchSVG(surface.toSVGString());
+    eq('sidecar · a stroke does not wipe the name', round.title, 'Physik LK');
+    eq('sidecar · nor the cover', round.cover, { tone: 'madder', pattern: 'marble' });
+    surface.destroy();
+    host.remove();
+  }
 }
 
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }

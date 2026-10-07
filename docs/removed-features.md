@@ -595,3 +595,100 @@ but harmless; the settings row is generated from `pinnableTabs()`, so it
 disappeared with the entry.
 
 To bring it back: one row in `pinnableTabs()` and the three selector lists.
+
+---
+
+## 8. Tasks & Calendar (`tasksCalendar`), the whole module
+
+Everything that was not the sidebar mini calendar or the planner block: the
+full-page calendar, local tasks and projects, the tasks page and its board mode,
+the `nexus-agenda` block, the calendar and tasks side panels and dashboard
+cards, note-as-task, and the Vikunja connection with its sync engine.
+
+**Why:** the user's call. The day's text is written in the planner block and
+marked in the mini calendar; todos live in Vikunja itself, not in a second copy
+inside the vault.
+
+**Your data is not deleted.** Task and project notes (`nexus-type: project`,
+task notes, `nexus-task: true`, `bucket:` lines) stay in the vault as ordinary
+Markdown. An old ```` ```nexus-agenda ```` block renders as a plain code block.
+The sync cache under `<plugin>/.nexus-calendar/` (or the vault data folder) is
+no longer read or written.
+
+The last commit in which all of this still existed in full:
+
+```
+7adce84   (release v0.31.2)
+```
+
+### Deleted whole
+
+| File | What it was |
+|---|---|
+| `src/lib/vikunja.js` | 212 lines. `VikunjaClient` — the REST client: projects, tasks, buckets, project backgrounds. |
+| `src/lib/sync.js` | 367 lines. The three-way task sync against Vikunja (`syncVikunja`, `applyResolution`), its state file under `dataDir`. |
+| `src/lib/tasks.js` | 558 lines. Projects and tasks as Markdown: project notes with a live `## Tasks` checklist, one note per task, repeat rules, `nexus-task: true`, the one-off rename of id-named task notes. |
+| `src/lib/taskboard.js` | 324 lines. `NexusTaskBoard` — the board mode of the tasks page; Vikunja projects used their server buckets. |
+| `src/lib/agenda.js` | 446 lines. `NexusAgenda` — the `nexus-agenda` code block (one day: its text, due tasks, backlinks) and the task rows the cards and panels reused. |
+| `src/lib/datadir.js` | 44 lines. Where the plugin kept its own JSON (`dataLocation` / `dataFolder`); only the task sync still used it. |
+| `src/modals/conflict.js` | 81 lines. `NexusConflictModal` — server vs. local when a synced task collided. |
+| `src/modals/task.js` | 79 lines. `NexusTaskModal` — quick-add a task. |
+| `src/views/calendarpage.js` | 232 lines. `NexusCalendarPageView` — the full-page month with writable day texts and due tasks. |
+| `src/views/taskspage.js` | 369 lines. `NexusTasksPageView` — project tree + task list, List/Board switch. |
+| `src/views/sidebar.js` | 149 lines. `NexusSideView` — the calendar and tasks side panels. |
+| `src/styles/13-calendar-page.css` | 139 lines. `.nx-calpage`, `.nx-cp-*` (calendar page), `.nx-conflict-*`, `.nx-account-empty`. `.nx-set-list` moved to `09-settings-inputs.css`. |
+| `src/styles/17-agenda.css` | 207 lines. `.nx-agenda`, `.nx-ag-*`, `.nx-side`, `.nx-side-*`. |
+| `src/styles/18-tasks-page.css` | 268 lines. `.nx-tp`, `.nx-tp-*`. |
+| `test/tasks.html` | 148 lines. The harness page for `lib/tasks.js`. |
+
+### Cut from the files that stay
+
+| File | What went |
+|---|---|
+| `src/main.js` | The requires above; the `agenda` module guard; views `nx-calendar-page`, `nx-tasks`, `nx-side-calendar`, `nx-side-tasks` and their `detachLeavesOfType` lines; the two ribbon icons (`calendar-check`, `list-checks`); `openCalendarPage`, `openTasksPage`, `openSidePanel`, `refreshSidePanels`, `syncTaskCal`, `queueTaskSync`, `migrateTaskNames`, `toggleNoteTask`; the startup sync, the sync interval and the project-checklist `modify` watcher; the Vikunja branch of `testConnection`; the `calendar` entry of `pinnableTabs()`; the `tasksCalendar` accessor block in `loadSettings` (`accounts` → `devices[id].taskAccounts`) and the German→English task-bucket rename. |
+| `src/settings.js` | The *Tasks & Calendar* tab (`tTasksCalendar`): data location, sync schedule, conflict policy, task accounts, todo folders. The *Task board* columns under Kanban. Chatter's *Track new notes as tasks*. The connection list is vault-sync only. |
+| `src/constants.js` | `CAL_PAGE_VIEW`, `TASKS_VIEW`, `SIDE_CAL_VIEW`, `SIDE_TASKS_VIEW`, `TASK_BUCKETS`, `DEFAULT_SETTINGS.tasksCalendar`, `NX_MODULES.tasksCalendar`, `quicknote.asTask`, `pinnedTabs.calendar`. |
+| `src/views/homepage.js` | The `calendar` and `tasks` cards (`_wCalendar`, `_wTasks`, the agenda/week/month renderers, `_addCalendar`, `_addTasks`, their menu entries). |
+| `src/modals/cards.js` | `NexusCalendarCardConfigModal`, `NexusTaskCardConfigModal`. |
+| `src/modals/account.js` | The Vikunja form (`_renderVikunja`) and its save branch — it adds the vault-sync server only. |
+| `src/modals/quicknote.js`, `src/lib/quicknote.js` | The *Track the note as a task* box and the `nexus-task: true` line it wrote. |
+| `src/lib/devicesettings.js` | The `tasksCalendar.accounts` → `taskAccounts` entry of `LEGACY_KEYS` and the `keepAs` / `accountsBeforeDeviceStore` mechanism only it used. |
+| CSS | `body.nx-pin-cal` (`01-core.css`, `21-style-plain.css`), the calendar/tasks card rules in `04-homepage.css` (`.nx-home-cal-*`, `.nx-home-week-*`, `.nx-home-tasks-body`), the task board `.nx-tb*` selectors in `20-kanban.css` and `21-style-plain.css`, `.nx-tp-*` / `.nx-agenda` in `21-style-plain.css` and `19-touch.css`, `.nx-qn-row` / `.nx-qn-check` in `22-planner.css`. |
+
+Commands removed: `nexus-open-calendar-page`, `nexus-open-tasks-page`,
+`nexus-open-calendar-sidebar`, `nexus-open-tasks-sidebar`, `nexus-sync-taskcal`,
+`nexus-new-task`, `nexus-new-project`, `nexus-track-note-as-task` and
+`nexus-insert-agenda` (*Insert an agenda block*).
+
+### What moved instead of going
+
+`weekStart` and `dayTextKey` were `tasksCalendar` settings but serve the mini
+calendar and the planner, so they now live in `DEFAULT_SETTINGS.calendar`
+(*Settings → Mini calendar*, together with the planner-migration button).
+`lib/helpers.js · nxWeekStartDow` and `lib/daytext.js · dayTextKey` read them
+there.
+
+### Settings migration
+
+`main.js · dropTasksCalendar` runs at the end of `loadSettings`:
+
+- `tasksCalendar.weekStart` / `dayTextKey` → `calendar.*`, unless `data.json`
+  already has a value under `calendar`;
+- the localStorage credential `nexus-suite-cred-<id>` of every task account
+  found (`tasksCalendar.accounts`, `accountsBeforeDeviceStore`, every
+  `devices[*].taskAccounts`) is removed — never `nexus-suite-cred-vaultsync`;
+- `devices[*].taskAccounts`, `tasksCalendar` and `pinnedTabs.calendar` are
+  deleted, and dashboard cards of type `calendar` / `tasks` are dropped from
+  `homepage.widgets` and every `homepage.profiles[*].widgets`.
+
+A device that still runs an older build reads the same `data.json`; once a newer
+device has saved, the older one finds no `tasksCalendar` and falls back to its
+defaults. Obsidian keeps any saved workspace leaf of a removed view type as an
+empty tab; nothing in the plugin iterates them.
+
+### To bring it back
+
+`git show 7adce84:<path>` for each deleted file, then the cut list above in
+reverse. The settings migration is one-way: it deleted `tasksCalendar` from
+`data.json`, so the module would start from its defaults — accounts have to be
+added again on each device.

@@ -2,10 +2,10 @@
 
 /* ============================================================================
  *  NEXUS SUITE · lib · the day's text
- *  What a day is FOR, written in the calendar and kept in that day's own note.
+ *  What a day is FOR, written in the planner and kept in that day's own note.
  *
  *  It lives in the daily note's FRONTMATTER, under a key you choose (default
- *  `important`). That is the whole point: the calendar is a way to write it and
+ *  `important`). That is the whole point: the planner is a way to write it and
  *  to see a month of it at once, but the text belongs to the note, is findable
  *  by Obsidian's own search, survives without this plugin, and is one field a
  *  Dataview query or a template can read.
@@ -19,7 +19,7 @@ const { getDailyNoteSettings, ensureDailyNote } = require('./helpers.js');
 const DEFAULT_KEY = 'important';
 
 function dayTextKey(plugin) {
-  const s = (plugin && plugin.settings && plugin.settings.tasksCalendar) || {};
+  const s = (plugin && plugin.settings && plugin.settings.calendar) || {};
   const key = String(s.dayTextKey == null ? DEFAULT_KEY : s.dayTextKey).trim();
   return key || DEFAULT_KEY;
 }

@@ -85,6 +85,78 @@ function resolvePaperWidth(available, maxWidth) {
   return Math.min(available, maxWidth);
 }
 
+/* ── Paper type ───────────────────────────────────────────────
+   What SHAPE the paper is, as opposed to what colour it is:
+
+     endless    one sheet of a fixed width that grows downward forever
+     sectioned  the same, but cut into A4 pages with a gap between them, so an
+                export has real page edges and a long note has landmarks
+     mindmap    no sheet at all — a camera over an unbounded plane
+
+   The three are one field because they are mutually exclusive: a page break on
+   an infinite plane is not a thing, and neither is a camera on a fixed sheet. */
+const PAPER_TYPES = ['endless', 'sectioned', 'mindmap'];
+const A4_RATIO = 297 / 210;      // long side / short side
+const SHEET_GAP_FRAC = 0.024;    // gap between two sheets, as a fraction of the sheet width (≈ 5 mm on A4)
+
+function sheetGap(W) { return Math.max(4, Math.round(W * SHEET_GAP_FRAC)); }
+/* One page, in canvas units. The canvas is always W units wide, so the page
+   height is what carries the orientation. */
+function sheetHeight(W, landscape) {
+  return Math.round(landscape ? W / A4_RATIO : W * A4_RATIO);
+}
+function sheetPitch(W, landscape) { return sheetHeight(W, landscape) + sheetGap(W); }
+/* How many whole pages it takes to cover H, and where each one starts. Never
+   fewer than one: a blank sectioned pad is still a sheet of paper. */
+function sheetCount(W, H, landscape) {
+  const pitch = sheetPitch(W, landscape);
+  return Math.max(1, Math.ceil((Math.max(0, H) + sheetGap(W)) / pitch));
+}
+function sheetPages(W, H, landscape) {
+  const pitch = sheetPitch(W, landscape);
+  const h = sheetHeight(W, landscape);
+  const out = [];
+  for (let i = 0, n = sheetCount(W, H, landscape); i < n; i++) out.push({ i, y: i * pitch, h });
+  return out;
+}
+/* Sectioned paper only ever ends at a page edge — half a sheet of paper is not
+   something you can hand to a printer. */
+function snapSheetHeight(W, H, landscape) {
+  return sheetCount(W, H, landscape) * sheetPitch(W, landscape) - sheetGap(W);
+}
+
+/* ── The mindmap camera ───────────────────────────────────────────
+   An unbounded plane has no scrollbars, so the viewBox IS the scroll position.
+   Zooming has to hold one point of the paper still under the fingers, or a
+   pinch walks the drawing out from under them. (fx, fy) is that point as a
+   fraction of the element. */
+function zoomAbout(view, factor, fx, fy, minW, maxW) {
+  const w = Math.max(minW, Math.min(maxW, view.w * (factor > 0 ? factor : 1)));
+  const k = w / view.w;                       // what the clamp actually allowed
+  const h = view.h * k;
+  return {
+    x: view.x + (view.w - w) * (fx == null ? 0.5 : fx),
+    y: view.y + (view.h - h) * (fy == null ? 0.5 : fy),
+    w, h,
+  };
+}
+
+/* Bounding box of everything drawn, or null for an empty page. An infinite
+   canvas has no edges of its own, so this is what an export is cropped to. */
+function strokeBounds(strokes) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const st of strokes || []) {
+    const r = (st.size || 6) / 2;
+    for (const p of st.points || []) {
+      if (p[0] - r < minX) minX = p[0] - r;
+      if (p[1] - r < minY) minY = p[1] - r;
+      if (p[0] + r > maxX) maxX = p[0] + r;
+      if (p[1] + r > maxY) maxY = p[1] + r;
+    }
+  }
+  return minX === Infinity ? null : { minX, minY, maxX, maxY };
+}
+
 /* ── Ruler ──────────────────────────────────────────────────────────────────
    A straight edge is a constraint on input, not an object on the page: while it
    is on, every sample is projected onto one line, so the pen slides along it
@@ -112,6 +184,9 @@ function projectToLine(ax, ay, dir, x, y) {
 }
 
 module.exports = {
+  PAPER_TYPES, A4_RATIO, SHEET_GAP_FRAC,
+  sheetGap, sheetHeight, sheetPitch, sheetCount, sheetPages, snapSheetHeight,
+  zoomAbout, strokeBounds,
   RULER_FREE_MIN, rulerDirection, projectToLine,
   FLING_FRICTION, FLING_MIN_V, FLING_SAMPLE_MS, FLING_MAX_V,
   flingVelocity, flingStep,

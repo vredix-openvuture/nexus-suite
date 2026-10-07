@@ -16,7 +16,7 @@ rename.
 For one class at a time:
 
 1. Change the JS that creates the element to emit the shared class plus its
-   modifiers, e.g. `createDiv('nx-tp-icon')` → `createDiv('nx-btn is-icon is-quiet')`.
+   modifiers, e.g. `createDiv('nx-kb-tool')` → `createDiv('nx-btn is-icon is-quiet')`.
 2. Delete the alias rule in the module file.
 3. Keep only the declarations the element genuinely needs beyond the shared one
    (a position, an accent tint, a scrim) and scope them to the new class.
@@ -60,20 +60,11 @@ A rename is finished when the module file has no rule left that sets `height`,
 | `.nx-sk-palette-add` | `is-icon` + `.nx-list-add` | `12-sketch.css` |
 | `.nx-sketch-enter` | `is-icon` (+ opaque ground) | `12-sketch.css` |
 | `.nx-skpick-note` | — | `12-sketch.css` |
-| `.nx-cp-btn` | — | `13-calendar-page.css` |
-| `.nx-cp-primary` | `is-primary` | `13-calendar-page.css` |
-| `.nx-cp-segbtn` | `is-quiet` (inside `.nx-cp-seg`) | `13-calendar-page.css` |
-| `.nx-cp-calpanel-x` | `is-icon is-sm is-quiet` | `13-calendar-page.css` |
 | `.nx-tagren-bar button` | — | `14-explorer-companions.css` |
-| `.nx-ag-tool` | `is-icon is-quiet` | `17-agenda.css` |
-| `.nx-side-tool` | `is-icon is-sm is-quiet` | `17-agenda.css` |
-| `.nx-tp-icon` | `is-icon is-quiet` | `18-tasks-page.css` |
-| `.nx-tp-chev` | `is-icon is-sm` (+ scrim) | `18-tasks-page.css` |
-| `.nx-tp-segbtn` | `is-quiet` (inside `.nx-tp-seg`) | `18-tasks-page.css` |
 | `.nx-kb-tool` | `is-icon is-quiet` (also the folder board's view buttons and gear) | `20-kanban.css` |
 | `.nx-kb-col-menu` | `is-icon is-sm is-quiet` | `20-kanban.css` |
 | `.nx-kb-card-menu` | `is-icon is-sm is-quiet` | `20-kanban.css` |
-| `.nx-kb-add` / `.nx-tb-add` | `.nx-list-add` | `20-kanban.css` |
+| `.nx-kb-add` | `.nx-list-add` | `20-kanban.css` |
 | `.nx-pl-tool` | `is-icon is-sm is-quiet` | `22-planner.css` |
 | `.nx-pl-open` | `is-icon is-sm is-quiet` | `22-planner.css` |
 | `.nx-qn-record` | — | `22-planner.css` |
@@ -89,12 +80,10 @@ A rename is finished when the module file has no rule left that sets `height`,
 | `.nx-skpick-search` | `is-grow` | `12-sketch.css` |
 | `.nx-tagren-input` | `is-grow` | `14-explorer-companions.css` |
 | `.nx-kb-search` | `is-short` | `20-kanban.css` |
-| `.nx-tp-select` | — (a `<select>` keeps an automatic width) | `18-tasks-page.css` |
-| `.nx-tp-new-input` | `is-grow` | `18-tasks-page.css` |
 
 Deliberately **not** `.nx-input`, because the point of each is that it does not
-look like a field: `.nx-pl-input` (writing on paper), `.nx-kb-add-input` /
-`.nx-tb-add-input` (inside the dashed add row), `.nx-sk-palname` (inline rename
+look like a field: `.nx-pl-input` (writing on paper), `.nx-kb-add-input` (inside the dashed add
+row), `.nx-sk-palname` (inline rename
 with a dashed underline), `.nx-sk-colorinput` (a native colour swatch).
 
 ## Rows → `.nx-row`
@@ -107,13 +96,7 @@ with a dashed underline), `.nx-sk-colorinput` (a native colour swatch).
 | `.nx-sk-pen` | `12-sketch.css` |
 | `.nx-sk-palrow` | `12-sketch.css` |
 | `.nx-sk-menuitem` | `12-sketch.css` |
-| `.nx-cp-calrow` | `13-calendar-page.css` |
 | `.nx-iconlist-row` (inside an Obsidian `.setting-item`) | `14-explorer-companions.css` |
-| `.nx-ag-row` | `17-agenda.css` |
-| `.nx-ag-link` | `17-agenda.css` |
-| `.nx-tp-all` | `18-tasks-page.css` |
-| `.nx-tp-sub` | `18-tasks-page.css` |
-| `.nx-tp-task` | `18-tasks-page.css` |
 
 ## Two defects left in `00-tokens.css` (owned elsewhere)
 

@@ -2,11 +2,10 @@
 
 /* ============================================================================
  *  NEXUS SUITE · modals · a connection
- *  Adding a connection — a Vikunja account, or the WebDAV server the vault
- *  syncs against. Both kinds are declared here and never edited afterwards: the
- *  fields that make up a connection are a unit, and half-changing one produces
- *  something that fails at the next sync instead of at the moment you typed it.
- *  Change one by removing it and adding it again.
+ *  Adding the WebDAV server the vault syncs against. A connection is declared
+ *  here and never edited afterwards: the fields that make it up are a unit, and
+ *  half-changing one produces something that fails at the next sync instead of
+ *  at the moment you typed it. Change one by removing it and adding it again.
  *
  *  Secrets go to localStorage (device-local, never synced); the rest goes to
  *  the per-device store, because a connection is this machine's, not the
@@ -19,9 +18,10 @@ class NexusAccountModal extends Modal {
   constructor(plugin, connection, onSave) {
     super(plugin.app);
     this.plugin = plugin;
-    const given = connection || {};
-    this.kind = given.kind === 'vaultsync' ? 'vaultsync' : 'vikunja';
-    this.entry = { kind: this.kind, label: '', serverUrl: '', url: '', username: '' };
+    // Vault sync is the only kind left (the Vikunja accounts went with the
+    // tasks module, see docs/removed-features.md).
+    this.kind = 'vaultsync';
+    this.entry = { kind: this.kind, label: '', url: '', username: '' };
     this.secret = '';
     this.onSave = onSave;
   }
@@ -29,10 +29,8 @@ class NexusAccountModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('nx-account-modal');
-    contentEl.createEl('h3', { text: this.kind === 'vaultsync' ? 'Add a server' : 'Add an account' });
-
-    if (this.kind === 'vaultsync') this._renderVaultSync(contentEl);
-    else this._renderVikunja(contentEl);
+    contentEl.createEl('h3', { text: 'Add a server' });
+    this._renderVaultSync(contentEl);
 
     new Setting(contentEl).setName('Connection').setDesc('Ask the server whether it is there and whether it knows you.')
       .addButton(b => b.setButtonText('Test').setCta().onClick(() => this._test(b)));
@@ -40,15 +38,6 @@ class NexusAccountModal extends Modal {
     const foot = contentEl.createDiv('nx-event-foot');
     foot.createDiv().style.flex = '1';
     foot.createEl('button', { text: 'Save', cls: 'mod-cta' }).onclick = () => this._save();
-  }
-
-  _renderVikunja(e) {
-    new Setting(e).setName('Label').setDesc('What to call it in the list, e.g. Vikunja.')
-      .addText(t => t.setValue(this.entry.label).onChange(v => this.entry.label = v));
-    new Setting(e).setName('Server URL').setDesc('Vikunja base URL, e.g. https://vikunja.example (no /api needed).')
-      .addText(t => { t.setValue(this.entry.serverUrl).onChange(v => this.entry.serverUrl = v.trim()); t.inputEl.style.width = '100%'; });
-    new Setting(e).setName('API token').setDesc('A Vikunja API token (Settings → API tokens in Vikunja). Device-local, never synced — so if this device is lost you revoke this one token and no other device notices.')
-      .addText(t => { t.inputEl.type = 'password'; t.setValue(this.secret).onChange(v => this.secret = v); });
   }
 
   _renderVaultSync(e) {
@@ -73,22 +62,12 @@ class NexusAccountModal extends Modal {
   }
 
   async _save() {
-    if (this.kind === 'vaultsync') {
-      if (!this.entry.url) { new Notice('Nexus: a server needs a URL.'); return; }
-      this.plugin.setCredential('vaultsync', { username: this.entry.username, secret: this.secret });
-      await this.plugin.setDeviceSetting('vaultSyncUrl', this.entry.url);
-      await this.plugin.setDeviceSetting('vaultSyncDeviceName', this.entry.label);
-      if (this.plugin.vaultSync) this.plugin.vaultSync.schedule();
-      new Notice('Server saved: ' + this.entry.url);
-    } else {
-      if (!this.entry.serverUrl) { new Notice('Nexus: an account needs a server URL.'); return; }
-      const account = { id: 'acc-' + Date.now().toString(36), kind: 'vikunja',
-        label: this.entry.label || 'Vikunja', serverUrl: this.entry.serverUrl };
-      this.plugin.settings.tasksCalendar.accounts.push(account);
-      this.plugin.setCredential(account.id, { secret: this.secret });
-      await this.plugin.saveSettings();
-      new Notice('Account saved: ' + account.label);
-    }
+    if (!this.entry.url) { new Notice('Nexus: a server needs a URL.'); return; }
+    this.plugin.setCredential('vaultsync', { username: this.entry.username, secret: this.secret });
+    await this.plugin.setDeviceSetting('vaultSyncUrl', this.entry.url);
+    await this.plugin.setDeviceSetting('vaultSyncDeviceName', this.entry.label);
+    if (this.plugin.vaultSync) this.plugin.vaultSync.schedule();
+    new Notice('Server saved: ' + this.entry.url);
     if (this.onSave) this.onSave();
     this.close();
   }

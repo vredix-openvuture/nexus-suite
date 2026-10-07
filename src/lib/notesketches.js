@@ -88,4 +88,31 @@ async function removePage(plugin, file, id) {
   });
 }
 
-module.exports = { newId, idsOf, idsOfFile, writeIds, nextId, prevId, pageOf, addPage, removePage };
+/* ── The way back: which note owns a page ────────────────────────────────────
+   Only the forward direction is stored — a note names its pages — so finding
+   the owner of a drawing means reading every note's frontmatter once. The
+   capture hub needs it for every tile it draws, which is why this returns the
+   WHOLE map in one sweep rather than answering one id at a time.
+
+   The entry carries the note's full page list, so a caller that has an id also
+   has the book it is a page of: how many pages, in what order, and which files
+   they are. Without that the hub could only ever say "one page". */
+function ownerIndex(app) {
+  const out = new Map();
+  const files = (app && app.vault && app.vault.getMarkdownFiles) ? app.vault.getMarkdownFiles() : [];
+  for (const file of files) {
+    const ids = idsOfFile(app, file);
+    if (!ids.length) continue;
+    for (let i = 0; i < ids.length; i++) {
+      /* The first note to claim an id keeps it. Two notes naming the same page
+         is a hand-edit, not a state the plugin can produce, and answering with
+         the same one every time beats answering with whichever the vault
+         happened to list last. */
+      if (out.has(ids[i])) continue;
+      out.set(ids[i], { path: file.path, basename: file.basename, ids: ids, pages: ids.length, page: i + 1 });
+    }
+  }
+  return out;
+}
+
+module.exports = { newId, idsOf, idsOfFile, writeIds, nextId, prevId, pageOf, addPage, removePage, ownerIndex };

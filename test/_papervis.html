@@ -1,0 +1,71 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>paper types — a look</title>
+<link rel="stylesheet" href="plugin/styles.css">
+<style>
+:root {
+  --background-primary: #1e1e1e; --background-primary-alt: #262626;
+  --background-secondary: #252525; --background-secondary-alt: #1a1a1a;
+  --background-modifier-border: #3a3a3a;
+  --text-normal: #dcddde; --text-muted: #999; --text-faint: #666;
+  --text-on-accent: #fff;
+  --text-accent: #fb6734; --interactive-accent: #fb6734;
+  --radius-m: 8px; --radius-s: 5px;
+  --font-interface: system-ui, sans-serif;
+}
+body { margin: 0; background: #141414; color: #dcddde; font-family: system-ui, sans-serif; padding: 24px; }
+h2 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #888; margin: 26px 0 8px; font-weight: 700; }
+h2:first-child { margin-top: 0; }
+.row { display: flex; gap: 18px; align-items: flex-start; }
+.box { width: 300px; overflow: hidden; border: 1px solid #333; border-radius: 8px; }
+.note { font-size: 12px; color: #7d7d7d; margin: 4px 0 0; }
+.svg-icon { display:block; width:17px; height:17px; border:1.2px solid currentColor; border-radius:3px; opacity:.6; }
+</style></head><body>
+<div id="stage"></div>
+<script src="bundle.js"></script>
+<script>
+const stage = document.getElementById('stage');
+const S = window.NexusSketchSurface;
+const ink = (pts) => ({ color: '#2f2f2f', size: 5, thinning: .5, taper: 8, opacity: 1, pen: 'fountain', cap: 'round', points: pts });
+const scribble = (ox, oy) => ink([[ox,oy,.4],[ox+60,oy+40,.7],[ox+120,oy-10,.6],[ox+190,oy+55,.5],[ox+250,oy+10,.4]]);
+
+function box(label, opts, after) {
+  const h = document.createElement('h2'); h.textContent = label; stage.appendChild(h);
+  const b = document.createElement('div'); b.className = 'box'; stage.appendChild(b);
+  const pad = document.createElement('div'); pad.className = 'nx-sketch-pad'; b.appendChild(pad);
+  const s = new S(pad, Object.assign({ W: 800, H: 400, paper: 'paper', paperStyle: false,
+    bgType: 'grid', bgSize: 27, bgOpacity: .16, bgColor: '#334155' }, opts));
+  if (after) after(s);
+  return s;
+}
+
+box('endless — one sheet, grows down', { strokes: [scribble(60, 120)] });
+box('sectioned, A4 landscape — two pages and the gap between them',
+    { paperType: 'sectioned', sheetLandscape: true, strokes: [scribble(60, 120), scribble(60, 700)] },
+    s => s.setHeight(1400));
+box('sectioned, black paper', { paperType: 'sectioned', sheetLandscape: true, paper: 'black', strokes: [scribble(60, 120)] },
+    s => s.setHeight(1400));
+box('sectioned on native (transparent) paper — only the edge marks the page',
+    { paperType: 'sectioned', sheetLandscape: true, paper: 'native', bgType: 'none', strokes: [scribble(60, 120)] },
+    s => s.setHeight(1400));
+box('mindmap — camera over a plane, panned into negative space', { paperType: 'mindmap',
+    strokes: [scribble(-200, -60), scribble(120, 220), scribble(340, -160)] },
+    s => { s.viewX = -300; s.viewY = -260; s.viewW = 1400; s._applyView(); });
+
+// The page list, as the modal builds it.
+const h = document.createElement('h2'); h.textContent = 'pages — the number on the picture, the name under it'; stage.appendChild(h);
+const grid = document.createElement('div'); grid.className = 'nx-skpick-grid'; grid.style.maxWidth = '560px';
+stage.appendChild(grid);
+['Kickoff notes', '', 'Wiring'].forEach((nm, i) => {
+  const card = document.createElement('div');
+  card.className = 'nx-skpick-card' + (i === 1 ? ' is-current' : '');
+  const thumb = document.createElement('div'); thumb.className = 'nx-skpick-thumb';
+  thumb.style.background = '#f7f6f2'; card.appendChild(thumb);
+  const idx = document.createElement('div'); idx.className = 'nx-skpick-idx'; idx.textContent = String(i + 1);
+  card.appendChild(idx);
+  const name = document.createElement('input');
+  name.className = 'nx-skpick-name nx-skpick-rename'; name.type = 'text';
+  name.placeholder = 'Page ' + (i + 1); name.value = nm;
+  card.appendChild(name);
+  grid.appendChild(card);
+});
+</script></body></html>

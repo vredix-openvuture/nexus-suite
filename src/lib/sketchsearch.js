@@ -33,10 +33,17 @@ function sketchDocument(path, data) {
   const ocr = (data.ocr || []).map(o => lower(typeof o === 'string' ? o : o.text));
   return {
     path,
+    /* The sidecar's filename IS the sketch id (see main.js · _sketchPath), and
+       the id is how a note names its pages — so carrying it here is what lets
+       the capture hub bind a drawing back to the note it belongs to. */
+    id: path.split('/').pop().replace(/\.svg$/i, ''),
     title: lower(data.title),
     display: String(data.title || path.split('/').pop().replace(/\.svg$/i, '')),
     fields: { title: [lower(data.title)], sections, notes, ocr },
     hasOcr: ocr.length > 0,
+    named: !!(data.title && String(data.title).trim()),
+    // The book cover, straight from the sidecar — see lib/sketchcover.js.
+    cover: data.cover || null,
   };
 }
 

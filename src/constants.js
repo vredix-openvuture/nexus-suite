@@ -18,17 +18,9 @@ const INK_MAX_DIM = 2000;   // px, longest edge — a "scan" never needs to be b
 
 const CAL_VIEW = 'nx-calendar';
 
-const CAL_PAGE_VIEW = 'nx-calendar-page';   // full-page month/week/day calendar (sidebar CAL_VIEW stays)
-
-const TASKS_VIEW = 'nx-tasks';              // project/task board (later milestones)
-
 const HOME_VIEW = 'nx-homepage';
 
 const SKETCH_VIEW = 'nx-sketch-pane';   // one sketch as its own tab (split next to the note)
-
-/* The calendar/tasks cards as side panels (see views/sidebar.js) */
-const SIDE_CAL_VIEW = 'nx-side-calendar';
-const SIDE_TASKS_VIEW = 'nx-side-tasks';
 
 const TIMER_VIEW = 'nx-timers';   // running timers move here when the dashboard is left
 
@@ -40,11 +32,6 @@ const GALAXY_VIEW = 'nx-galaxy';
 const SCRATCH_VIEW = 'nx-scratch';
 const SIDE_CAPTURE_VIEW = 'nx-captures-side';
 const INK_VIEW = 'nx-ink-gallery';
-
-/* Columns of the task board when nothing else says otherwise. Also the
-   fallback at every read site: loadSettings only merges one level deep, so a
-   vault that already has `tasksCalendar.tasks` never sees a new nested key. */
-const TASK_BUCKETS = ['Backlog', 'In progress', 'Waiting', 'Done'];
 
 const DEFAULT_SETTINGS = {
   banner:     { enabled: true,  height: 250, fade: true, folder: 'attachments/banners', behindTabs: true,
@@ -68,24 +55,16 @@ const DEFAULT_SETTINGS = {
      them live in modals/search.js (FIELDS). */
   search:     { enabled: true, fields: { title: true, tags: true, headings: true, props: true, text: true } },
   typography: { enabled: true,  dashes: true, ellipsis: true, quotes: true, arrows: true, symbols: true },
-  calendar:   { enabled: true,  ribbon: true },
+  /* weekStart (mini calendar only; a planner block has its own `weekstart:`)
+     and dayTextKey belong to the calendar module. They lived under tasksCalendar
+     until that module was removed; loadSettings carries a saved value over.
+     weekStart: 'locale' | '0'..'6'. dayTextKey: the daily-note frontmatter
+     field that holds what a day is FOR (see lib/daytext.js). */
+  calendar:   { enabled: true,  ribbon: true, weekStart: 'locale', dayTextKey: 'important' },
   plannerMigrated: false,   // the one-off move of old planner lines into the daily notes
-  tasksCalendar: { enabled: false, ribbon: true, dataLocation: 'plugin', dataFolder: '_nexus',
- weekStart: 'locale',
-    syncOnStartup: true, syncIntervalMin: 15, conflictPolicy: 'server',   // 'server' | 'ask'
-    // accounts moved into the per-device store (devices[id].taskAccounts) —
-    // every device signs itself in. The name still works as a live alias, see
-    // loadSettings.
-
-    /* Which frontmatter field of a daily note holds what that day is FOR. The
-       month view writes it and reads it back — see lib/daytext.js. */
-    dayTextKey: 'important',
-    tasks: { projectsFolder: 'Tasks/Projects', itemsFolder: 'Tasks/Items', providerDefault: 'local', buckets: TASK_BUCKETS.slice() } },
   propertyHider: { enabled: true, hidden: [], reveal: false },
   callouts:   { enabled: true, migrated: false, items: [] },
   workspaces: { enabled: true, selectMode: 'release' },
-  /* NB: tasksCalendar.dataLocation ('plugin' | 'vault') decides where the
-     the plugin's own JSON lives — see datadir.dataDir(). */
   /* The galaxy: the vault's links laid out in three dimensions and drawn on an
      ordinary canvas. `drift` is the slow idle turn — the thing that makes it
      feel alive rather than parked — and it is the first setting anyone will
@@ -104,13 +83,11 @@ const DEFAULT_SETTINGS = {
     excludeFolders: [], supportedTypes: ['md', 'canvas', 'base'] },
   icons:      { enabled: true, map: {} },
   /* Kanban: the standalone ```nexus-kanban``` boards, both sources — the cards
-     inside the block and the notes of a folder — plus ```nexus-graph```. The
-     task board on the tasks page has no switch of its own: it is a way of
-     looking at the tasks module and lives and dies with it. */
+     inside the block and the notes of a folder — plus ```nexus-graph```. */
   kanban:     { enabled: true, buckets: ['Backlog', 'In progress', 'Done'],
                 notesFolder: '', boardsFolder: '', compact: false, statusProperty: 'status' },
-  /* The paper planner: a month on one screen with ONE line per day. Not the
-     tasks module — that answers what is due, this answers what a month is for. */
+  /* The paper planner: a month on one screen with ONE line per day — what a
+     month is for. */
   planner:    { enabled: true },
   /* Vault sync over WebDAV. Credentials are NOT here — they live in
      localStorage per device (plugin.getCredential), because data.json is a file
@@ -125,7 +102,7 @@ const DEFAULT_SETTINGS = {
      most builds send the audio to the browser vendor. */
   quicknote:  { enabled: true, folder: 'Inbox/Quicknote', engine: 'local',
     command: 'whisper-cli -f {in} -otxt -of {out} -l auto',
-    language: 'en-US', asTask: false, openAfter: true },
+    language: 'en-US', openAfter: true },
   /* url, deviceName, onStart and intervalMin are NOT here: they describe one
      machine and live in the per-device store (see lib/devicesettings.js).
      What is left is shared policy — the same answer on every device. */
@@ -143,6 +120,13 @@ const DEFAULT_SETTINGS = {
     excalidraw: { enabled: true } },
   quicksketch: { enabled: true, folder: 'Inbox/Quicksketch', ratio: '16:9',
     paper: 'paper',       // native | paper | white | black — solid fill + matching grid colour; per-note override via frontmatter `sketch-bg`
+    /* What SHAPE the paper is, which is a different question from its colour:
+         endless    one sheet of a fixed width, growing downward forever
+         sectioned  the same, cut into A4 pages with a gap — real page edges
+         mindmap    no sheet: a camera over a plane with no edges at all
+       Stored per sketch in its sidecar; this is only what a NEW one starts as. */
+    paperType: 'endless',
+    sheetLandscape: false,   // sectioned paper: A4 the wide way round
     paperStyle: true,     // subtle paper-grain texture overlay (independent of paper colour)
     invertOnDark: true,   // on a dark paper (black), lift only near-black ink so drawings stay readable
     bg: '#f7f6f2', ink: '#2f2f2f',
@@ -181,9 +165,9 @@ const DEFAULT_SETTINGS = {
   /* Nexus pages that live permanently at the tab bar as an icon (see
      applyPinnedTabs): pinned in Obsidian's own sense, close button hidden,
      reopened by the watchdog if something detaches them anyway. */
-  pinnedTabs: { home: false, calendar: false },
+  pinnedTabs: { home: false },
   /* Settings that belong to ONE machine, keyed by plugin.deviceId(): the sync
-     connection, its schedule, the task accounts. In data.json so they are
+     connection and its schedule. In data.json so they are
      synced and backed up, keyed so no device overwrites another's entry — the
      same arrangement homepage.profiles already uses. See lib/devicesettings.js. */
   devices:    {},
@@ -384,10 +368,9 @@ const NX_MODULES = {
   quicksketch:   { name: 'Quick Sketch', sub: 'Draw in a note with pen, touch or mouse' },
   inkCapture:    { name: 'Ink Capture',  sub: 'Scans and handwriting from other apps' },
   calendar:      { name: 'Mini calendar', sub: 'Month grid over your daily notes, in the sidebar' },
-  tasksCalendar: { name: 'Calendar',     sub: 'A month, what each day is for, and the tasks due on it' },
   search:        { name: 'Search',       sub: 'Weighted search over title, tags, headings, properties, text' },
   workspaces:    { name: 'Workspaces',   sub: 'Save and switch pane layouts' },
-  kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note, or every note of a folder — plus the board view of your tasks' },
+  kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note, or every note of a folder' },
   planner:       { name: 'Planner',      sub: 'A month on one screen, one line per day — the paper-calendar view' },
   vaultSync:     { name: 'Vault sync',   sub: 'The whole vault to a WebDAV server, with daily backups and conflict copies' },
   quicknote:     { name: 'Chatter',      sub: 'A note you speak instead of type' },
@@ -465,4 +448,4 @@ const ST_SYMBOL_RULES = [
   { m: '(tm)', r: '™', grp: 'symbols' },
 ];
 
-module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, HOME_VIEW, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, SCRATCH_VIEW, SIDE_CAPTURE_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, THEME_STYLES, PEN_LABELS, BAR_ITEMS, BAR_ITEM_IDS, BAR_DEFAULTS, BAR_MODES, SELECT_SHAPES, RULER_ANGLES, ST_SYMBOL_RULES, TASK_BUCKETS };
+module.exports = { IMG_EXT, INK_EXT, INK_DOWNSCALE_EXT, INK_MAX_DIM, CAL_VIEW, HOME_VIEW, SKETCH_VIEW, TIMER_VIEW, INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, SCRATCH_VIEW, SIDE_CAPTURE_VIEW, DEFAULT_SETTINGS, WMO, WMO_ICON, CARD_DEFS, NX_DEFAULT_ACTIONS, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_GREETINGS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, THEME_STYLES, PEN_LABELS, BAR_ITEMS, BAR_ITEM_IDS, BAR_DEFAULTS, BAR_MODES, SELECT_SHAPES, RULER_ANGLES, ST_SYMBOL_RULES };

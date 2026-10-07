@@ -46,7 +46,6 @@ body.is-mobile .nx-iconpicker-grid { grid-template-columns: repeat(auto-fill, mi
 body.is-mobile .nx-multirow-input,
 body.is-mobile .nx-proprow-key,
 body.is-mobile .nx-proprow-val,
-body.is-mobile .nx-tp-new-input,
 body.is-mobile .nx-iconpicker-search,
 body.is-mobile .nx-tagren-input,
 body.is-mobile .nx-banner-import-input { font-size: 16px; }

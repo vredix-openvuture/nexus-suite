@@ -1,0 +1,98 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>the sketch shelf — a look</title>
+<link rel="stylesheet" href="plugin/styles.css">
+<style>
+:root {
+  --background-primary: #1e1e1e; --background-primary-alt: #262626;
+  --background-secondary: #252525; --background-secondary-alt: #1a1a1a;
+  --background-modifier-border: #3a3a3a;
+  --text-normal: #dcddde; --text-muted: #999; --text-faint: #666;
+  --text-on-accent: #fff;
+  --text-accent: #fb6734; --interactive-accent: #fb6734;
+  --radius-m: 8px; --radius-s: 5px;
+  --font-interface: system-ui, sans-serif;
+  /* The wallust slots the covers are mixed from. These are the live
+     "Ember & Prussian" values, so this page shows what the tablet shows. */
+  --wl-color0: #0B0402; --wl-color1: #ce3737; --wl-color3: #4E68AB;
+  --wl-color4: #1b3854; --wl-color5: #C95E61; --wl-color6: #3d6d8c;
+}
+body { margin: 0; background: #141414; color: #dcddde; font-family: system-ui, sans-serif; padding: 24px; }
+h2 { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #888; margin: 26px 0 8px; font-weight: 700; }
+h2:first-child { margin-top: 0; }
+.row { display: flex; gap: 24px; align-items: flex-start; }
+.box { border: 1px solid #333; border-radius: 8px; padding: 14px; background: #1b1b1b; }
+.box.wide { width: 560px; }
+.box.panel { width: 280px; }
+.note { font-size: 12px; color: #7d7d7d; margin: 6px 0 0; }
+</style></head><body>
+<div id="stage"></div>
+<script src="bundle.js"></script>
+<script>
+/* The shelf drawn with the REAL adapter tile and the REAL stylesheet, at both
+   widths the capture hub actually has. Nothing here fakes the markup: a change
+   to the tile shows up on this page or it is not in the plugin. */
+const stage = document.getElementById('stage');
+const C = window.captureLib;
+
+const BOOKS = [
+  { id: 'sk-physics', title: 'Physik LK',       pages: 7,  cover: { tone: 'prussian', pattern: 'linen' } },
+  { id: 'sk-ideas',   title: 'Velumeron ideas', pages: 3,  cover: { tone: 'aubergine', pattern: 'marble' } },
+  { id: 'sk-kitchen', title: 'Kitchen rebuild', pages: 12, cover: { tone: 'madder', pattern: 'solid' } },
+  { id: 'sk-reading', title: 'Reading notes',   pages: 1,  cover: { tone: 'claret', pattern: 'ruled' } },
+  { id: 'sk-buddy',   title: 'PCB · buddy v3',  pages: 5,  cover: { tone: 'rainboots', pattern: 'linen' } },
+  { id: 'sk-morning', title: 'Morning pages, and a name long enough to need three lines', pages: 22, cover: null },
+];
+
+/* The adapter needs only these two off the plugin to build a tile. */
+const adapter = window.captureHub.sketchAdapter({
+  app: { vault: { getAbstractFileByPath: () => null }, workspace: {} },
+});
+
+function item(book) {
+  const paths = [];
+  for (let i = 0; i < book.pages; i++) paths.push('Inbox/Quicksketch/' + book.id + '-' + i + '.svg');
+  return C.sketchItem(
+    { path: paths[0], id: book.id, display: book.title, named: true, hasOcr: false,
+      cover: book.cover, fields: { title: [], sections: [], notes: [], ocr: [] } },
+    { mtime: Date.parse('2026-09-0' + ((book.pages % 7) + 1) + 'T10:00') },
+    { notePath: 'Notes/' + book.title + '.md', noteName: book.title, paths, pageDocs: [] });
+}
+
+function shelf(label, cls, cards, host) {
+  const col = document.createElement('div');
+  (host || stage).appendChild(col);
+  const h = document.createElement('h2'); h.textContent = label; col.appendChild(h);
+  const box = document.createElement('div'); box.className = 'box ' + cls; col.appendChild(box);
+  const hub = document.createElement('div'); hub.className = 'nx-cap'; box.appendChild(hub);
+  const grid = document.createElement('div'); grid.className = 'nx-cap-grid'; hub.appendChild(grid);
+  cards.forEach(book => {
+    const card = document.createElement('div');
+    card.className = 'nx-cap-card is-sketch';
+    grid.appendChild(card);
+    adapter.tile(item(book), card);
+  });
+  return box;
+}
+
+const row = document.createElement('div'); row.className = 'row'; stage.appendChild(row);
+shelf('main area · 560px', 'wide', BOOKS, row);
+shelf('sidebar · 280px', 'panel', BOOKS.slice(0, 4), row);
+
+/* Every tone against every binding — the grid the picker offers. */
+const h = document.createElement('h2'); h.textContent = 'every tone × every binding'; stage.appendChild(h);
+const all = document.createElement('div'); all.className = 'box wide'; stage.appendChild(all);
+const allGrid = document.createElement('div'); allGrid.className = 'nx-cap-grid'; all.appendChild(allGrid);
+window.sketchCover.COVER_TONES.forEach(tone => {
+  window.sketchCover.COVER_PATTERNS.forEach(pattern => {
+    const card = document.createElement('div');
+    card.className = 'nx-cap-card is-sketch';
+    allGrid.appendChild(card);
+    adapter.tile(C.sketchItem(
+      { path: 'x.svg', id: tone.id + '-' + pattern.id, display: tone.label + ' · ' + pattern.label,
+        named: true, hasOcr: false, cover: { tone: tone.id, pattern: pattern.id },
+        fields: { title: [], sections: [], notes: [], ocr: [] } },
+      { mtime: 0 }), card);
+  });
+});
+</script>
+</body></html>

@@ -29,8 +29,12 @@ fail=0
 echo "── tokens ──"
 "$(dirname "$0")/tokens.sh" || fail=1
 
-for page in test measure select canvas notesketch objects gestures export search kanban tasks planner sync daytext quicknote startup settings capture inkvault galaxy; do
-  result=$(chromium --headless --disable-gpu --no-sandbox --virtual-time-budget=6000 \
+for page in test measure select canvas notesketch objects gestures export search kanban planner sync daytext quicknote startup settings capture inkvault galaxy; do
+  # The tap tests have to sit out real multi-tap windows, several times over, so
+  # that page needs a bigger clock. Everything else is done long before 6 s of
+  # virtual time, and a shared ceiling would only hide a page that hangs.
+  case "$page" in canvas) budget=14000 ;; *) budget=6000 ;; esac
+  result=$(chromium --headless --disable-gpu --no-sandbox --virtual-time-budget="$budget" \
     --dump-dom "http://localhost:$PORT/$page.html" 2>/dev/null |
     python3 -c "
 import sys, re, html

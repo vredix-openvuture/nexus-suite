@@ -16,7 +16,6 @@ const sync = require('./vaultsync.js');
 const zip = require('./zip.js');
 const { WebDavClient } = require('./webdav.js');
 
-const STATE_PATH = '.obsidian/plugins/nexus-suite/sync-state.json';
 const BACKUP_FOLDER = '_backups';
 const PRESENCE_FOLDER = '_presence';
 
@@ -71,18 +70,30 @@ class NexusVaultSync {
   }
 
   /* ── State ────────────────────────────────────────────────────────────────
-     The record of the last agreement. It lives in the plugin folder and is
-     itself excluded from the sync — a base index that travelled between devices
-     would describe someone else's agreement. */
+     The record of the last agreement. It lives in the plugin folder under this
+     device's id and is excluded from the sync — a base index that travelled
+     between devices would describe someone else's agreement. The old shared
+     `sync-state.json` is deliberately NOT read: on a vault that Syncthing also
+     carried, it may be another device's, and trusting it would upload stale
+     files over newer ones. Starting from nothing is safe now that a first run
+     compares bytes instead of calling every file a conflict. */
+  get statePath() { return sync.statePath(this.plugin.deviceId()); }
   async readState() {
     try {
-      const raw = await this.app.vault.adapter.read(STATE_PATH);
+      const raw = await this.app.vault.adapter.read(this.statePath);
       const parsed = JSON.parse(raw);
       return (parsed && typeof parsed.files === 'object') ? parsed : { files: {}, lastBackup: '' };
     } catch (e) { return { files: {}, lastBackup: '' }; }
   }
+  /* The shared state file from before it was per device. Never read (see
+     above), so once this device has its own it is only clutter. */
+  async dropLegacyState() {
+    const legacy = '.obsidian/plugins/nexus-suite/sync-state.json';
+    try { if (await this.app.vault.adapter.exists(legacy)) await this.app.vault.adapter.remove(legacy); }
+    catch (e) { console.warn('[Nexus] could not remove the old sync-state.json:', e); }
+  }
   async writeState(state) {
-    try { await this.app.vault.adapter.write(STATE_PATH, JSON.stringify(state)); }
+    try { await this.app.vault.adapter.write(this.statePath, JSON.stringify(state)); }
     catch (e) { console.error('[Nexus] sync state could not be written:', e); }
   }
 
@@ -147,11 +158,19 @@ class NexusVaultSync {
       }
       const report = await this.apply(client, plan, local, remote, state);
       await this.reconcile(client, report, state, skip);
+      // Saved before the backup: the backup is one large upload and the likeliest
+      // thing to fail, and losing the record of what was just synced turned the
+      // next run into a conflict on every file.
+      await this.writeState(state);
       report.seconds = Math.round((Date.now() - started) / 100) / 10;
       this.lastReport = report;
-      if (this.s.backup) await this.maybeBackup(client, state, skip);
-      await this.writeState(state);
-      if (loud || report.conflicts) new Notice('Nexus: ' + this.describe(report));
+      await this.dropLegacyState();
+      if (this.s.backup) await this.tryBackup(client, state, skip, report);
+      // A file that fails on every run is announced once, not every minute.
+      const failedKey = report.errors.join('|');
+      const newFailure = report.failed > 0 && failedKey !== this._lastFailedKey;
+      this._lastFailedKey = failedKey;
+      if (loud || report.conflicts || newFailure || report.backupError) new Notice('Nexus: ' + this.describe(report));
       return report;
     } catch (err) {
       const message = err && err.message ? err.message : 'unknown error';
@@ -169,12 +188,18 @@ class NexusVaultSync {
     if (report.downloaded) bits.push(report.downloaded + ' down');
     if (report.deleted) bits.push(report.deleted + ' removed');
     if (report.conflicts) bits.push(report.conflicts + ' conflict' + (report.conflicts === 1 ? '' : 's'));
-    if (report.failed) bits.push(report.failed + ' failed');
-    return bits.length ? 'sync done — ' + bits.join(', ') + '.' : 'sync done, nothing to do.';
+    if (report.failed) bits.push(report.failed + ' failed (details in the console)');
+    let text = bits.length ? 'sync done — ' + bits.join(', ') + '.' : 'sync done, nothing to do.';
+    if (report.copies && report.copies.length) {
+      text += ' Your side of ' + (report.copies.length === 1 ? 'the conflict is at "' + report.copies[0] + '".'
+        : 'each conflict is kept beside it, e.g. "' + report.copies[0] + '".');
+    }
+    if (report.backupError) text += ' The daily backup failed: ' + report.backupError + '.';
+    return text;
   }
 
   async apply(client, plan, local, remote, state) {
-    const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, errors: [] };
+    const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, errors: [], copies: [] };
     const fail = (path, err) => {
       report.failed++;
       const why = (err && err.message ? err.message : 'unknown');
@@ -205,8 +230,15 @@ class NexusVaultSync {
       try { await this.removeLocal(item.path); report.deleted++; delete state.files[item.path]; }
       catch (e) { fail(item.path, e); }
     }
+    for (const path of plan.adopt || []) state.files[path] = sync.agreement(local[path], remote[path]);
+    for (const item of plan.compare || []) {
+      try {
+        if (await this.sameBytes(client, item.path)) { state.files[item.path] = sync.agreement(local[item.path], remote[item.path]); continue; }
+        await this.settle(client, item, local, remote, state, report); report.conflicts++; settled.add(item.path);
+      } catch (e) { fail(item.path, e); }
+    }
     for (const item of plan.conflict) {
-      try { await this.settle(client, item, local, remote, state); report.conflicts++; settled.add(item.path); }
+      try { await this.settle(client, item, local, remote, state, report); report.conflicts++; settled.add(item.path); }
       catch (e) { fail(item.path, e); }
     }
     report.settled = settled;
@@ -224,6 +256,19 @@ class NexusVaultSync {
       if (!local[path] && !remote[path]) { delete state.files[path]; continue; }
       state.files[path] = sync.agreement(local[path], remote[path]);
     }
+  }
+
+  /* Whether this device and the server hold the same bytes for a path whose
+     sizes match but whose times do not. One download per such file; on a first
+     run that is the price of not copying the whole vault into conflict files. */
+  async sameBytes(client, path) {
+    const res = await client.get(path);
+    if (!res) return false;
+    const theirs = new Uint8Array(res.arrayBuffer);
+    const mine = new Uint8Array(await this.app.vault.adapter.readBinary(path));
+    if (theirs.length !== mine.length) return false;
+    for (let i = 0; i < mine.length; i++) if (mine[i] !== theirs[i]) return false;
+    return true;
   }
 
   async upload(client, path) {
@@ -298,8 +343,13 @@ class NexusVaultSync {
     if (await adapter.exists(path)) await adapter.remove(path);
   }
 
-  async settle(client, verdict, local, remote, state) {
-    const policy = this.s.conflict || 'keepBoth';
+  async settle(client, verdict, local, remote, state, report) {
+    /* A path with no record has never been synced from here — the first run of
+       a device, or the first after the state file became per device. Its "newer"
+       side is then a guess (the server's time is the upload's, not the edit's),
+       so no policy may discard anything: both are kept. */
+    const known = !!(state.files && state.files[verdict.path]);
+    const policy = known ? (this.s.conflict || 'keepBoth') : 'keepBoth';
     const outcome = sync.resolveConflict(verdict, policy, local[verdict.path], remote[verdict.path]);
     if (outcome.act === 'upload') { await this.upload(client, verdict.path); return; }
     if (outcome.act === 'download') { await this.download(client, verdict.path); return; }
@@ -316,13 +366,28 @@ class NexusVaultSync {
       const buffer = await adapter.readBinary(verdict.path);
       await adapter.writeBinary(copy, buffer);
       await client.put(copy, buffer);
+      if (report) report.copies.push(copy);
     }
     if (remote[verdict.path]) await this.download(client, verdict.path);
     else await this.removeLocal(verdict.path);
-    new Notice('Nexus: conflict on "' + verdict.path + '" — your copy is at "' + copy + '".');
+    // One Notice for the whole run (see describe), not one per file: a run
+    // with two hundred conflicts buried the screen under two hundred toasts.
+    console.warn('[Nexus] sync conflict on "' + verdict.path + '" — this device\'s copy is at "' + copy + '".');
   }
 
   /* ── Backups ───────────────────────────────────────────────────────────── */
+  /* A failed backup is reported, never fatal: the files are already synced and
+     their record saved. The day is not marked as backed up, so the next run
+     tries again. */
+  async tryBackup(client, state, skip, report) {
+    try {
+      await this.maybeBackup(client, state, skip);
+      await this.writeState(state);
+    } catch (err) {
+      report.backupError = err && err.message ? err.message : 'unknown error';
+      console.error('[Nexus] daily backup failed:', err);
+    }
+  }
   async maybeBackup(client, state, skip) {
     const today = moment().format('YYYY-MM-DD');
     if (!sync.needsBackup(state.lastBackup, today)) return;
@@ -398,4 +463,4 @@ class NexusVaultSync {
   }
 }
 
-module.exports = { NexusVaultSync, STATE_PATH, BACKUP_FOLDER, PRESENCE_FOLDER };
+module.exports = { NexusVaultSync, BACKUP_FOLDER, PRESENCE_FOLDER };

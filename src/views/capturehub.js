@@ -31,48 +31,169 @@
  *  than by window width — a narrow panel in a wide window is the normal case.
  * ========================================================================== */
 
-const { ItemView, Notice, setIcon } = require('obsidian');
+const { ItemView, Menu, Notice, setIcon } = require('obsidian');
 const { CAPTURE_VIEW } = require('../constants.js');
 const capture = require('../lib/capture.js');
+const sketchcover = require('../lib/sketchcover.js');
+const notesketches = require('../lib/notesketches.js');
 const { inkAdapter, NexusInkTagModal } = require('./ink.js');
-const { NexusConfirmModal } = require('../modals/misc.js');
-const { NexusMoveModal } = require('../modals/capture.js');
+const { NexusConfirmModal, NexusNameModal } = require('../modals/misc.js');
+const { NexusMoveModal, NexusSketchCoverModal } = require('../modals/capture.js');
+const { withSketchTitle, withSketchCover } = require('./sketch.js');
 const { nxAllFolders } = require('../lib/helpers.js');
+const { attachHoldMenu } = require('../lib/holdmenu.js');
 
 /* ── Sketch ──────────────────────────────────────────────────────────────────
-   The sidecar IS a standalone SVG, so the cover is just an <img> — no parse
-   needed to show it. What the tile answers instead is the question a drawing
-   raises: how far along is it (sections), and can I search inside it yet
-   (OCR). Both come off the same search document the sketch index already
-   builds, so tile and search box can never disagree. */
+   A card here is a BOOK, not a page. A note owns a list of sketch ids and those
+   pages are one notebook — one cover, one name, one card — because listing them
+   separately made a seven-page note read as seven drawings that each claimed to
+   be a single page. A drawing no note names is its own book of one page.
+
+   The tile is a bound book rather than a thumbnail of the ink: a closed cover
+   with a stitched spine and its page edges showing. What it answers is what a
+   shelf answers — which one is this, and how thick is it — and the drawing
+   itself is one tap away either way. The cover is CSS over two names in the
+   sidecar (lib/sketchcover.js), so it costs the vault nothing. */
 function sketchAdapter(plugin) {
   const app = plugin.app;
+
+  /* A book was last touched when its LAST-drawn page was, not when page one
+     was: draw on page four and the book has just been used. */
+  function newestStamp(pages) {
+    let newest = 0;
+    for (const page of pages) {
+      const file = app.vault.getAbstractFileByPath(page.path);
+      const stamp = (file && file.stat && (file.stat.mtime || file.stat.ctime)) || 0;
+      if (stamp > newest) newest = stamp;
+    }
+    return { mtime: newest };
+  }
+
   return {
     id: 'sketch', label: 'Sketch', icon: 'pencil-line', layout: 'grid',
-    one: 'sketch', many: 'sketches',
+    one: 'sketchbook', many: 'sketchbooks',
     empty: 'No sketches yet — draw one in any note.',
 
     async list() {
       const docs = await plugin.sketchDocuments();
-      return docs.map(doc => {
-        const f = app.vault.getAbstractFileByPath(doc.path);
-        return capture.sketchItem(doc, f && f.stat);
-      });
+      const owners = plugin.sketchOwners();
+      const docById = new Map();
+      for (const doc of docs) docById.set(doc.id, doc);
+
+      const books = [];
+      const bound = new Set();     // ids already folded into a book above
+
+      for (const doc of docs) {
+        const owner = owners.get(doc.id);
+        if (!owner || bound.has(doc.id)) continue;
+        /* The note's own order, and only the pages it actually owns.
+           `ownerIndex` hands a contested id to the FIRST note that named it;
+           taking `owner.ids` at face value here would hand it to both, so two
+           books would share a page and deleting either would trash the other's.
+           `.filter(Boolean)` then drops what is only named: a hand-edited list
+           can carry an id nothing was ever drawn on, and page one going missing
+           must not take the other six with it. */
+        const pages = owner.ids
+          .filter(id => { const at = owners.get(id); return at && at.path === owner.path; })
+          .map(id => docById.get(id))
+          .filter(Boolean);
+        // Every page this note names is gone, or belongs to another note.
+        if (!pages.length) continue;
+        pages.forEach(page => bound.add(page.id));
+        books.push(capture.sketchItem(pages[0], newestStamp(pages), {
+          notePath: owner.path, noteName: owner.basename,
+          paths: pages.map(page => page.path),
+          pageDocs: pages.slice(1),
+        }));
+      }
+      for (const doc of docs) {
+        if (bound.has(doc.id)) continue;
+        const file = app.vault.getAbstractFileByPath(doc.path);
+        books.push(capture.sketchItem(doc, file && file.stat));
+      }
+      return books;
     },
 
     tile(item, card) {
-      const cov = card.createDiv('nx-cap-cover is-sketch');
-      const f = app.vault.getAbstractFileByPath(item.path);
-      if (f) cov.createEl('img', { cls: 'nx-cap-cover-img', attr: { src: app.vault.getResourcePath(f), alt: item.title } });
-      else cov.addClass('is-missing');
+      const cover = sketchcover.coverFor(item.id || item.path, item.cover);
+      const book = card.createDiv('nx-cap-book');
+      book.dataset.tone = cover.tone;
+      book.dataset.pattern = cover.pattern;
+      book.createDiv('nx-cap-book-field');
+      book.createDiv('nx-cap-book-spine');
+      book.createDiv('nx-cap-book-face').createDiv({ cls: 'nx-cap-book-name', text: item.title });
+      book.createDiv('nx-cap-book-edges');
+      /* Only worth a badge once there is more than one — "1 page" on every card
+         is a number nobody reads. Worded exactly as the Ink tab words it: it is
+         the same badge class, and two readings of one badge is a defect. */
+      if (item.pages > 1) book.createSpan({ cls: 'nx-cap-badge is-pages', text: capture.pagesLabel(item.pages) });
       card.createDiv({ cls: 'nx-cap-title', text: item.title });
-      const meta = card.createDiv('nx-cap-meta');
-      meta.createSpan({ text: item.sections ? item.sections + (item.sections === 1 ? ' section' : ' sections') : 'one page' });
-      meta.createSpan({ cls: 'nx-cap-chip' + (item.hasOcr ? ' is-on' : ''), text: item.hasOcr ? 'read' : 'not read' });
+      /* The date and nothing else: the page count is already on the cover, and
+         a card that says "7 pages" twice reads as two different facts. */
+      const when = capture.shortDate(item.stamp);
+      if (when) card.createDiv({ cls: 'nx-cap-meta', text: when });
     },
 
-    open(item) { plugin.openSketchInSplit(item.path.split('/').pop().replace(/\.svg$/i, ''), 'tab', ''); },
-    remove(item) { return [item.path]; },
+    /* Opening a book means page one WITH the note it belongs to — without the
+       note the pane has no page list, so turning a page and adding one both
+       report the drawing as belonging to nothing. */
+    open(item) {
+      plugin.openSketchInSplit(item.id, 'tab', item.notePath)
+        .catch(err => new Notice('Nexus: could not open “' + item.title + '” — ' + ((err && err.message) || err)));
+    },
+
+    /* Every page, because the card is the whole book. The delete dialog names
+       the files, so a seven-page book cannot be trashed under the impression
+       that it is one drawing. */
+    remove(item) { return item.paths || [item.path]; },
+
+    /* The files are in the trash; the note still names them. Without this the
+       next time that note is opened `ensureNoteSketch` (main.js) finds an id
+       with no file behind it and writes a blank sidecar back — the deleted book
+       returns as an empty page one, and pages two and up open on "not found". */
+    async removed(items) {
+      for (const item of items) {
+        const file = item.notePath && app.vault.getAbstractFileByPath(item.notePath);
+        if (!file) continue;
+        const gone = (item.paths || []).map(path => path.split('/').pop().replace(/\.svg$/i, ''));
+        try {
+          await app.fileManager.processFrontMatter(file, fm => {
+            notesketches.writeIds(fm, notesketches.idsOf(fm).filter(id => gone.indexOf(id) < 0));
+          });
+        } catch (err) {
+          new Notice('Nexus: the pages are in the trash, but “' + file.basename
+            + '” still names them — ' + ((err && err.message) || err));
+        }
+      }
+    },
+
+    /* Long press or right click. Rename and Cover write the sidecar directly —
+       no surface, no open tab — which is why they can run from a card at all.
+       Returning true refreshes the hub.
+
+       There is no "open in a new tab" here: a plain tap already opens the book,
+       and openSketchInSplit reveals a leaf that already holds it rather than
+       making a second one, so the entry would have been the tap with a longer
+       name on it. */
+    menu(item) {
+      const entries = [
+        { icon: 'pencil', label: 'Rename…', run: () => renameSketch(plugin, item) },
+        { icon: 'book', label: 'Cover…', run: () => pickSketchCover(plugin, item) },
+      ];
+      if (item.notePath) entries.push({
+        icon: 'file-text', label: 'Go to the note',
+        run: async () => {
+          const file = app.vault.getAbstractFileByPath(item.notePath);
+          // Say so rather than doing nothing: the note being gone is exactly
+          // the case where the book on screen no longer matches the vault.
+          if (!file) throw new Error('“' + item.notePath + '” is gone.');
+          await app.workspace.getLeaf(false).openFile(file);
+          return false;
+        },
+      });
+      return entries;
+    },
+
     /* A sketch is resolved by its folder and nothing else — _sketchPath()
        hard-codes it and sketchDocuments() filters on it — so moving one out
        would silently drop it from this tab, from sketch search and from every
@@ -82,6 +203,62 @@ function sketchAdapter(plugin) {
     // sections and the sticky notes, and all three live inside the drawing.
     retag: null,
   };
+}
+
+/* Rewrite one field of page one's sidecar. The file's own text is patched, so
+   nothing has to be opened and an editor already showing this drawing is not
+   disturbed — its next committed stroke carries the new value, because the
+   surface is handed title and cover on load. */
+async function patchSketchFile(plugin, path, patch) {
+  const file = plugin.app.vault.getAbstractFileByPath(path);
+  if (!file) throw new Error('the sketch file is gone');
+  const text = await plugin.app.vault.read(file);
+  const next = patch(text);
+  if (next == null) throw new Error('this file is not a Nexus sketch');
+  await plugin.app.vault.modify(file, next);
+  /* Drop the parsed copy by hand. sketchDocuments caches against mtime, and the
+     refresh that follows this write runs in the same tick — too early to rely on
+     the file's stat having caught up, which would redraw the tile from the value
+     that was just replaced. */
+  if (plugin._sketchDocs) plugin._sketchDocs.delete(path);
+}
+
+/* Patch page one AND the pad that may be drawing on it. A live surface holds
+   the title and the cover from the moment it loaded and toSVGString writes the
+   whole metadata block back on every committed stroke — so patching only the
+   file means the next stroke quietly restores the old name. */
+async function patchSketchBook(plugin, item, patch, applyLive) {
+  await patchSketchFile(plugin, item.path, patch);
+  const live = (plugin._sketchLive && item.id) ? plugin._sketchLive[item.id] : null;
+  if (live) applyLive(live);
+}
+
+/* Opens on the name that was CHOSEN, not on the one borrowed from the note —
+   otherwise confirming the dialog would freeze the note's current name into the
+   sidecar, and renaming the note later would no longer rename the book. Empty
+   is an answer: it clears the title and hands the name back to the note. */
+async function renameSketch(plugin, item) {
+  const name = await new NexusNameModal(plugin.app, 'Rename sketchbook',
+    item.named ? item.title : '', true).openAndGet();
+  if (name == null) return false;
+  await patchSketchBook(plugin, item, (text) => withSketchTitle(text, name),
+    (live) => { live.title = String(name || '').trim(); });
+  return true;
+}
+
+/* The picker opens on the cover the shelf is showing — which for a book that
+   never had one is the tone hashed from its id. Saving without touching
+   anything must therefore write NOTHING, or every book that was merely looked
+   at would have its hashed tone frozen in as a choice. `chosen` is what tells
+   the modal which of the two it started from. */
+async function pickSketchCover(plugin, item) {
+  const current = sketchcover.coverFor(item.id || item.path, item.cover);
+  const picked = await new NexusSketchCoverModal(plugin.app, item.title, current).openAndGet();
+  if (!picked) return false;
+  const value = sketchcover.coverValue(picked.tone, picked.pattern);
+  await patchSketchBook(plugin, item, (text) => withSketchCover(text, value),
+    (live) => { live.cover = value || null; });
+  return true;
 }
 
 /* ── Chatter ─────────────────────────────────────────────────────────────────
@@ -161,6 +338,7 @@ class NexusCaptureHub {
     this.tab = (opts && opts.tab) || this.adapters[0].id;
     this.sel = new capture.CaptureSelection(this.tab);
     this.query = ''; this.sort = 'new'; this.items = [];
+    this._holdCancels = [];   // pending long presses, dropped whenever the grid is rebuilt
     this.actions = (opts && opts.actions) || {
       ink: { label: 'Capture', icon: 'camera', run: () => plugin.captureScan() },
       sketch: { label: 'Find', icon: 'search', run: () => plugin.openSketchSearch() },
@@ -299,6 +477,8 @@ class NexusCaptureHub {
   renderBody() {
     const ad = this.adapter();
     const body = this.els.body;
+    this._holdCancels.forEach(cancel => cancel());
+    this._holdCancels = [];
     body.empty();
     const items = this.visible();
     this.els.tally.setText(items.length === this.items.length
@@ -342,7 +522,37 @@ class NexusCaptureHub {
         this.renderBody();
         this.syncBar();
       };
+      // Not in select mode: there a press already means "tick this one", and a
+      // menu on top of it would fight the gesture.
+      if (ad.menu && !this.sel.mode) this._attachCardMenu(card, ad, item);
     });
+  }
+
+  /* One card's own menu: long press on a tablet, right click on a desktop.
+     The entries come from the adapter, Delete is added here — it is the hub's
+     confirm-by-name either way, and every kind can be deleted.
+
+     The hold is cancelled by MOVEMENT, not only by lifting: a card lives in a
+     scrolling grid, and a flick that opens a menu instead of scrolling is the
+     fastest way to make a tablet feel broken. HOLD_SLOP is in CSS pixels. */
+  _attachCardMenu(card, ad, item) {
+    const run = async (entry) => {
+      try { if (await entry.run()) await this.refresh(); }
+      catch (err) { new Notice('Nexus: ' + (err && err.message ? err.message : entry.label + ' failed.')); }
+    };
+    const cancel = attachHoldMenu(card, (x, y) => {
+      const menu = new Menu();
+      (ad.menu(item) || []).forEach(entry => menu.addItem(i => {
+        i.setTitle(entry.label).setIcon(entry.icon).onClick(() => run(entry));
+      }));
+      menu.addSeparator();
+      menu.addItem(i => i.setTitle('Delete…').setIcon('trash-2').onClick(() => this._deleteItems([item])));
+      menu.showAtPosition({ x, y });
+    });
+    /* renderBody throws every card away and the hub re-renders on its own —
+       a vault event, a keystroke in the search box. A hold still counting down
+       against a discarded card has to be dropped with it. */
+    this._holdCancels.push(cancel);
   }
 
   /* One of the adapter's own verbs, run over the selection with progress in a
@@ -439,8 +649,10 @@ class NexusCaptureHub {
   /* Ask, and say how many and what — the file list is the point, because for a
      scan the answer is two files and only one of them is the note you picked. */
   async _deleteSelected() {
+    await this._deleteItems(this.sel.selected(this.visible()));
+  }
+  async _deleteItems(items) {
     const ad = this.adapter();
-    const items = this.sel.selected(this.visible());
     if (!items.length) return;
     const paths = [];
     items.forEach(it => ad.remove(it).forEach(p => { if (paths.indexOf(p) < 0) paths.push(p); }));
@@ -459,6 +671,10 @@ class NexusCaptureHub {
       // decides whether that means the system bin, the vault's .trash, or gone.
       try { await this.app.fileManager.trashFile(f); gone++; } catch (e) { /* a file already gone is not an error */ }
     }
+    /* After the files, not before: a kind whose item is a SET of files has to
+       repair whatever pointed at them, and doing that first would leave a note
+       naming nothing if the trashing then failed. */
+    if (ad.removed) await ad.removed(items);
     new Notice('Nexus: ' + gone + (gone === 1 ? ' file' : ' files') + ' moved to the trash.');
     this.sel.exit();
     await this.refresh();

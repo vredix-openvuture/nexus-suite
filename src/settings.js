@@ -10,22 +10,19 @@ const { NexusCalloutModal } = require('./modals/callout.js');
 const { SEARCH_FIELDS } = require('./modals/search.js');
 const { NexusWorkspaceModal } = require('./modals/workspace.js');
 const { NexusAccountModal } = require('./modals/account.js');
-const { NexusTaskModal } = require('./modals/task.js');
 const { NexusConfirmModal, NexusNameModal } = require('./modals/misc.js');
 const { NexusTagRenameModal } = require('./modals/tags.js');
 const { nxAllTagCounts, nxFilesWithTag, nxRenameTag } = require('./lib/tagtools.js');
 const { FN_TYPES } = require('./lib/foldernotes.js');
 const { nxAutocomplete, nxBlockExample, nxCollapseSections, nxFoldDescriptions, nxMultiRow } = require('./lib/inputs.js');
 const { nxAllFolders } = require('./lib/helpers.js');
-const datadir = require('./lib/datadir.js');
 const penGestures = require('./lib/sketchgestures.js');
 const sketchSearch = require('./lib/sketchsearch.js');
 const vaultsync = require('./lib/vaultsync.js');
 const quicknoteLib = require('./lib/quicknote.js');
 const extcommand = require('./lib/extcommand.js');
-const tasks = require('./lib/tasks.js');
 const daytext = require('./lib/daytext.js');
-const { BAR_DEFAULTS, BAR_ITEMS, BAR_MODES, HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES, TASK_BUCKETS } = require('./constants.js');
+const { BAR_DEFAULTS, BAR_ITEMS, BAR_MODES, HOME_VIEW, NX_BUILTIN_CALLOUTS, NX_CALLOUT_VARS, NX_BUILTIN_IDS, NX_MODULES, PALETTES, PALETTE_GROUPS, PALETTE_NAMES, PEN_IDS, PEN_LABELS, THEME_STYLES, ST_SYMBOL_RULES } = require('./constants.js');
 
 class NexusSettingsTab extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; this.active = 'homepage'; }
@@ -35,86 +32,6 @@ class NexusSettingsTab extends PluginSettingTab {
   head(e, obj, after) {
     new Setting(e).setName('Enabled').setClass('nx-set-enable')
       .addToggle(t => t.setValue(obj.enabled).onChange(async v => { obj.enabled = v; await this.save(); if (after) after(); }));
-  }
-
-  /* Tasks & Calendar — local calendars + the Vikunja accounts the tasks sync
-     against. Secrets never live here (they go to localStorage via
-     plugin.setCredential); this tab only edits the non-secret config in
-     data.json. */
-  tTasksCalendar(e) {
-    const s = this.plugin.settings.tasksCalendar;
-    this.head(e, s);
-
-    new Setting(e).setName('Data location')
-      .setDesc('Where your local calendars live. The plugin folder keeps them out of the file explorer, search and graph, and plugin updates never touch it — but it only syncs if your sync includes .obsidian.')
-      .addDropdown(dd => dd
-        .addOption('plugin', 'Plugin folder (.nexus-calendar)')
-        .addOption('vault', 'A folder in the vault')
-        .setValue(s.dataLocation || 'plugin')
-        .onChange(async v => { s.dataLocation = v; await this.save(); this.display(); }));
-    if ((s.dataLocation || 'plugin') === 'vault') {
-      new Setting(e).setName('Data folder').setClass('nx-set-sub')
-        .addText(t => t.setPlaceholder('_nexus').setValue(s.dataFolder)
-          .onChange(async v => { s.dataFolder = (v || '').trim() || '_nexus'; await this.save(); }));
-    } else {
-      e.createEl('p', { cls: 'setting-item-description',
-        text: 'Current path: ' + datadir.dataDir(this.plugin) });
-    }
-    // One setting for every calendar surface in the vault — month grids, the
-    // week view, the agenda's "this week". Obsidian's own locale stays untouched.
-    new Setting(e).setName('Week starts on')
-      .setDesc('Applies to every calendar in the vault: month grids, the week view and the "this week" filter.')
-      .addDropdown(d => {
-        d.addOption('locale', 'Locale default (' + moment.weekdays()[moment().startOf('week').day()] + ')');
-        moment.weekdays().forEach((name, i) => d.addOption(String(i), name));
-        d.setValue(s.weekStart == null ? 'locale' : String(s.weekStart));
-        d.onChange(async v => { s.weekStart = v; await this.save(); this.plugin.refreshCalendarViews(); });
-      });
-    new Setting(e).setName('Sync on startup').addToggle(t => t.setValue(s.syncOnStartup).onChange(async v => { s.syncOnStartup = v; await this.save(); }));
-    new Setting(e).setName('Sync interval (minutes)').addText(t => { t.inputEl.type = 'number'; t.setValue(String(s.syncIntervalMin)).onChange(async v => { s.syncIntervalMin = Math.max(5, parseInt(v, 10) || 15); await this.save(); }); });
-    new Setting(e).setName('Conflict policy').setDesc('When a change on the server and a change in your notes collide.')
-      .addDropdown(d => d.addOption('server', 'Server wins').addOption('ask', 'Ask me').setValue(s.conflictPolicy).onChange(async v => { s.conflictPolicy = v; await this.save(); }));
-
-    // ── Task accounts (Vikunja) ──
-    e.createEl('h4', { text: 'Task accounts', cls: 'nx-callout-h' });
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'An account belongs to THIS device and is never carried to another one — every device signs itself in. See Vault sync for why.' });
-    this.connectionList(e.createDiv('nx-set-list'), 'vikunja');
-    this.secretNote(e);
-    new Setting(e)
-      .addButton(b => b.setButtonText('Sync now').onClick(() => { new Notice('Nexus: syncing…'); this.plugin.syncTaskCal().then(r => { new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000); }); }));
-
-    // ── The day's text ──
-    e.createEl('h4', { text: "The day's text", cls: 'nx-callout-h' });
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'Every day in the month view is a writing surface: type what the day is for and it is saved into that day\u2019s own note, as one frontmatter field. Not in a plugin file \u2014 in the note, where Obsidian\u2019s search finds it and a template or a Dataview query can read it. Writing on a day that has no note yet creates one from your daily-note template.' });
-    new Setting(e).setName('Frontmatter key')
-      .setDesc('The field the text is written to. Default: important.')
-      .addText(t => t.setPlaceholder(daytext.DEFAULT_KEY).setValue(s.dayTextKey || daytext.DEFAULT_KEY)
-        .onChange(async v => { s.dayTextKey = (v || '').trim() || daytext.DEFAULT_KEY; await this.save(); this.plugin.refreshCalendarViews(); }));
-
-    // ── Todos (projects / tasks as Markdown) ──
-    e.createEl('h4', { text: 'Todos', cls: 'nx-callout-h' });
-    new Setting(e).setName('Projects folder').setDesc('One .md per project (subprojects link inside their parent).')
-      .addText(t => t.setValue(s.tasks.projectsFolder).onChange(async v => { s.tasks.projectsFolder = (v || '').trim() || 'Tasks/Projects'; await this.save(); }));
-    new Setting(e).setName('Task notes folder').setDesc('One .md per task (description + frontmatter for status/due/repeat).')
-      .addText(t => t.setValue(s.tasks.itemsFolder).onChange(async v => { s.tasks.itemsFolder = (v || '').trim() || 'Tasks/Items'; await this.save(); }));
-    new Setting(e)
-      .addButton(b => b.setButtonText('New project').onClick(async () => { const name = await new NexusNameModal(this.app, 'New project name', 'Project').openAndGet(); if (name) { const f = await tasks.createProject(this.plugin, name); this.plugin.app.workspace.getLeaf(false).openFile(f); } }))
-      .addButton(b => b.setButtonText('New task').setCta().onClick(() => new NexusTaskModal(this.plugin, null).open()));
-
-    // ── The planner block ──
-    e.createEl('h4', { text: 'Planner', cls: 'nx-callout-h' });
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'A “nexus-planner” block renders a whole month of the same day texts, writable in place \u2014 one store, two views. It used to keep its lines inside the block; the command below carries any it still holds into the daily notes. It reports what it will do before it writes, never overwrites a day that already has a text, and deletes nothing.' });
-    new Setting(e).setName('Old planner lines')
-      .setDesc(this.plugin.settings.plannerMigrated
-        ? 'Already moved once. Running it again only picks up lines added since.'
-        : 'Not moved yet. Blocks that still hold lines are showing the daily notes instead.')
-      .addButton(b => b.setButtonText('Move them into the daily notes')
-        .onClick(() => this.plugin.migratePlannerLines()));
-
-    new Setting(e).addButton(b => b.setButtonText('Open calendar').setCta().onClick(() => this.plugin.openCalendarPage()));
   }
 
   display() {
@@ -160,7 +77,6 @@ class NexusSettingsTab extends PluginSettingTab {
       ] },
       { title: 'Planning', tabs: [
         { id: 'calendar',      icon: 'calendar',         fn: (e) => this.tCalendar(e) },
-        { id: 'tasksCalendar', icon: 'calendar-check',   fn: (e) => this.tTasksCalendar(e) },
       ] },
       { title: 'Tools', tabs: [
         { id: 'search',        icon: 'search',           fn: (e) => this.tSearch(e) },
@@ -244,10 +160,8 @@ class NexusSettingsTab extends PluginSettingTab {
     this._onNarrow = null;
   }
 
-  /* Kanban — the ```nexus-kanban``` boards in both their sources, plus the
-     columns of the task board. All of it is only defaults: a board keeps its
-     own columns in its own block, and a Vikunja project brings the columns its
-     server has. */
+  /* Kanban — the ```nexus-kanban``` boards in both their sources. All of it is
+     only defaults: a board keeps its own columns in its own block. */
   tKanban(e) {
     const s = this.plugin.settings.kanban;
     this.head(e, s);
@@ -325,13 +239,6 @@ class NexusSettingsTab extends PluginSettingTab {
     e.createEl('p', { cls: 'setting-item-description',
       text: 'view: graph | grid | board — “board” hands the block back to the columns · height: the web’s height in pixels. It reads the same keys as a folder board.' });
 
-    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Task board' });
-    e.createEl('p', { cls: 'setting-item-description',
-      text: 'The board mode of the tasks page. A task remembers its column in its own note (“bucket:”). A Vikunja project uses the columns of its kanban view instead — dragging a card there moves it on the server.' });
-    const tk = (this.plugin.settings.tasksCalendar.tasks = this.plugin.settings.tasksCalendar.tasks || {});
-    nxMultiRow(e, 'Columns', 'One per row. A column whose name reads as done (“Done”, “Erledigt”, “Fertig”, …) completes a task that is dropped into it.',
-      ((tk.buckets && tk.buckets.length ? tk.buckets : TASK_BUCKETS)).join('\n'), '\n', 'Backlog',
-      async (v) => { tk.buckets = v.split('\n').map(x => x.trim()).filter(Boolean); await this.save(); this.plugin.refreshCalendarViews(); });
   }
 
   tBanner(e) {
@@ -858,8 +765,6 @@ class NexusSettingsTab extends PluginSettingTab {
           : 'This device has NO browser recogniser, so recording will refuse to start. Use the local engine here.' });
     }
 
-    new Setting(e).setName('Track new notes as tasks').setDesc('Pre-ticks the box in the recorder, so a spoken reminder turns up in the tasks view.')
-      .addToggle(t => t.setValue(!!s.asTask).onChange(async v => { s.asTask = v; await this.save(); }));
     new Setting(e).setName('Open the note afterwards')
       .addToggle(t => t.setValue(s.openAfter !== false).onChange(async v => { s.openAfter = v; await this.save(); }));
   }
@@ -869,8 +774,8 @@ class NexusSettingsTab extends PluginSettingTab {
      a modal and afterwards only tested or removed: editing it in place lets
      half a connection be saved — a new URL against the old password — and the
      first news of that is a failed sync. To change one, remove it and add it
-     again. The WebDAV server and the task accounts share this list because to
-     the person adding one they are the same idea, and both are per device. */
+     again. The vault-sync server is the only kind left; the Vikunja accounts
+     that shared this list went with the tasks module (docs/removed-features.md). */
   /* What happens to a secret on THIS device. It is written where the reader is
      about to type one, and it is deliberately unflattering: a padlock that
      overstates itself is worse than no padlock. */
@@ -885,22 +790,16 @@ class NexusSettingsTab extends PluginSettingTab {
   }
 
   connectionList(wrap, kind) {
-    const isSync = kind === 'vaultsync';
     const paint = () => {
       wrap.empty();
       const list = wrap.createDiv('nx-list');
       const url = this.plugin.deviceSetting('vaultSyncUrl', '');
-      const entries = isSync
-        ? (url ? [{ id: 'vaultsync',
-            title: this.plugin.deviceSetting('vaultSyncDeviceName', '') || this.plugin.deviceId(),
-            sub: 'webdav · ' + url }] : [])
-        : (this.plugin.settings.tasksCalendar.accounts || []).map(account => ({
-            id: account.id, account, title: account.label || 'Vikunja',
-            sub: (account.kind || 'vikunja') + ' · ' + (account.serverUrl || 'no server') }));
+      const entries = url ? [{ id: 'vaultsync',
+        title: this.plugin.deviceSetting('vaultSyncDeviceName', '') || this.plugin.deviceId(),
+        sub: 'webdav · ' + url }] : [];
 
       if (!entries.length) {
-        list.createDiv('nx-row').createDiv({ cls: 'nx-row-sub',
-          text: isSync ? 'No server yet.' : 'No account yet.' });
+        list.createDiv('nx-row').createDiv({ cls: 'nx-row-sub', text: 'No server yet.' });
       }
       entries.forEach(entry => {
         const row = list.createDiv('nx-row');
@@ -919,9 +818,8 @@ class NexusSettingsTab extends PluginSettingTab {
         remove.onclick = async () => { await this.removeConnection(kind, entry); paint(); };
       });
       // One vault lives on one server, so the sync list stops at one entry.
-      if (isSync && entries.length) return;
-      const add = list.createEl('button', { cls: 'nx-btn nx-list-add',
-        text: isSync ? 'Add a server' : 'Add an account' });
+      if (entries.length) return;
+      const add = list.createEl('button', { cls: 'nx-btn nx-list-add', text: 'Add a server' });
       add.onclick = () => new NexusAccountModal(this.plugin, { kind }, paint).open();
     };
     paint();
@@ -929,23 +827,17 @@ class NexusSettingsTab extends PluginSettingTab {
   /* Removing a connection takes its credential with it: a stored password for a
      server nothing lists any more is not a convenience, it is a leftover. */
   async removeConnection(kind, entry) {
-    this.plugin.setCredential(kind === 'vaultsync' ? 'vaultsync' : entry.id, {});
-    if (kind === 'vaultsync') {
-      /* The vault-wide husks the migration reads from are emptied as well.
-         Left behind, a device whose id changed — localStorage cleared, a
-         reinstall — would migrate the removed server straight back in. Emptied
-         rather than deleted, so the key itself stays recognisable in the file. */
-      const legacy = this.plugin.settings.vaultSync;
-      legacy.url = '';
-      legacy.deviceName = '';
-      await this.plugin.setDeviceSetting('vaultSyncUrl', '');
-      await this.plugin.setDeviceSetting('vaultSyncDeviceName', '');
-      if (this.plugin.vaultSync) this.plugin.vaultSync.schedule();
-      return;
-    }
-    const tc = this.plugin.settings.tasksCalendar;
-    tc.accounts = (tc.accounts || []).filter(account => account.id !== entry.id);
-    await this.save();
+    this.plugin.setCredential('vaultsync', {});
+    /* The vault-wide husks the migration reads from are emptied as well.
+       Left behind, a device whose id changed — localStorage cleared, a
+       reinstall — would migrate the removed server straight back in. Emptied
+       rather than deleted, so the key itself stays recognisable in the file. */
+    const legacy = this.plugin.settings.vaultSync;
+    legacy.url = '';
+    legacy.deviceName = '';
+    await this.plugin.setDeviceSetting('vaultSyncUrl', '');
+    await this.plugin.setDeviceSetting('vaultSyncDeviceName', '');
+    if (this.plugin.vaultSync) this.plugin.vaultSync.schedule();
   }
 
   tVaultSync(e) {
@@ -1069,7 +961,16 @@ class NexusSettingsTab extends PluginSettingTab {
         .addOption('black', 'Black')
         .setValue(s.paper || 'paper')
         .onChange(async v => { s.paper = v; await this.save(); }));
-    new Setting(e).setName('Sheet width').setDesc('How wide the paper may render, in pixels. Endless paper has a fixed width, so this is what stops a tablet turned to landscape from stretching the same note to a bigger ink size. 0 = fill whatever space there is.')
+    new Setting(e).setName('Default paper type').setDesc('What shape the paper is on new pads. Endless = one sheet that grows downward forever. Sectioned = the same, cut into A4 pages with a gap between them, so the page edges are visible and an export has real pages. Mindmap = no sheet at all, a canvas you can move in every direction. Change live per sketch in the toolbar (background button).')
+      .addDropdown(dd => dd
+        .addOption('endless', 'Endless')
+        .addOption('sectioned', 'Sectioned (A4 pages)')
+        .addOption('mindmap', 'Mindmap (endless in every direction)')
+        .setValue(s.paperType || 'endless')
+        .onChange(async v => { s.paperType = v; await this.save(); }));
+    new Setting(e).setName('A4 the wide way round').setDesc('Sectioned paper only: pages are A4 landscape instead of portrait.')
+      .addToggle(t => t.setValue(!!s.sheetLandscape).onChange(async v => { s.sheetLandscape = v; await this.save(); }));
+    new Setting(e).setName('Sheet width').setDesc('How wide the paper may render, in pixels. Endless paper has a fixed width, so this is what stops a tablet turned to landscape from stretching the same note to a bigger ink size. 0 = fill whatever space there is. Ignored on mindmap paper, which fills the pane.')
       .addText(t => t.setPlaceholder('1100').setValue(String(s.paperWidth != null ? s.paperWidth : 1100))
         .onChange(async v => {
           const px = parseInt(v, 10);
@@ -1525,6 +1426,36 @@ class NexusSettingsTab extends PluginSettingTab {
     new Setting(e).setName('Show ribbon icon').setDesc('Reload the plugin after changing.')
       .addToggle(t => t.setValue(s.ribbon).onChange(async v => { s.ribbon = v; await this.save(); }));
     e.createEl('p', { cls: 'setting-item-description', text: 'Uses your Daily Notes settings (folder/format/template). Command "Open calendar".' });
+    // The month grid only: the planner block sets its own `weekstart:` line.
+    // Obsidian's own locale stays untouched.
+    new Setting(e).setName('Week starts on')
+      .setDesc('Applies to the mini calendar. A planner block sets its own with a weekstart: line.')
+      .addDropdown(d => {
+        d.addOption('locale', 'Locale default (' + moment.weekdays()[moment().startOf('week').day()] + ')');
+        moment.weekdays().forEach((name, i) => d.addOption(String(i), name));
+        d.setValue(s.weekStart == null ? 'locale' : String(s.weekStart));
+        d.onChange(async v => { s.weekStart = v; await this.save(); this.plugin.refreshCalendarViews(); });
+      });
+
+    // ── The day's text ──
+    e.createEl('h4', { text: "The day's text", cls: 'nx-callout-h' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'What a day is for lives in that day\u2019s own note, as one frontmatter field. The planner block writes it; the mini calendar marks the days that have one. Not in a plugin file \u2014 in the note, where Obsidian\u2019s search finds it and a template or a Dataview query can read it.' });
+    new Setting(e).setName('Frontmatter key')
+      .setDesc('The field the text is written to. Default: important.')
+      .addText(t => t.setPlaceholder(daytext.DEFAULT_KEY).setValue(s.dayTextKey || daytext.DEFAULT_KEY)
+        .onChange(async v => { s.dayTextKey = (v || '').trim() || daytext.DEFAULT_KEY; await this.save(); this.plugin.refreshCalendarViews(); }));
+
+    // ── The planner block ──
+    e.createEl('h4', { text: 'Planner', cls: 'nx-callout-h' });
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'A \u201cnexus-planner\u201d block renders a whole month of the same day texts, writable in place. It used to keep its lines inside the block; the command below carries any it still holds into the daily notes. It reports what it will do before it writes, never overwrites a day that already has a text, and deletes nothing.' });
+    new Setting(e).setName('Old planner lines')
+      .setDesc(this.plugin.settings.plannerMigrated
+        ? 'Already moved once. Running it again only picks up lines added since.'
+        : 'Not moved yet. Blocks that still hold lines are showing the daily notes instead.')
+      .addButton(b => b.setButtonText('Move them into the daily notes')
+        .onClick(() => this.plugin.migratePlannerLines()));
   }
   tPropHider(e) {
     const s = this.plugin.settings.propertyHider;

@@ -65,18 +65,16 @@ const X = window.extcommandLib;
      Q.notePath('Inbox/Quicknote/', 'x', ''), 'Inbox/Quicknote/x.md');
 
   const body = Q.noteBody(['first thought', 'second thought'],
-    { recorded: '2026-08-31T14:00', seconds: 12.6, engine: 'local', task: true });
+    { recorded: '2026-08-31T14:00', seconds: 12.6, engine: 'local' });
   ok('note · it opens with frontmatter', body.indexOf('---\nnexus-type: quicknote') === 0);
   ok('note · the recording time is in it', body.indexOf('recorded: 2026-08-31T14:00') > 0);
   ok('note · the length is rounded', body.indexOf('seconds: 13') > 0, body);
   ok('note · the engine is recorded, so a bad transcript can be explained later',
      body.indexOf('engine: local') > 0);
-  ok('note · asking for a task writes the field the tasks module reads',
-     body.indexOf('nexus-task: true') > 0);
   ok('note · the paragraphs are separated', body.indexOf('first thought\n\nsecond thought') > 0, body);
 
   const plain = Q.noteBody(['just this'], { recorded: '2026-08-31T14:00', engine: 'browser' });
-  ok('note · without the task flag when it was not asked for', plain.indexOf('nexus-task') < 0);
+  ok('note · no task flag any more (the tasks module is gone)', plain.indexOf('nexus-task') < 0);
 
   eq('note · both engines are offered', Q.ENGINES.map(x => x.id), ['local', 'browser']);
   ok('note · and each one says what it costs', Q.ENGINES.every(x => x.note && x.note.length > 20));

@@ -60,7 +60,6 @@ function noteBody(lines, meta) {
   if (meta && meta.recorded) front.push('recorded: ' + meta.recorded);
   if (meta && meta.seconds) front.push('seconds: ' + Math.round(meta.seconds));
   if (meta && meta.engine) front.push('engine: ' + meta.engine);
-  if (meta && meta.task) front.push('nexus-task: true');
   front.push('---', '');
   return front.join('\n') + (lines || []).join('\n\n') + '\n';
 }

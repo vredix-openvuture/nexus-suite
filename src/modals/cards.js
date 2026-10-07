@@ -244,109 +244,6 @@ class NexusOrphanConfigModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-/* ── Calendar card ──
-   The events of the coming days (or a compact month grid) from the same cache
-   the calendar page reads — see views/homepage.js · _wCalendar. */
-class NexusCalendarCardConfigModal extends Modal {
-  constructor(plugin, view, item) { super(plugin.app); this.plugin = plugin; this.view = view; this.item = item; }
-  onOpen() { this.contentEl.addClass('nx-cardcfg'); this.render(); }
-  render() {
-    const { contentEl } = this; contentEl.empty();
-    contentEl.createEl('h3', { text: 'Calendar card' });
-    const it = this.item;
-    const save = async () => { await this.plugin.saveSettings(); this.view.render(); };
-    new Setting(contentEl).setName('Title').addText(t => t.setValue(it.title || 'Calendar').onChange(async v => { it.title = v; await save(); }));
-    nxIconField(this.app, contentEl, 'Icon', 'Pick from list', () => it.icon, v => { it.icon = v; save(); }, 'calendar-check');
-
-    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'View' });
-    new Setting(contentEl).setName('Layout').addDropdown(dd => dd
-      .addOption('agenda', 'Agenda — upcoming events')
-      .addOption('week', 'Week — one line per day, from the planner')
-      .addOption('month', 'Month — grid with dots')
-      .setValue(it.display || 'agenda').onChange(async v => { it.display = v; await save(); this.render(); }));
-    if ((it.display || 'agenda') === 'agenda') {
-      new Setting(contentEl).setName('Days ahead').setDesc('How far the agenda looks (1–60).')
-        .addText(t => { t.inputEl.type = 'number'; t.setValue(String(it.days || 7));
-          t.onChange(async v => { const n = parseInt(v, 10); if (!isNaN(n)) { it.days = Math.max(1, Math.min(60, n)); await save(); } }); });
-      new Setting(contentEl).setName('Limit (max shown)')
-        .addText(t => { t.inputEl.type = 'number'; t.setValue(String(it.count || 12));
-          t.onChange(async v => { const n = parseInt(v, 10); if (!isNaN(n)) { it.count = Math.max(1, n); await save(); } }); });
-    }
-
-    // Side panels use the same modal on a settings-backed config object — there
-    // is no widget list to remove them from.
-    if (this.view._widgets) new Setting(contentEl).addButton(b => b.setButtonText('Remove card').setWarning().onClick(async () => {
-      const ws = this.view._widgets(); const i = ws.indexOf(it); if (i >= 0) ws.splice(i, 1);
-      await this.plugin.saveSettings(); this.view.render(); this.close();
-    }));
-  }
-  onClose() { this.contentEl.empty(); }
-}
-
-/* ── Tasks card ──
-   Same filters an agenda block understands (state / due / priority / project),
-   because both run through lib/agenda.js · collectTasks. */
-class NexusTaskCardConfigModal extends Modal {
-  constructor(plugin, view, item) { super(plugin.app); this.plugin = plugin; this.view = view; this.item = item; }
-  onOpen() { this.contentEl.addClass('nx-cardcfg'); this.render(); }
-  render() {
-    const { contentEl } = this; contentEl.empty();
-    contentEl.createEl('h3', { text: 'Tasks card' });
-    const it = this.item;
-    const save = async () => { await this.plugin.saveSettings(); this.view.render(); };
-    new Setting(contentEl).setName('Title').addText(t => t.setValue(it.title || 'Tasks').onChange(async v => { it.title = v; await save(); }));
-    nxIconField(this.app, contentEl, 'Icon', 'Pick from list', () => it.icon, v => { it.icon = v; save(); }, 'list-checks');
-
-    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Which tasks' });
-    const tasks = require('../lib/tasks.js');
-    nxMultiRow(contentEl, 'Projects', 'One project per line; empty = all projects', it.projects, ',', 'Nexus Suite',
-      v => { it.projects = v; save(); }, () => tasks.listProjects(this.plugin));
-    new Setting(contentEl).setName('State').addDropdown(dd => dd
-      .addOption('open', 'Open').addOption('done', 'Done').addOption('all', 'Both')
-      .setValue(it.state || 'open').onChange(async v => { it.state = v; await save(); }));
-
-    // Due buckets, same vocabulary as the agenda block's `due:` line.
-    const DUE = [['day', 'Due today'], ['overdue', 'Overdue'], ['week', 'This week'],
-      ['month', 'This month'], ['upcoming', 'Later'], ['none', 'No due date'], ['any', 'Everything']];
-    const wrap = contentEl.createDiv('nx-cardcfg-group');
-    wrap.createDiv({ cls: 'nx-cardcfg-group-label', text: 'Due' });
-    const row = wrap.createDiv('nx-cardcfg-checks');
-    if (!Array.isArray(it.due)) it.due = ['day', 'overdue'];
-    DUE.forEach(([id, label]) => {
-      const lbl = row.createEl('label', { cls: 'nx-cardcfg-check' });
-      const cb = lbl.createEl('input', { type: 'checkbox' });
-      cb.checked = it.due.includes(id);
-      lbl.createSpan({ text: label });
-      cb.onchange = async () => {
-        const set = new Set(it.due);
-        cb.checked ? set.add(id) : set.delete(id);
-        it.due = DUE.map(d => d[0]).filter(x => set.has(x));
-        if (!it.due.length) it.due = ['any'];
-        await save();
-      };
-    });
-    new Setting(contentEl).setName('Priority at least').setDesc('Empty = any. Also accepts low / medium / high.')
-      .addText(t => t.setPlaceholder('high').setValue(it.priority || '').onChange(async v => { it.priority = v.trim(); await save(); }));
-
-    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Display' });
-    new Setting(contentEl).setName('Sort by').addDropdown(dd => dd
-      .addOption('smart', 'Smart (overdue → today → later)').addOption('due', 'Due date')
-      .addOption('priority', 'Priority').addOption('title', 'A–Z')
-      .setValue(it.sort || 'smart').onChange(async v => { it.sort = v; await save(); }));
-    new Setting(contentEl).setName('Limit (max shown)')
-      .addText(t => { t.inputEl.type = 'number'; t.setValue(String(it.count || 12));
-        t.onChange(async v => { const n = parseInt(v, 10); if (!isNaN(n)) { it.count = Math.max(1, n); await save(); } }); });
-
-    // Side panels use the same modal on a settings-backed config object — there
-    // is no widget list to remove them from.
-    if (this.view._widgets) new Setting(contentEl).addButton(b => b.setButtonText('Remove card').setWarning().onClick(async () => {
-      const ws = this.view._widgets(); const i = ws.indexOf(it); if (i >= 0) ws.splice(i, 1);
-      await this.plugin.saveSettings(); this.view.render(); this.close();
-    }));
-  }
-  onClose() { this.contentEl.empty(); }
-}
-
 /* ── Random note card ──
    Same filter vocabulary as the list card — it just picks ONE of the matches
    and shows it, so old notes resurface on their own. */
@@ -646,4 +543,4 @@ class NexusHabitConfigModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-module.exports = { NexusCalendarCardConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusTaskCardConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };
+module.exports = { NexusCardConfigModal, NexusHabitConfigModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };

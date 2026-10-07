@@ -193,16 +193,16 @@ function nxPropValues(app, key) {
 }
 
 /* ── Week start ──────────────────────────────────────────────────────────────
-   One vault-wide setting (Settings → Calendar → "Week starts on") decides where a
-   week begins for EVERY calendar surface: month grids, the week view, the
-   agenda's "this week" bucket. moment's own startOf('week') follows the app
+   One vault-wide setting (Settings → Mini calendar → "Week starts on") decides
+   where a week begins for EVERY calendar surface: the mini calendar's month
+   grid and the planner block. moment's own startOf('week') follows the app
    locale, which is why these wrappers exist — they take the setting when it has
    one and fall back to the locale otherwise. moment's global locale is
    deliberately left alone: it belongs to Obsidian and every other plugin.
    Returns 0 = Sunday … 6 = Saturday, or null for "whatever the locale says". */
 function nxWeekStartDow(plugin) {
-  const v = plugin && plugin.settings && plugin.settings.tasksCalendar
-    ? plugin.settings.tasksCalendar.weekStart : null;
+  const v = plugin && plugin.settings && plugin.settings.calendar
+    ? plugin.settings.calendar.weekStart : null;
   if (v == null || v === '' || v === 'locale') return null;
   const n = parseInt(v, 10);
   return isNaN(n) ? null : ((n % 7) + 7) % 7;
@@ -227,8 +227,7 @@ function nxWeekdayLabels(plugin) {
   return Array.from({ length: 7 }, (_, i) => min[(dow + i) % 7]);
 }
 
-/* Tab menu entry shared by the three pinnable Nexus pages (dashboard, calendar,
-   tasks). Pinning is a property of the PAGE, not of one tab, so it is stored in
+/* Tab menu entry of the pinnable Nexus page (the dashboard). Pinning is a property of the PAGE, not of one tab, so it is stored in
    the settings and applied by plugin.applyPinnedTabs(). */
 function nxPinMenuItem(plugin, menu, key) {
   const on = plugin.isTabPinned(key);

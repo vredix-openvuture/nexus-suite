@@ -1,10 +1,9 @@
 /* ── KANBAN ────────────────────────────────────────────────────────────────
-   Three boards, one language:
+   Two boards, one language:
      .nx-kb            the ```nexus-kanban``` block inside a note
      .nx-kb.is-folder  the same block with the notes of a folder as its cards
-     .nx-tb            the board mode of the tasks page
    Column colour comes from what the column IS (open / doing / waiting / done),
-   set as --nx-kb-kind from JS, so all three recolour with the palette.
+   set as --nx-kb-kind from JS, so both recolour with the palette.
    The card (.nx-kb-card) is also what the ```nexus-graph``` grid draws. */
 
 .nx-kb {
@@ -67,8 +66,7 @@
   overflow-x: auto; padding-bottom: var(--nx-sp-2);
 }
 .nx-kb-cols .nx-kb-cards { flex: 1; }
-.nx-kb-col,
-.nx-tb-col {
+.nx-kb-col {
   flex: 0 0 var(--nx-kb-col-w, 260px); min-width: var(--nx-kb-col-w, 260px);
   display: flex; flex-direction: column; gap: var(--nx-sp-2);
   padding: 9px;
@@ -78,30 +76,24 @@
   border-top: calc(var(--nx-bw) * 2) solid color-mix(in srgb, var(--nx-kb-kind) 60%, transparent);
   transition: background .12s ease, border-color .12s ease;
 }
-.nx-kb-col.is-over,
-.nx-tb-col.is-over {
+.nx-kb-col.is-over {
   background: color-mix(in srgb, var(--nx-kb-kind) 16%, var(--background-secondary));
   border-color: var(--nx-kb-kind);
 }
-.nx-kb-col-head,
-.nx-tb-col-head { display: flex; align-items: center; gap: 7px; padding: 1px 2px 2px; }
-.nx-kb-col-dot,
-.nx-tb-col-dot { width: 8px; height: 8px; border-radius: var(--nx-r-circle); flex-shrink: 0; background: var(--nx-kb-kind); }
-.nx-kb-col-title,
-.nx-tb-col-title {
+.nx-kb-col-head { display: flex; align-items: center; gap: 7px; padding: 1px 2px 2px; }
+.nx-kb-col-dot { width: 8px; height: 8px; border-radius: var(--nx-r-circle); flex-shrink: 0; background: var(--nx-kb-kind); }
+.nx-kb-col-title {
   flex: 1; min-width: 0; font-size: .86em; font-weight: 600; color: var(--text-normal);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.nx-kb-col-count,
-.nx-tb-col-count {
+.nx-kb-col-count {
   font-size: .72em; font-weight: 700; padding: 1px 7px; border-radius: var(--nx-r-pill);
   font-variant-numeric: tabular-nums;
   color: color-mix(in srgb, var(--nx-kb-kind) 75%, var(--text-normal));
   background: color-mix(in srgb, var(--nx-kb-kind) 15%, transparent);
 }
 /* Over the WIP limit — the one place the board raises its voice. */
-.nx-kb-col-count.is-over,
-.nx-tb-col-count.is-over {
+.nx-kb-col-count.is-over {
   color: var(--text-on-accent, #fff);
   background: var(--color-red, #e5544a);
 }
@@ -119,15 +111,13 @@
 .nx-kb-col-menu:hover { color: var(--nx-fg, var(--text-normal)); background: var(--nx-sf-1); }
 .nx-kb-col-menu .svg-icon { width: 14px; height: 14px; }
 
-.nx-kb-cards,
-.nx-tb-cards {
+.nx-kb-cards {
   display: flex; flex-direction: column; gap: 7px;
   min-height: 24px; max-height: 62vh; overflow-y: auto;
 }
 
 /* ── cards ── */
-.nx-kb-card,
-.nx-tb-card {
+.nx-kb-card {
   position: relative;
   display: flex; align-items: flex-start; gap: var(--nx-sp-2);
   padding: 8px 10px; border-radius: var(--nx-radius); cursor: pointer;
@@ -136,21 +126,16 @@
   transition: transform .1s ease, border-color .1s ease, opacity .12s ease;
   touch-action: none;                 /* the card doubles as a drag handle */
 }
-.nx-kb-card:hover,
-.nx-tb-card:hover { border-color: var(--nx-kb-kind); transform: translateY(-1px); }
-.nx-kb-card.is-dragging,
-.nx-tb-card.is-dragging { opacity: .35; }
-.nx-kb-card.is-done .nx-kb-card-t,
-.nx-tb-card.is-done .nx-tb-card-t { text-decoration: line-through; color: var(--text-faint); }
+.nx-kb-card:hover { border-color: var(--nx-kb-kind); transform: translateY(-1px); }
+.nx-kb-card.is-dragging { opacity: .35; }
+.nx-kb-card.is-done .nx-kb-card-t { text-decoration: line-through; color: var(--text-faint); }
 /* The card points at a note that isn't there (renamed, deleted) — say so
    instead of showing a card that does nothing when clicked. */
 .nx-kb-card.is-missing { border-style: dashed; }
 .nx-kb-card.is-missing .nx-kb-card-ic { color: var(--color-red, #e5544a); }
-.nx-tb-card.is-busy { opacity: .5; pointer-events: none; }
 
 .nx-kb-card-lead { display: flex; align-items: flex-start; flex-shrink: 0; }
-.nx-kb-check,
-.nx-tb-check { margin: 2px 0 0; flex-shrink: 0; }
+.nx-kb-check { margin: 2px 0 0; flex-shrink: 0; }
 /* A folder card carries a state dot instead of a checkbox: its column is a
    value in the note, not a tick. Clicking it steps to the next column. */
 .nx-kb-card-dot {
@@ -170,13 +155,11 @@
 .nx-graph.is-linking .nx-kb-card { opacity: .3; }
 .nx-kb.is-linking .nx-kb-card.is-linked,
 .nx-graph.is-linking .nx-kb-card.is-linked { opacity: 1; border-color: var(--nx-kb-kind); }
-.nx-kb-card-body,
-.nx-tb-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--nx-sp-1); }
+.nx-kb-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--nx-sp-1); }
 .nx-kb-card-line { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .nx-kb-card-ic { display: inline-flex; flex-shrink: 0; color: var(--text-faint); }
 .nx-kb-card-ic .svg-icon { width: 13px; height: 13px; }
-.nx-kb-card-t,
-.nx-tb-card-t {
+.nx-kb-card-t {
   font-size: .9em; line-height: 1.35; color: var(--text-normal);
   overflow-wrap: anywhere;
 }
@@ -192,8 +175,7 @@
 }
 .nx-kb-card.is-done .nx-kb-card-desc { color: var(--text-faint); }
 
-.nx-kb-card-meta,
-.nx-tb-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.nx-kb-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 /* Legacy alias of .nx-btn.is-icon.is-sm.is-quiet (00-tokens.css). */
 .nx-kb-card-menu {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
@@ -214,17 +196,16 @@
 body.is-mobile .nx-kb-card-menu { opacity: .6; }
 
 /* ── chips ── */
-.nx-kb-due, .nx-tb-due,
-.nx-kb-tag,
-.nx-tb-prio, .nx-tb-chip, .nx-tb-pending {
+.nx-kb-due,
+.nx-kb-tag {
   font-size: .7em; padding: 1px 7px; border-radius: var(--nx-r-pill);
   color: var(--text-muted); background: var(--nx-sf-2);
   white-space: nowrap;
 }
-.nx-kb-due.is-today, .nx-tb-due.is-today {
+.nx-kb-due.is-today {
   color: var(--text-on-accent, #fff); background: var(--interactive-accent);
 }
-.nx-kb-due.is-late, .nx-tb-due.is-late {
+.nx-kb-due.is-late {
   color: var(--text-on-accent, #fff); background: var(--color-red, #e5544a);
 }
 .nx-kb-tag { color: var(--text-accent); background: color-mix(in srgb, var(--text-accent) 14%, transparent); }
@@ -241,11 +222,6 @@ body.is-mobile .nx-kb-card-menu { opacity: .6; }
 }
 .nx-kb-links .svg-icon { width: 11px; height: 11px; }
 .nx-kb-links.is-none { opacity: .45; }
-.nx-tb-prio.is-high { color: var(--text-on-accent, #fff); background: var(--color-red, #e5544a); }
-.nx-tb-prio.is-medium { color: var(--color-orange, #d8a24a); background: color-mix(in srgb, var(--color-orange, #d8a24a) 16%, transparent); }
-.nx-tb-rep { display: inline-flex; color: var(--text-faint); }
-.nx-tb-rep .svg-icon { width: 12px; height: 12px; }
-.nx-tb-pending { font-style: italic; }
 
 /* ── the folder board's head ── */
 .nx-kb-tally { display: flex; flex-wrap: wrap; gap: var(--nx-sp-1); flex: 1; }
@@ -279,8 +255,7 @@ body.is-mobile .nx-kb-card-menu { opacity: .6; }
 /* Legacy alias of .nx-btn + .nx-list-add (00-tokens.css) — the row that adds a
    card. It holds an input, so it grows to the column width instead of hugging a
    label. */
-.nx-kb-add,
-.nx-tb-add {
+.nx-kb-add {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
   height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
   border: var(--nx-hairline); border-radius: var(--nx-r-tile);
@@ -291,15 +266,13 @@ body.is-mobile .nx-kb-card-menu { opacity: .6; }
   border-style: dashed; background: transparent;
   color: var(--nx-fg-muted, var(--text-faint));
 }
-.nx-kb-add:focus-within,
-.nx-tb-add:focus-within { border-color: var(--interactive-accent); border-style: solid; }
-.nx-kb-add-input,
-.nx-tb-add-input {
+.nx-kb-add:focus-within { border-color: var(--interactive-accent); border-style: solid; }
+.nx-kb-add-input {
   flex: 1; min-width: 0;
   border: none; background: transparent; color: var(--text-normal);
   font-size: .85em; padding: 2px 0;
 }
-.nx-kb-add-input:focus, .nx-tb-add-input:focus { outline: none; }
+.nx-kb-add-input:focus { outline: none; }
 
 /* ── drag ── */
 .nx-kb-ghost {
@@ -318,41 +291,15 @@ body.is-mobile .nx-kb-card-menu { opacity: .6; }
   background: var(--interactive-accent);
 }
 
-/* ── task board (tasks page) ────────────────────────────────────────────────
-   Lives inside the page's right half, so it scrolls sideways on its own and
-   the columns take the full height they can get. */
-.nx-tb {
-  --nx-kb-kind: var(--text-muted);
-  --nx-kb-col-w: 260px;
-  flex: 1; min-height: 0;
-  display: flex; flex-direction: column; gap: var(--nx-sp-2);
-  padding: 12px 14px 16px;
-  overflow: hidden;
-}
-.nx-tb-warn {
-  font-size: .78em; color: var(--text-muted);
-  padding: 6px 10px; border-radius: var(--nx-radius);
-  background: color-mix(in srgb, var(--color-orange, #d8a24a) 14%, transparent);
-}
-.nx-tb-cols {
-  flex: 1; min-height: 0;
-  display: flex; gap: var(--nx-sp-3); align-items: stretch;
-  overflow-x: auto; overflow-y: hidden; padding-bottom: 6px;
-}
-.nx-tb-col { align-self: stretch; }
-.nx-tb-cards { flex: 1; max-height: none; }
 /* A column that only exists because a note says so (a renamed column, a
-   Vikunja bucket that is gone, a status value nobody configured) — visibly not
-   part of the configured board. */
-.nx-kb-col.is-stray,
-.nx-tb-col.is-stray { border-style: dashed; }
-.nx-tb-none { padding: var(--nx-sp-2) var(--nx-sp-1); text-align: center; font-size: .78em; color: var(--text-faint); }
+   status value nobody configured) — visibly not part of the configured board. */
+.nx-kb-col.is-stray { border-style: dashed; }
 
 /* ── phone: columns full width, stacked ── */
 @media (max-width: 620px) {
-  .nx-kb-cols, .nx-tb-cols { flex-direction: column; overflow-x: visible; }
-  .nx-kb-col, .nx-tb-col { flex: 1 1 auto; min-width: 0; width: 100%; }
-  .nx-kb-cards, .nx-tb-cards { max-height: 46vh; }
+  .nx-kb-cols { flex-direction: column; overflow-x: visible; }
+  .nx-kb-col { flex: 1 1 auto; min-width: 0; width: 100%; }
+  .nx-kb-cards { max-height: 46vh; }
   /* The tools push off the right edge next to a title + tally chips — give
      them their own row, with the filter field taking the space it needs. */
   .nx-kb.is-folder .nx-kb-tools { margin-left: 0; width: 100%; }

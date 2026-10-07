@@ -174,6 +174,17 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   ok('skip · git is never synced', withConfig('.git/config'));
   ok('skip · nor the trash', withConfig('.trash/old.md'));
   ok('skip · nor Syncthing leftovers', withConfig('Notes/a.sync-conflict-20260831.md'));
+  // Other sync tools' working files: uploading them is how two syncs fight.
+  ok('skip · nor a Syncthing temp file', withConfig('Notes/.syncthing.Idea.md.tmp'));
+  ok('skip · nor the other Syncthing temp form', withConfig('~syncthing~Idea.md.tmp'));
+  ok('skip · nor the Nextcloud client journal', withConfig('.sync_37e38dcda31e.db'));
+  ok('skip · nor its write-ahead log', withConfig('.sync_37e38dcda31e.db-wal'));
+  ok('skip · nor the Nextcloud client log', withConfig('.nextcloudsync.log'));
+  ok('skip · but a note that merely looks similar is synced', !withConfig('Notes/sync_37e3.db.md'));
+  ok('skip · nor this device\'s own state', withConfig(S.statePath('dev-a')));
+  eq('state · the file name carries the device id', S.statePath('dev-a'), '.obsidian/plugins/nexus-suite/sync-state.dev-a.json');
+  ok('state · two devices never share one', S.statePath('dev-a') !== S.statePath('dev-b'));
+  ok('state · an id cannot leave the plugin folder', S.statePath('../../x').indexOf('/../') < 0, S.statePath('../../x'));
   ok('skip · nor node_modules', withConfig('.obsidian/plugins/x/node_modules/y.js'));
 
   const custom = S.makeSkip({ config: true, exclude: ['Archive/', '*.tmp', 'exact.md'] });
@@ -407,6 +418,187 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
 }
 
 
+// ── the first run of a second device ───────────────────────────────────────
+/* The field bug: a vault already on both sides, every file with a different
+   time on the server (it stamps the upload, not the edit). Judged by time
+   alone, the first run of the second device made a conflict copy of the whole
+   vault — 217 of them, 192 byte-identical to their original. */
+{
+  const f = (mtime, size) => ({ mtime, size });
+  eq('first run · same size, far apart in time → compare the bytes',
+     S.decide('a', f(1000, 10), f(900000, 10), null).action, 'compare');
+  eq('first run · a different size is a real conflict',
+     S.decide('a', f(1000, 10), f(900000, 11), null).action, 'conflict');
+  const agree = S.decide('a', f(1000, 10), f(1500, 10), null);
+  ok('first run · close enough in time needs nothing and gets a record',
+     agree.action === 'none' && agree.adopt === true, JSON.stringify(agree));
+  // The same holds later: Syncthing (or a copy) brings the same edit both ways.
+  const base = { local: f(1000, 10), remote: f(5000, 10) };
+  eq('later · edited to the same size on both sides is compared, not a conflict',
+     S.decide('a', f(70000, 12), f(99000, 12), base).action, 'compare');
+  const plan = S.planSync({ 'x.md': f(1000, 4), 'y.md': f(1000, 4) }, { 'x.md': f(1000, 4), 'y.md': f(800000, 4) }, {});
+  eq('plan · agreeing files are adopted', plan.adopt, ['x.md']);
+  eq('plan · the rest is compared', plan.compare.map(v => v.path), ['y.md']);
+  eq('plan · and counted as work', S.planSize(plan), 1);
+}
+
+// ── the runner, end to end against a fake server ───────────────────────────
+{
+  const R = window.vaultSyncRunLib;
+  const enc = (text) => new TextEncoder().encode(text).buffer;
+
+  function memoryVault(files) {
+    const store = {};
+    for (const [path, text] of Object.entries(files)) store[path] = { bytes: enc(text), mtime: 1000 };
+    const folderOf = (p) => (p.indexOf('/') >= 0 ? p.slice(0, p.lastIndexOf('/')) : '');
+    return {
+      _store: store,
+      async list(folder) {
+        const files = [], folders = new Set();
+        for (const p of Object.keys(store)) {
+          const parent = folderOf(p);
+          if (parent === folder) files.push(p);
+          else if (folder === '' ? true : parent.indexOf(folder + '/') === 0) {
+            const rest = folder === '' ? p : p.slice(folder.length + 1);
+            folders.add((folder ? folder + '/' : '') + rest.split('/')[0]);
+          }
+        }
+        return { files, folders: Array.from(folders) };
+      },
+      async stat(p) { return store[p] ? { mtime: store[p].mtime, size: store[p].bytes.byteLength } : null; },
+      async readBinary(p) { if (!store[p]) throw new Error('no ' + p); return store[p].bytes; },
+      async writeBinary(p, bytes) { store[p] = { bytes, mtime: 2000 }; },
+      async read(p) { if (!store[p]) throw new Error('no ' + p); return new TextDecoder().decode(store[p].bytes); },
+      async write(p, text) { store[p] = { bytes: enc(text), mtime: 2000 }; },
+      async exists(p) { return !!store[p] || Object.keys(store).some(k => k.indexOf(p + '/') === 0); },
+      async mkdir() {},
+      async remove(p) { delete store[p]; },
+    };
+  }
+  function fakeServer(files, opts) {
+    const o = opts || {};
+    const store = {};
+    let clock = 500000;
+    for (const [path, text] of Object.entries(files)) store[path] = { bytes: enc(text), mtime: clock };
+    return {
+      _store: store,
+      async listTree(path, skip) {
+        return Object.keys(store).filter(p => !skip(p, false))
+          .map(p => ({ path: p, mtime: store[p].mtime, size: store[p].bytes.byteLength, folder: false }));
+      },
+      async get(p) { return store[p] ? { arrayBuffer: store[p].bytes } : null; },
+      async put(p, bytes) {
+        if (o.refuseZip && /\.zip$/.test(p)) throw new Error('uploading "' + p + '" failed with 413');
+        store[p] = { bytes: typeof bytes === 'string' ? enc(bytes) : bytes, mtime: (clock += 60000) };
+      },
+      async ensureFolder() {}, async list() { return []; }, async remove(p) { delete store[p]; },
+    };
+  }
+  function runnerFor(vault, server, settings) {
+    const plugin = {
+      app: { vault: { adapter: vault, getAbstractFileByPath: () => null, getName: () => 'Vault' }, workspace: { onLayoutReady() {} } },
+      settings: { vaultSync: Object.assign({ enabled: true, conflict: 'keepBoth', config: true, backup: false }, settings || {}) },
+      getCredential: () => ({ username: 'u', secret: 'p' }),
+      deviceId: () => 'dev-b',
+      deviceSetting: (key, fallback) => (key === 'vaultSyncUrl' ? 'https://example.invalid/dav' : fallback),
+    };
+    const vs = new R.NexusVaultSync(plugin);
+    vs.client = () => server;
+    return vs;
+  }
+
+  await (async () => {
+    const notes = {};
+    for (let i = 0; i < 30; i++) notes['Notes/n' + i + '.md'] = 'note ' + i;
+    const vault = memoryVault(notes);
+    const server = fakeServer(Object.assign({}, notes, { 'Notes/n7.md': 'NOTE 7' }));   // same size, other bytes
+    const vs = runnerFor(vault, server);
+    const report = await vs.syncNow(false);
+    eq('first run · identical files make no conflict, one real difference does', report.conflicts, 1);
+    eq('first run · and exactly one copy is set aside', report.copies.length, 1);
+    ok('first run · the copy holds this device\'s text',
+       Object.keys(vault._store).some(p => /n7 \(conflict/.test(p) && new TextDecoder().decode(vault._store[p].bytes) === 'note 7'));
+    const state = JSON.parse(await vault.read('.obsidian/plugins/nexus-suite/sync-state.dev-b.json'));
+    ok('first run · every agreeing file now has a record', Object.keys(notes).every(p => state.files[p]), Object.keys(state.files).length + ' recorded');
+    ok('first run · the old shared state file is not written', !vault._store['.obsidian/plugins/nexus-suite/sync-state.json']);
+    window.__notices = [];
+    const again = await vs.syncNow(false);
+    eq('second run · nothing left to do', [again.uploaded, again.downloaded, again.conflicts, again.failed], [0, 0, 0, 0]);
+    vault._store['Notes/n3.md'] = { bytes: enc('note 3 edited'), mtime: 9000000 };
+    const third = await vs.syncNow(false);
+    eq('third run · an ordinary edit is an upload, not a conflict', [third.uploaded, third.conflicts], [1, 0]);
+  })();
+
+  await (async () => {
+    // The backup is one big PUT; a proxy limit (413) used to throw away the
+    // record of the whole run, and the next run conflicted on every file.
+    const vault = memoryVault({ 'a.md': 'aaa', 'b.md': 'bbb' });
+    const server = fakeServer({}, { refuseZip: true });
+    const vs = runnerFor(vault, server, { backup: true });
+    window.__notices = [];
+    const report = await vs.syncNow(false);
+    ok('backup · a failed backup does not fail the sync', !report.error && report.uploaded === 2, JSON.stringify(report));
+    ok('backup · it is reported', /413/.test(report.backupError || ''), report.backupError);
+    ok('backup · and said out loud', (window.__notices || []).some(n => /backup failed/.test(n)), JSON.stringify(window.__notices));
+    const state = JSON.parse(await vault.read(vs.statePath));
+    ok('backup · the run\'s record was still saved', !!state.files['a.md'] && !!state.files['b.md']);
+    ok('backup · and the day is not marked as backed up', !state.lastBackup, state.lastBackup);
+    const next = await vs.syncNow(false);
+    eq('backup · the next run has nothing to argue about', [next.uploaded, next.downloaded, next.conflicts], [0, 0, 0]);
+  })();
+
+  await (async () => {
+    // A path never synced from here has no "newer" side worth trusting: even
+    // with "the server wins", this device's text must survive.
+    const vault = memoryVault({ 'n.md': 'my unsynced edit' });
+    const vs = runnerFor(vault, fakeServer({ 'n.md': 'their older text' }), { conflict: 'remote' });
+    const report = await vs.syncNow(false);
+    ok('policy · with no record, "server wins" still keeps both', report.copies.length === 1, JSON.stringify(report.copies));
+    ok('policy · and this device\'s text is in the copy',
+       Object.keys(vault._store).some(p => /\(conflict/.test(p) && new TextDecoder().decode(vault._store[p].bytes) === 'my unsynced edit'));
+    // Once there is a record, the chosen policy applies as before.
+    vault._store['n.md'] = { bytes: enc('edited here again'), mtime: 9000000 };
+    vs.client()._store['n.md'] = { bytes: enc('and there, longer!!'), mtime: 9900000 };
+    const later = await vs.syncNow(false);
+    ok('policy · with a record, "server wins" overwrites as configured',
+       later.copies.length === 0 && new TextDecoder().decode(vault._store['n.md'].bytes) === 'and there, longer!!', JSON.stringify(later));
+  })();
+
+  await (async () => {
+    const vault = memoryVault({ 'a.md': 'a', '.obsidian/plugins/nexus-suite/sync-state.json': '{"files":{}}' });
+    const vs = runnerFor(vault, fakeServer({}));
+    await vs.syncNow(false);
+    ok('legacy · the old shared state file is removed', !vault._store['.obsidian/plugins/nexus-suite/sync-state.json']);
+    ok('legacy · and this device\'s own is there', !!vault._store[vs.statePath]);
+  })();
+
+  await (async () => {
+    // A file that fails on every run is announced once, not every minute.
+    const vault = memoryVault({ 'ok.md': 'fine', 'bad.md': 'broken' });
+    const server = fakeServer({});
+    const put = server.put;
+    server.put = async (p, b) => { if (p === 'bad.md') throw new Error('uploading "bad.md" failed with 403'); return put(p, b); };
+    const vs = runnerFor(vault, server);
+    window.__notices = [];
+    await vs.syncNow(false);
+    await vs.syncNow(false);
+    await vs.syncNow(false);
+    eq('failures · three runs, the same failure, one notice', (window.__notices || []).length, 1);
+    ok('failures · which names the failure', /1 failed/.test((window.__notices || [])[0] || ''), (window.__notices || [])[0]);
+  })();
+
+  await (async () => {
+    // Many conflicts, one toast.
+    const notes = {}, theirs = {};
+    for (let i = 0; i < 12; i++) { notes['c' + i + '.md'] = 'mine ' + i; theirs['c' + i + '.md'] = 'their ' + i + ' longer'; }
+    const vs = runnerFor(memoryVault(notes), fakeServer(theirs));
+    window.__notices = [];
+    const report = await vs.syncNow(false);
+    eq('notices · twelve conflicts', report.conflicts, 12);
+    eq('notices · are one Notice, not twelve', (window.__notices || []).length, 1);
+  })();
+}
+
 // ── per-device settings ────────────────────────────────────────────────────
 /* The bug: data.json is a file in the vault, so the vault sync uploads it and
    the other device downloads it — over its own settings, device name included.
@@ -417,7 +609,6 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   const live = () => ({
     vaultSync: { enabled: true, url: 'https://cloud.example/dav/Vault', deviceName: 'Desktop',
                  onStart: true, intervalMin: 15, config: true, exclude: ['Archive/'] },
-    tasksCalendar: { enabled: true, accounts: [{ id: 'acc-1', kind: 'vikunja', label: 'Work', serverUrl: 'https://v.example' }] },
   });
 
   const settings = live();
@@ -426,14 +617,11 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   eq('device · the server URL is this device\'s now', bag.vaultSyncUrl, 'https://cloud.example/dav/Vault');
   eq('device · so is the name it calls itself', bag.vaultSyncDeviceName, 'Desktop');
   eq('device · and the schedule', [bag.vaultSyncOnStart, bag.vaultSyncIntervalMin], [true, 15]);
-  eq('device · the task accounts came along', bag.taskAccounts.length, 1);
-  eq('device · as a copy, not the same array', bag.taskAccounts === settings.tasksCalendar.accounts, false);
   ok('device · shared policy is NOT moved',
      bag.config === undefined && bag.exclude === undefined && settings.vaultSync.config === true);
   /* Left in place on purpose: the second device reads the same data.json and
      still has to find them when it updates. */
-  ok('device · the old keys are left where they were',
-     settings.vaultSync.url === 'https://cloud.example/dav/Vault' && settings.tasksCalendar.accounts.length === 1);
+  ok('device · the old key is left where it was', settings.vaultSync.url === 'https://cloud.example/dav/Vault');
 
   bag.vaultSyncDeviceName = 'Tablet';
   ok('device · a second run does nothing', D.migrateDeviceSettings(settings, 'dev-a') === false);
@@ -448,7 +636,7 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
      settings.devices['dev-b'].vaultSyncUrl, 'https://cloud.example/dav/Vault');
   eq('device · without disturbing the first', settings.devices['dev-a'].vaultSyncUrl, '');
 
-  const fresh = { vaultSync: {}, tasksCalendar: {} };
+  const fresh = { vaultSync: {} };
   D.migrateDeviceSettings(fresh, 'dev-new');
   eq('device · a fresh install migrates nothing but is marked done',
      Object.keys(fresh.devices['dev-new']), ['migrated']);
@@ -482,33 +670,6 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   eq('round trip · and its own interval', desktopAgain.deviceSetting('vaultSyncIntervalMin', 15), 5);
   eq('round trip · while the tablet keeps its own',
      desktopAgain.settings.devices['dev-tablet'].vaultSyncIntervalMin, 60);
-
-  /* Accounts are still reached by their old name, land in the device's bag, and
-     — the point — are NOT written back over the shared key. Saving them there
-     would hand one device's account list to the other on the next sync, which
-     is the bug being fixed one level up. */
-  const legacyFile = { tasksCalendar: { accounts: [{ id: 'acc-old', kind: 'vikunja', label: 'From before', serverUrl: 'https://old.example' }] } };
-  const first = await loaded(legacyFile, 'dev-first');
-  eq('accounts · the existing list is migrated into this device\'s bag',
-     first.settings.devices['dev-first'].taskAccounts.length, 1);
-  first.settings.tasksCalendar.accounts.push({ id: 'acc-9', kind: 'vikunja', label: 'Mine', serverUrl: 'https://v.example' });
-  eq('accounts · an account added by the old name lands in the bag too',
-     first.settings.devices['dev-first'].taskAccounts.length, 2);
-
-  const firstFile = asFile(first);
-  eq('accounts · nothing is written back over the shared key',
-     firstFile.tasksCalendar.accounts, undefined);
-  eq('accounts · the value it was migrated from is parked, unchanged',
-     firstFile.tasksCalendar.accountsBeforeDeviceStore.map(a => a.id), ['acc-old']);
-
-  const second = await loaded(firstFile, 'dev-second');
-  eq('accounts · a device updating later migrates from the parked copy, not from the first device\'s list',
-     second.settings.tasksCalendar.accounts.map(a => a.id), ['acc-old']);
-  eq('accounts · and the first device is untouched by that',
-     second.settings.devices['dev-first'].taskAccounts.length, 2);
-  second.settings.tasksCalendar.accounts = [];
-  eq('accounts · emptying the list on one device empties only that one',
-     [second.settings.devices['dev-second'].taskAccounts.length, second.settings.devices['dev-first'].taskAccounts.length], [0, 2]);
 
   // The startup toggle became a three-way choice.
   const oldOn = await loaded({ homepage: { openOnStartup: true } }, 'dev-x');

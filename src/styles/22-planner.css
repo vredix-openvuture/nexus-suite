@@ -151,6 +151,4 @@
 }
 .nx-qn-hint { color: var(--text-faint); font-size: 13px; }
 .nx-qn-line + .nx-qn-line { margin-top: 7px; }
-.nx-qn-row { display: flex; align-items: center; gap: 14px; }
-.nx-qn-check { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; }
 .nx-qn-engine { margin-top: var(--nx-sp-3); font-size: 12px; color: var(--text-faint); }

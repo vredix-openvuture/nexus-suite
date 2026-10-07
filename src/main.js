@@ -5,23 +5,13 @@
  *  NexusSuite plugin class; wires every module together. esbuild bundles this into main.js.
  * ========================================================================== */
 
-const { MarkdownView, Menu, Notice, Plugin, TFile, arrayBufferToBase64, loadPdfJs, moment, setIcon } = require('obsidian');
+const { MarkdownRenderChild, MarkdownView, Menu, Notice, Plugin, TFile, arrayBufferToBase64, loadPdfJs, moment, setIcon } = require('obsidian');
 const { NexusBannerImportModal, NexusBannerModal } = require('./modals/banner.js');
 const { NexusCalendarView } = require('./views/calendar.js');
-const { NexusCalendarPageView } = require('./views/calendarpage.js');
-const { NexusTasksPageView } = require('./views/taskspage.js');
-const { NexusSideView } = require('./views/sidebar.js');
 const { NexusSketchPaneView } = require('./views/sketchpane.js');
-const { NexusTaskModal } = require('./modals/task.js');
-const datadir = require('./lib/datadir.js');
-const tasks = require('./lib/tasks.js');
-const sync = require('./lib/sync.js');
-const { VikunjaClient } = require('./lib/vikunja.js');
-const { NexusConflictModal } = require('./modals/conflict.js');
 const { NexusCalloutInsertModal, NexusCalloutSuggest } = require('./modals/callout.js');
-const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, CAL_PAGE_VIEW, TASKS_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, SCRATCH_VIEW, SIDE_CAPTURE_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SIDE_CAL_VIEW, SIDE_TASKS_VIEW, SKETCH_VIEW, ST_SYMBOL_RULES, TASK_BUCKETS, TIMER_VIEW } = require('./constants.js');
+const { BAR_DEFAULTS, BAR_ITEMS, BAR_ITEM_IDS, SELECT_SHAPES, RULER_ANGLES, CAL_VIEW, DEFAULT_SETTINGS, HOME_VIEW, IMG_EXT, INK_DOWNSCALE_EXT, INK_EXT, INK_MAX_DIM, INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, SCRATCH_VIEW, SIDE_CAPTURE_VIEW, NX_MODULES, PALETTES, THEME_STYLES, PEN_IDS, SKETCH_VIEW, ST_SYMBOL_RULES, TIMER_VIEW } = require('./constants.js');
 const { nxAllFolders, nxAllNames, nxAllPropKeys, nxAllTags, nxHexToHsl, nxInkZoomEnd, nxInkZoomMove, nxInkZoomStart, nxPdfDestPage, nxPropValues, renderMd } = require('./lib/helpers.js');
-const { NexusAgenda } = require('./lib/agenda.js');
 const { NexusPlanner } = require('./views/plannerblock.js');
 const { NexusVaultSync } = require('./lib/vaultsyncrun.js');
 const { WebDavClient } = require('./lib/webdav.js');
@@ -91,8 +81,6 @@ module.exports = class NexusSuite extends Plugin {
     this._guard('kanban', () => { this.kanban = new NexusKanban(this); this.kanban.init(); });
     this._guard('planner', () => { this.planner = new NexusPlanner(this); this.planner.init(); });
     this._guard('vaultSync', () => { this.vaultSync = new NexusVaultSync(this); this.vaultSync.init(); });
-    // ── Agenda code block (one day: events + tasks + backlinks, for daily notes) ──
-    this._guard('agenda', () => { this.agenda = new NexusAgenda(this); this.agenda.init(); });
 
     // ── Banner ──
     this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.refreshBanner()));
@@ -209,6 +197,14 @@ module.exports = class NexusSuite extends Plugin {
     this.registerMarkdownCodeBlockProcessor('quicksketch', (source, el, ctx) => this.renderSketch(source, el, ctx));
     // One sketch as its own tab — see views/sketchpane.js and openSketchInSplit.
     this.registerView(SKETCH_VIEW, (leaf) => new NexusSketchPaneView(leaf, this));
+    /* The id → note index (see sketchOwners) is built from frontmatter, so it is
+       only ever wrong after frontmatter changed. Dropping it is cheap; keeping a
+       stale one would open a drawing beside the wrong note. */
+    const dropSketchOwners = () => { this._sketchOwnerIndex = null; };
+    this.registerEvent(this.app.metadataCache.on('changed', dropSketchOwners));
+    this.registerEvent(this.app.metadataCache.on('resolved', dropSketchOwners));
+    this.registerEvent(this.app.vault.on('delete', dropSketchOwners));
+    this.registerEvent(this.app.vault.on('rename', dropSketchOwners));
     this.addCommand({ id: 'nexus-insert-sketch', name: 'Insert a sketch',
       editorCallback: (editor) => {
         if (!this.settings.quicksketch.enabled) { new Notice(NX_MODULES.quicksketch.name + ' is switched off.'); return; }
@@ -243,14 +239,6 @@ module.exports = class NexusSuite extends Plugin {
     this.addCommand({ id: 'nexus-new-protokoll', name: 'New sketch note', callback: () => this.createSketchNote() });
     this.addCommand({ id: 'nexus-planner-to-daily-notes', name: 'Move planner lines into the daily notes',
       callback: () => this.migratePlannerLines() });
-    this.addCommand({ id: 'nexus-track-note-as-task', name: 'Track this note as a task',
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file || file.extension !== 'md') return false;
-        if (checking) return true;
-        this.toggleNoteTask(file);
-        return true;
-      } });
     this.addCommand({ id: 'nexus-insert-planner', name: 'Insert a planner',
       editorCallback: (editor) => {
         const { plannerTemplate } = require('./lib/planner.js');
@@ -303,47 +291,6 @@ module.exports = class NexusSuite extends Plugin {
     if (this.settings.calendar.enabled && this.settings.calendar.ribbon) {
       this.addRibbonIcon('calendar', NX_MODULES.calendar.name, () => this.activateCalendar());
     }
-
-    // ── Tasks & Calendar (full-page view over the local calendars) ──
-    this.registerView(CAL_PAGE_VIEW, (leaf) => new NexusCalendarPageView(leaf, this));
-    if (this.settings.tasksCalendar.enabled && this.settings.tasksCalendar.ribbon) {
-      this.addRibbonIcon('calendar-check', NX_MODULES.tasksCalendar.name, () => this.openCalendarPage());
-    }
-    this.addCommand({ id: 'nexus-open-calendar-page', name: 'Open the full-page calendar', callback: () => this.openCalendarPage() });
-    // ── Tasks page (project tree + task list) ──
-    this.registerView(TASKS_VIEW, (leaf) => new NexusTasksPageView(leaf, this));
-    if (this.settings.tasksCalendar.enabled && this.settings.tasksCalendar.ribbon) {
-      this.addRibbonIcon('list-checks', 'Tasks', () => this.openTasksPage());
-    }
-    this.addCommand({ id: 'nexus-open-tasks-page', name: 'Open the tasks page', callback: () => this.openTasksPage() });
-    // ── The same two as side panels (see views/sidebar.js) ──
-    this.registerView(SIDE_CAL_VIEW, (leaf) => new NexusSideView(leaf, this, 'calendar'));
-    this.registerView(SIDE_TASKS_VIEW, (leaf) => new NexusSideView(leaf, this, 'tasks'));
-    this.addCommand({ id: 'nexus-open-calendar-sidebar', name: 'Open the calendar in the sidebar', callback: () => this.openSidePanel('calendar') });
-    this.addCommand({ id: 'nexus-open-tasks-sidebar', name: 'Open the tasks in the sidebar', callback: () => this.openSidePanel('tasks') });
-    this.addCommand({ id: 'nexus-sync-taskcal', name: 'Sync calendars and tasks now', callback: () => { new Notice('Nexus: syncing…'); this.syncTaskCal().then(r => new Notice('Nexus sync\n' + ((r && r.lines) || ['done']).join('\n'), 9000)); } });
-    this.app.workspace.onLayoutReady(() => { if (this.settings.tasksCalendar.enabled && this.settings.tasksCalendar.syncOnStartup) this._guard('taskcal-sync', () => this.syncTaskCal()); });
-    this.registerInterval(window.setInterval(() => { if (this.settings.tasksCalendar.enabled) this.syncTaskCal(); }, Math.max(5, this.settings.tasksCalendar.syncIntervalMin || 15) * 60000));
-
-    // ── Todos (local projects/tasks as Markdown) ──
-    this.addCommand({ id: 'nexus-new-task', name: 'New task', callback: () => {
-      if (!this.settings.tasksCalendar.enabled) { new Notice(NX_MODULES.tasksCalendar.name + ' is switched off.'); return; }
-      new NexusTaskModal(this, null).open();
-    }});
-    this.addCommand({ id: 'nexus-new-project', name: 'New task project', callback: async () => {
-      if (!this.settings.tasksCalendar.enabled) { new Notice(NX_MODULES.tasksCalendar.name + ' is switched off.'); return; }
-      const name = await new NexusNameModal(this.app, 'New project name', 'Project').openAndGet();
-      if (!name) return;
-      const file = await tasks.createProject(this, name);
-      this.app.workspace.getLeaf(false).openFile(file);
-    }});
-    // Live checklist: toggling a checkbox in a project note flips its task
-    // (a repeating task advances its due date and the box resets). Guarded so
-    // our own writes don't re-trigger it.
-    this.registerEvent(this.app.vault.on('modify', (f) => { if (this.settings.tasksCalendar.enabled) this._guard('task-checklist', () => tasks.onProjectNoteModify(this, f)); }));
-    // Task notes are named after their title; notes from the id-named era get
-    // renamed once (their links follow) and the old `<!-- nx:id -->` markers go.
-    this.app.workspace.onLayoutReady(() => window.setTimeout(() => this._guard('task-names', () => this.migrateTaskNames()), 2500));
 
     // ── Homepage view ──
     this.registerView(HOME_VIEW, (leaf) => new NexusHomepageView(leaf, this));
@@ -484,10 +431,8 @@ module.exports = class NexusSuite extends Plugin {
     this._unloading = true;
     window.clearTimeout(this._pinT);
     window.clearTimeout(this._homeEmptyTimer);
-    ['nx-pin-home', 'nx-pin-cal'].forEach(c => document.body.removeClass(c));
+    document.body.removeClass('nx-pin-home');
     this.app.workspace.detachLeavesOfType(CAL_VIEW);
-    this.app.workspace.detachLeavesOfType(CAL_PAGE_VIEW);
-    this.app.workspace.detachLeavesOfType(TASKS_VIEW);
     this.app.workspace.detachLeavesOfType(HOME_VIEW);
     this.app.workspace.detachLeavesOfType(TIMER_VIEW);
     this.app.workspace.detachLeavesOfType(INK_VIEW);
@@ -495,8 +440,6 @@ module.exports = class NexusSuite extends Plugin {
     this.app.workspace.detachLeavesOfType(GALAXY_VIEW);
     this.app.workspace.detachLeavesOfType(SIDE_CAPTURE_VIEW);
     this.app.workspace.detachLeavesOfType(SCRATCH_VIEW);
-    this.app.workspace.detachLeavesOfType(SIDE_CAL_VIEW);
-    this.app.workspace.detachLeavesOfType(SIDE_TASKS_VIEW);
     this.app.workspace.detachLeavesOfType(SKETCH_VIEW);
     (this._inkPdfDocs || []).forEach((pdf) => { try { pdf.destroy(); } catch (e) {} });
     this._inkPdfDocs = [];
@@ -523,8 +466,7 @@ module.exports = class NexusSuite extends Plugin {
     // ensure deep defaults per module
     for (const k of Object.keys(DEFAULT_SETTINGS))
       this.settings[k] = Object.assign({}, DEFAULT_SETTINGS[k], (data && data[k]) || {});
-    /* Migration: the sync connection, its schedule and the task accounts were
-       vault-wide, so every device read the one the last sync happened to
+    /* Migration: the sync connection and its schedule were vault-wide, so every device read the one the last sync happened to
        deliver. They move into this device's bag; the vault-wide keys are left
        untouched, because the OTHER device reads the same data.json and still
        has to migrate its own copy. */
@@ -596,10 +538,6 @@ module.exports = class NexusSuite extends Plugin {
       if (kb && same(kb.buckets, ['Backlog', 'In Arbeit', 'Erledigt'])) {
         kb.buckets = DEFAULT_SETTINGS.kanban.buckets.slice();
       }
-      const tk = (this.settings.tasksCalendar || {}).tasks;
-      if (tk && same(tk.buckets, ['Backlog', 'In Arbeit', 'Wartet', 'Erledigt'])) {
-        tk.buckets = TASK_BUCKETS.slice();
-      }
       this.settings.bucketsTranslated = true;
     }
     /* The Board module became the folder source of the kanban board. Its one
@@ -617,28 +555,53 @@ module.exports = class NexusSuite extends Plugin {
       if (kanban && chosen && already === undefined) kanban.statusProperty = chosen;
       delete this.settings.board;
     }
-    // Tasks & Calendar: backfill nested defaults (shallow per-key merge above
-    // does not deep-merge saved partial objects).
-    const tc = this.settings.tasksCalendar;
-    if (tc) {
-      /* The accounts themselves live in the device bag now — but the tasks
-         module, the board and the settings page all reach for them under this
-         name, and one array in one place is the point. NOT enumerable: saving
-         it would write this device's list over the shared key, which is the
-         collision the whole change is about. The value it was migrated from is
-         parked under accountsBeforeDeviceStore, so a device that updates later
-         still finds it. */
-      const store = deviceSettings.deviceStore(this.settings, this.deviceId());
-      if (!Array.isArray(store.taskAccounts)) store.taskAccounts = [];
-      Object.defineProperty(tc, 'accounts', {
-        get: () => deviceSettings.deviceStore(this.settings, this.deviceId()).taskAccounts,
-        set: (v) => { deviceSettings.deviceStore(this.settings, this.deviceId()).taskAccounts = Array.isArray(v) ? v : []; },
-        enumerable: false, configurable: true,
-      });
-      if (!tc.tasks || typeof tc.tasks !== 'object') tc.tasks = Object.assign({}, DEFAULT_SETTINGS.tasksCalendar.tasks);
-    }
+    this.dropTasksCalendar(data);
   }
 
+
+  /* The tasksCalendar module was removed (docs/removed-features.md). What a
+     saved data.json still holds of it is dropped here so nothing reads it by
+     accident — except the two values that outlived it: weekStart and dayTextKey
+     now belong to the mini calendar and the planner, so a value the user set
+     moves to settings.calendar unless one is already saved there. The Vikunja
+     tokens in this device's localStorage go too: a secret for an account
+     nothing can use any more is a leftover, not a convenience. Task and project
+     notes in the vault are NOT touched — they stay ordinary notes. */
+  dropTasksCalendar(data) {
+    const old = this.settings.tasksCalendar;
+    const savedCalendar = (data && data.calendar) || {};
+    if (old && typeof old === 'object') {
+      for (const key of ['weekStart', 'dayTextKey']) {
+        if (savedCalendar[key] === undefined && old[key] !== undefined) this.settings.calendar[key] = old[key];
+      }
+    }
+    const accountIds = new Set();
+    const collect = (list) => (Array.isArray(list) ? list : []).forEach(a => { if (a && a.id) accountIds.add(String(a.id)); });
+    if (old && typeof old === 'object') { collect(old.accounts); collect(old.accountsBeforeDeviceStore); }
+    for (const bag of Object.values(this.settings.devices || {})) {
+      if (!bag || typeof bag !== 'object') continue;
+      collect(bag.taskAccounts);
+      delete bag.taskAccounts;
+    }
+    accountIds.delete('vaultsync');   // never the vault-sync credential, whatever an id says
+    for (const id of accountIds) {
+      try { window.localStorage.removeItem(this.credKey(id)); } catch (e) { /* no storage here */ }
+    }
+    delete this.settings.tasksCalendar;
+    // The calendar page was the other pinnable tab; only the dashboard is left.
+    if (this.settings.pinnedTabs) delete this.settings.pinnedTabs.calendar;
+    this.dropTaskCards();
+  }
+  /* The dashboard's calendar and tasks cards read the removed module. A stored
+     card of either type would render as an empty frame, so it goes — in every
+     profile, because data.json travels between devices. */
+  dropTaskCards() {
+    const home = this.settings.homepage;
+    if (!home) return;
+    const keep = (list) => (Array.isArray(list) ? list.filter(c => !c || (c.type !== 'calendar' && c.type !== 'tasks')) : list);
+    home.widgets = keep(home.widgets);
+    for (const profile of Object.values(home.profiles || {})) if (profile && profile.widgets) profile.widgets = keep(profile.widgets);
+  }
 
   /* ---- Per-device dashboard -------------------------------------------------
      The device ID lives in localStorage (per device/installation, NOT in the
@@ -686,7 +649,7 @@ module.exports = class NexusSuite extends Plugin {
 
   /* ---- Per-device settings --------------------------------------------------
      The one home for anything that describes THIS machine rather than the
-     vault: the sync connection, its schedule, the task accounts. Stored in
+     vault: the sync connection and its schedule. Stored in
      data.json under deviceId(), so the file still syncs and is still backed up
      while no device can overwrite another's entry — lib/devicesettings.js says
      why that is the shape. Anything shared (an exclude list, a conflict policy)
@@ -2194,9 +2157,8 @@ module.exports = class NexusSuite extends Plugin {
     }, 150);
   }
 
-  /* Ask a connection whether it is there and whether it knows this device.
-     Both kinds answer here, because to the person adding one they are the same
-     idea — and because the answer has to be a sentence, not a status code. */
+  /* Ask the vault-sync server whether it is there and whether it knows this
+     device. The answer has to be a sentence, not a status code. */
   async testConnection(kind, entry) {
     const conn = entry || {};
     if (kind === 'vaultsync') {
@@ -2208,18 +2170,12 @@ module.exports = class NexusSuite extends Plugin {
         password: conn.secret !== undefined ? conn.secret : (cred.secret || '') });
       return (await client.check()).message;
     }
-    const secret = conn.secret !== undefined ? conn.secret : (this.getCredential(conn.id).secret || '');
-    if (!conn.serverUrl || !secret) throw new Error('fill in the URL and the token first');
-    const client = new VikunjaClient({ base: conn.serverUrl, token: secret });
-    const projects = await client.listProjects();
-    return projects.length + ' projects visible';
+    throw new Error('unknown connection kind "' + kind + '"');
   }
 
-  /* ---- Tasks & Calendar ----
-     Credentials live in localStorage (device-local, NOT synced by Syncthing —
-     same precedent as deviceId()). data.json holds only non-secret account
-     config. Network sync runs on DESKTOP only (behind the fs-guard); the tablet
-     renders from the vault cache Syncthing delivers. */
+  /* ---- Credentials ----
+     Live in localStorage (device-local, NOT synced by Syncthing — same
+     precedent as deviceId()). data.json holds only non-secret config. */
   credKey(id) { return 'nexus-suite-cred-' + id; }
   /* The secret is encrypted at rest where the OS offers a keyring, and stored
      as it was where it does not — see lib/secrets.js for what that is and is
@@ -2243,124 +2199,13 @@ module.exports = class NexusSuite extends Plugin {
   secretsEncrypted() { return secrets.available(); }
 
   refreshCalendarViews() {
-    // The sidebar month over the daily notes draws weeks too — a week-start
-    // change has to reach it, not just the full-page calendar.
+    // A week-start or day-text-key change has to reach the month grids.
     for (const leaf of this.app.workspace.getLeavesOfType(CAL_VIEW)) {
       const v = leaf.view; if (v && typeof v.render === 'function') v.render();
     }
     for (const leaf of this.app.workspace.getLeavesOfType(HOME_VIEW)) {
       const v = leaf.view; if (v && typeof v.render === 'function') v.render();
     }
-    for (const leaf of this.app.workspace.getLeavesOfType(CAL_PAGE_VIEW)) {
-      const v = leaf.view; if (v && typeof v.reload === 'function') v.reload();
-    }
-    for (const leaf of this.app.workspace.getLeavesOfType(TASKS_VIEW)) {
-      const v = leaf.view; if (v && typeof v.reload === 'function') v.reload();
-    }
-    this.refreshSidePanels();
-    // Agenda blocks read the same cache — and it lives under .obsidian/, so no
-    // vault event tells them it moved.
-    if (this.agenda) this.agenda.refreshAll();
-  }
-
-  /* date/mode are optional — an agenda block hands them over so "open in
-     calendar" lands on the day it was showing, not on today. */
-  async openCalendarPage(date) {
-    let leaf = this.app.workspace.getLeavesOfType(CAL_PAGE_VIEW)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getLeaf(false);
-      await leaf.setViewState({ type: CAL_PAGE_VIEW, active: true });
-    }
-    this.app.workspace.revealLeaf(leaf);
-    const v = leaf.view;
-    if (v && date && v.cursor) {
-      v.cursor = moment(date);
-      if (typeof v.reload === 'function') v.reload(); else if (typeof v.render === 'function') v.render();
-    }
-  }
-
-  /* One-off rename of id-named task notes (see tasks.migrateTaskNoteNames). */
-  async migrateTaskNames() {
-    const t = this.settings.tasksCalendar;
-    if (!t || !t.enabled || (t.tasks && t.tasks.namesMigrated)) return;
-    const res = await tasks.migrateTaskNoteNames(this);
-    t.tasks = Object.assign({}, t.tasks, { namesMigrated: true });
-    await this.saveSettings();
-    if (res.renamed || res.cleaned) {
-      new Notice('Nexus: ' + res.renamed + ' task note(s) renamed to their title, ' + res.cleaned + ' checklist(s) cleaned up.', 8000);
-      this.refreshCalendarViews();
-    }
-  }
-
-  /* A task typed straight into a project note belongs on the server too, but
-     one keystroke must not fire one sync — collect them and go once it's calm. */
-  queueTaskSync(delayMs) {
-    window.clearTimeout(this._taskSyncT);
-    this._taskSyncT = window.setTimeout(() => {
-      if (!this.settings.tasksCalendar.enabled) return;
-      this.syncTaskCal().then(r => {
-        const lines = (r && r.lines) || [];
-        if (lines.length) new Notice('Nexus sync\n' + lines.join('\n'), 6000);
-      });
-    }, delayMs || 8000);
-  }
-
-  async openTasksPage() {
-    let leaf = this.app.workspace.getLeavesOfType(TASKS_VIEW)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getLeaf(false);
-      await leaf.setViewState({ type: TASKS_VIEW, active: true });
-    }
-    this.app.workspace.revealLeaf(leaf);
-  }
-
-  /* Calendar / tasks as a side panel — right dock, because that is where a
-     companion to the note you're writing belongs. */
-  async openSidePanel(kind) {
-    const type = kind === 'tasks' ? SIDE_TASKS_VIEW : SIDE_CAL_VIEW;
-    let leaf = this.app.workspace.getLeavesOfType(type)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getRightLeaf(false);
-      await leaf.setViewState({ type, active: true });
-    }
-    this.app.workspace.revealLeaf(leaf);
-  }
-  refreshSidePanels() {
-    [SIDE_CAL_VIEW, SIDE_TASKS_VIEW].forEach(t => this.app.workspace.getLeavesOfType(t)
-      .forEach(l => { if (l.view && l.view.reload) l.view.reload(); }));
-  }
-
-  async syncTaskCal() {
-    let fsOk = false; try { require('fs'); fsOk = true; } catch (e) {}
-    if (!fsOk) return { lines: ['Sync runs on desktop only (mobile reads the synced cache).'] };
-    if (this._syncing) return { lines: ['Already syncing…'] };
-    const s = this.settings.tasksCalendar;
-    if (!s || !s.enabled) return { lines: ['Module is OFF — turn on “Enabled” in Settings → Tasks & Calendar.'] };
-    if (!(s.accounts || []).length) return { lines: ['No accounts saved. Add one and click Save.'] };
-    this._syncing = true;
-    const lines = [], pending = [];
-    try {
-      for (const acc of s.accounts) {
-        // Accounts saved before CalDAV was dropped are still in data.json —
-        // their URL is not a Vikunja one, so say so instead of failing on it.
-        const name = acc.label || acc.serverUrl || acc.id;
-        if (acc.kind && acc.kind !== 'vikunja') { lines.push(name + ': ' + acc.kind + ' accounts are no longer supported — remove it in settings'); continue; }
-        const cred = this.getCredential(acc.id);
-        if (!cred.secret) { lines.push(name + ': no credential on this device'); continue; }
-        try {
-          const client = new VikunjaClient({ base: acc.serverUrl, token: cred.secret });
-          const { stats, conflicts } = await sync.syncVikunja(this, acc, client);
-          lines.push(name + ': ' + stats.pulled + ' pulled · ' + stats.pushed + ' pushed · ' + stats.created + ' new · ' + conflicts.length + ' conflict(s)');
-          if (conflicts.length) pending.push({ acc, client, conflicts });
-        } catch (e) { lines.push(name + ': ERROR — ' + (e && e.message || e)); console.error('[Nexus] sync "' + name + '" failed:', e); }
-      }
-    } finally { this._syncing = false; }
-    for (const p of pending) {
-      if (s.conflictPolicy === 'ask') new NexusConflictModal(this, p.acc, p.client, p.conflicts, () => {}).open();
-      else for (const rec of p.conflicts) { try { await sync.applyResolution(this, p.acc, p.client, rec, 'server'); } catch (e) {} }
-    }
-    this.refreshCalendarViews();   // cache lives under .obsidian/ → no vault event fires; refresh explicitly
-    return { lines };
   }
 
   /* ---- Image separator ----
@@ -2450,19 +2295,14 @@ module.exports = class NexusSuite extends Plugin {
     for (const key of Array.from(cache.keys())) if (!seen.has(key)) cache.delete(key);
     return docs;
   }
-  /* `nexus-task: true` in any note puts it in the tasks view without moving it.
-     The command says which way it went, because a frontmatter field appearing
-     silently is not feedback. */
-  async toggleNoteTask(file) {
-    const tasks = require('./lib/tasks.js');
-    try {
-      const on = await tasks.toggleNoteTask(this, file);
-      new Notice(on
-        ? 'Nexus: "' + file.basename + '" is now tracked in your tasks.'
-        : 'Nexus: "' + file.basename + '" is no longer tracked.');
-    } catch (err) {
-      new Notice('Nexus: could not change tracking — ' + (err && err.message ? err.message : 'unknown error'));
-    }
+
+  /* Which note owns which sketch page: a Map id → {path, basename, ids, pages,
+     page}. The capture hub needs it for every book it draws, and the sweep it
+     costs is over every note's frontmatter — so it is built once and thrown
+     away by the metadata events registered in onload, never rebuilt per tile. */
+  sketchOwners() {
+    if (!this._sketchOwnerIndex) this._sketchOwnerIndex = notesketches.ownerIndex(this.app);
+    return this._sketchOwnerIndex;
   }
   /* ── QuickNote ─────────────────────────────────────────────────────────────
      The recording goes to a program the user installed; the text comes back and
@@ -2692,6 +2532,15 @@ module.exports = class NexusSuite extends Plugin {
     }
   }
 
+  /* What a brand-new sidecar is born with: the paper TYPE and, for a sectioned
+     one, which way round the sheet is. Only those, because they are what a
+     Sketch tab cannot fall back to a setting for later — the sidecar it opens is
+     the whole truth about the drawing's shape. */
+  _newSketchPresets() {
+    const s = this.settings.quicksketch || {};
+    return { paperType: s.paperType || 'endless', sheetLandscape: !!s.sheetLandscape };
+  }
+
   /* Paper-grain toggle for a saved sketch: its stored flag, else legacy "paperlike"
      (which always carried texture), else off for pre-texture sketches. */
   _resolvePaperStyle(data, s) {
@@ -2705,7 +2554,12 @@ module.exports = class NexusSuite extends Plugin {
     const data = state.id ? await this.loadSketch(state.id) : null;
     // Saved sketch → honour its own stored geometry/paper; otherwise fall back to
     // block params, then the module defaults.
-    let W, H, bg, paper, paperStyle, bgType, bgSize, bgOpacity, autoGrow;
+    let W, H, bg, paper, paperStyle, bgType, bgSize, bgOpacity, autoGrow, paperType, sheetLandscape;
+    /* A sketch saved before paper types existed IS endless: the setting says what
+       a NEW pad starts as, and reading it for an old file would silently change
+       the shape of every drawing in the vault. */
+    paperType = data ? (data.paperType || 'endless') : (params.papertype || s.paperType || 'endless').toLowerCase();
+    sheetLandscape = data ? !!data.sheetLandscape : !!s.sheetLandscape;
     if (data) {
       W = data.w; H = data.h; bg = data.bg || s.bg;
       // Sketches saved before paper modes carry only `bg` → paper stays null and
@@ -2753,10 +2607,16 @@ module.exports = class NexusSuite extends Plugin {
       penConfig: (s.penConfig = s.penConfig || {}),   // live reference — pen menu edits apply on the next stroke
       shapeSnap: s.shapeSnap !== false,
       bgType, bgSize, bgOpacity, bgColor: s.bgColor, autoGrow,
+      paperType, sheetLandscape, view: data ? data.view : null,
       strokes: carried,
       objects: (outgoing && outgoing.objects && outgoing.objects.length) ? outgoing.objects : (data ? data.objects : null),
       sections: data ? data.sections : null,
       ocr: data ? data.ocr : null,
+      /* toSVGString writes the WHOLE metadata block, so anything the surface is
+         not handed is deleted by the next committed stroke. The name and the
+         book cover are engine-irrelevant and were being lost exactly that way. */
+      title: data ? (data.title || '') : '',
+      cover: data ? (data.cover || null) : null,
       resizable: true,
       onCommit: () => this._persistSketch(state, surface, ctx, el),
     });
@@ -2801,6 +2661,21 @@ module.exports = class NexusSuite extends Plugin {
     // This pad is now the live one for that id — so the NEXT re-render hands
     // over from here instead of from a stale predecessor.
     if (state.id) (this._sketchLive = this._sketchLive || {})[state.id] = surface;
+    /* A pad outlives its element otherwise: the commit debounce, the fling and
+       (on mindmap paper) a ResizeObserver all keep running against a node that
+       is gone, and the block re-renders on the very first stroke. Tie them to the
+       element Obsidian owns. */
+    if (ctx && typeof ctx.addChild === 'function' && typeof MarkdownRenderChild === 'function') {
+      const plugin = this;
+      const child = new MarkdownRenderChild(wrap);
+      child.onunload = () => {
+        const live = plugin._sketchLive && state.id ? plugin._sketchLive[state.id] : null;
+        // Really going away → save what is pending. Superseded by a re-render of
+        // the same sketch → let go quietly; the successor holds the newer copy.
+        if (live && live !== surface) surface.teardown(); else surface.destroy();
+      };
+      ctx.addChild(child);
+    }
     const remembered = state.id && modes[state.id];
     const hasContent = !!(carried && carried.length);
     setMode(remembered || (hasContent ? 'view' : 'edit'));
@@ -2985,8 +2860,11 @@ module.exports = class NexusSuite extends Plugin {
      with it. */
   async _rasterSketch(surface, scale) {
     const svg = surface.toSVGString();
-    const width = Math.max(1, Math.round(surface.W * (scale || 2)));
-    const height = Math.max(1, Math.round(surface.H * (scale || 2)));
+    // The size of the FILE, not of the canvas — a mindmap's file is cropped to
+    // its ink, and rasterising it at W x H would stretch it.
+    const size = surface.exportSize();
+    const width = Math.max(1, Math.round(size.w * (scale || 2)));
+    const height = Math.max(1, Math.round(size.h * (scale || 2)));
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     try {
       const img = await new Promise((res, rej) => {
@@ -3010,12 +2888,13 @@ module.exports = class NexusSuite extends Plugin {
   }
   async _sketchToPdf(surface, scale) {
     const { canvas, ctx, width, height } = await this._rasterSketch(surface, scale);
+    const page = surface.exportSize();   // the PDF page is the drawing, at 1:1
     const rgba = ctx.getImageData(0, 0, width, height).data;
     const packed = await sketchExport.deflate(sketchExport.rgbaToRgbOnWhite(rgba));
     if (packed) {
       return sketchExport.pdfDocument(packed, {
         width, height, filter: 'FlateDecode',
-        pageWidth: surface.W, pageHeight: surface.H,
+        pageWidth: page.w, pageHeight: page.h,
       });
     }
     /* No CompressionStream on this runtime: fall back to JPEG, which every PDF
@@ -3024,7 +2903,7 @@ module.exports = class NexusSuite extends Plugin {
     if (!blob) throw new Error('the page could not be encoded');
     return sketchExport.pdfDocument(new Uint8Array(await blob.arrayBuffer()), {
       width, height, filter: 'DCTDecode',
-      pageWidth: surface.W, pageHeight: surface.H,
+      pageWidth: page.w, pageHeight: page.h,
     });
   }
   /* Write the export next to the other sketches and say where it went — a file
@@ -3375,6 +3254,31 @@ module.exports = class NexusSuite extends Plugin {
 
     /* ═══ background popover (reused inline + in ⋯) ═══ */
     const bgBuild = (pop, bgBtn) => {
+      /* What shape the paper is comes FIRST: it decides whether the rest of this
+         popover is describing a sheet or a plane. */
+      pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Paper type' });
+      const ptRow = pop.createDiv('nx-sk-bgtypes nx-sk-papertypes');
+      const landRow = pop.createDiv('nx-sk-bgtypes nx-sk-sheetorient');
+      const syncOrient = () => landRow.toggleClass('is-hidden', surface.paperType !== 'sectioned');
+      [['endless', 'Endless'], ['sectioned', 'Sectioned'], ['mindmap', 'Mindmap']].forEach(([id, label]) => {
+        const b = ptRow.createDiv({ cls: 'nx-sk-bgtype', text: label });
+        b.toggleClass('is-active', surface.paperType === id);
+        b.onclick = () => {
+          surface.setPaperType(id); surface.persist();
+          ptRow.querySelectorAll('.nx-sk-bgtype').forEach(x => x.removeClass('is-active')); b.addClass('is-active');
+          syncOrient();
+        };
+      });
+      // Only sectioned paper has an orientation — a plane has no page to turn.
+      [['Portrait', false], ['Landscape', true]].forEach(([label, land]) => {
+        const b = landRow.createDiv({ cls: 'nx-sk-bgtype', text: label });
+        b.toggleClass('is-active', !!surface.sheetLandscape === land);
+        b.onclick = () => {
+          surface.setPaperType('sectioned', land); surface.persist();
+          landRow.querySelectorAll('.nx-sk-bgtype').forEach(x => x.removeClass('is-active')); b.addClass('is-active');
+        };
+      });
+      syncOrient();
       pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Paper' });
       const prow = pop.createDiv('nx-sk-bgtypes');
       [['native', 'Native'], ['paper', 'Paper'], ['white', 'White'], ['black', 'Black']].forEach(([id, label]) => {
@@ -3537,9 +3441,12 @@ module.exports = class NexusSuite extends Plugin {
       const step = (f) => { surface.setPageZoom(surface.getPageZoom() * f); read.setText(val()); };
       minus.onclick = () => step(1 / 1.25);
       plus.onclick = () => step(1.25);
-      const reset = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol', text: 'Page width (100%)' });
+      // On mindmap paper there is no page to be the width of — 100 % there means
+      // one canvas width across the pane, which is the same thing said differently.
+      const reset = pop.createEl('button', { cls: 'mod-cta nx-sk-savecol',
+        text: surface.infinite ? 'Back to 100%' : 'Page width (100%)' });
       reset.onclick = () => { surface.setPageZoom(1); read.setText(val()); };
-      pop.createDiv({ cls: 'nx-sk-subnote', text: 'Also: pinch, ctrl + wheel, or a three-finger tap on the canvas for page width.' });
+      pop.createDiv({ cls: 'nx-sk-subnote', text: 'Also: pinch, ctrl + wheel, or a three-finger tap on the canvas. Two fingers tapped three times goes back to where the drawing was opened.' });
     };
 
     /* Every movable action, by id. The bar and the ⋯ menu both read this, so a
@@ -4102,7 +4009,7 @@ module.exports = class NexusSuite extends Plugin {
     // The sidecar can be missing even when the note names one — deleted by hand,
     // or a sync that has not caught up. Writing an empty one is the only
     // non-destructive answer; opening the tab on "not found" is not an answer.
-    if (!this.app.vault.getAbstractFileByPath(this._sketchPath(id))) await this.saveSketch(id, emptySketchSVG());
+    if (!this.app.vault.getAbstractFileByPath(this._sketchPath(id))) await this.saveSketch(id, emptySketchSVG(this._newSketchPresets()));
     return id;
   }
 
@@ -4122,7 +4029,7 @@ module.exports = class NexusSuite extends Plugin {
     while (this.app.vault.getAbstractFileByPath(path)) path = base + ' ' + (i++) + '.md';
     const id = 'sk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const file = await this.app.vault.create(path, '---\nsketch: ' + id + '\n---\n');
-    await this.saveSketch(id, emptySketchSVG());
+    await this.saveSketch(id, emptySketchSVG(this._newSketchPresets()));
     // Straight into the drawing — a new sketch note exists to be drawn on. The
     // tab's file-text button is the way back to its text.
     await this.openSketchInSplit(id, 'tab', file.path);
@@ -4974,7 +4881,7 @@ module.exports = class NexusSuite extends Plugin {
         'border-radius:var(--nx-radius,12px) !important;margin:6px !important;}';
   }
 
-  /* ---- Pinned tabs (dashboard · calendar · tasks) ----
+  /* ---- Pinned tabs (the dashboard) ----
      A pinned page sits at the tab bar as its bare icon and stays there: Obsidian's
      own pin flag keeps the next opened file from replacing it, CSS takes away the
      close button (see 01-core.css), and the watchdog below reopens it if something
@@ -4984,8 +4891,6 @@ module.exports = class NexusSuite extends Plugin {
     return [
       { key: 'home',     type: HOME_VIEW,     cls: 'nx-pin-home',  label: NX_MODULES.homepage.name,
         on: () => this.settings.homepage.enabled,      open: () => this.openHomepage() },
-      { key: 'calendar', type: CAL_PAGE_VIEW, cls: 'nx-pin-cal',   label: NX_MODULES.tasksCalendar.name,
-        on: () => this.settings.tasksCalendar.enabled, open: () => this.openCalendarPage() },
     ];
   }
   isTabPinned(key) { return !!(this.settings.pinnedTabs || {})[key]; }

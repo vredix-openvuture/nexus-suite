@@ -2,6 +2,122 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.32.0 — 2026-10-07
+
+### Added
+
+- **The Sketch tab is a shelf of sketchbooks.** A card there is a book now, not a
+  page: a note's pages are one cover, one name, one card and one delete that
+  takes every page with it. Before this, a seven-page note appeared as seven
+  separate drawings that each claimed to be a single page.
+
+  The tile is a bound book — stitched spine, cover, page edges — rather than a
+  thumbnail of the ink. A shelf answers *which one is this* and *how thick is
+  it*; the drawing is one tap away either way.
+- **A cover for each sketchbook**, from a card's own menu: five palette tones by
+  four bindings — solid, linen, marble, ruled. Stored as two NAMES in the
+  sidecar and mixed from the live palette when the tile is drawn, so a book
+  follows the wallpaper instead of freezing one into every file. A sketch that
+  was never given one still gets a cover: the tone is hashed from its id, so a
+  shelf is never one flat colour and nothing is written to disk for it.
+- **Long press a sketchbook** — right click on a desktop — for Rename, Cover,
+  Go to the note and Delete. Rename and Cover write the sidecar directly and
+  hand the same value to a pad that happens to be open on that drawing, so the
+  next stroke cannot undo them. Deleting a book also stops the note naming its
+  pages, or the next open would write a blank page one back. The hold is
+  cancelled by movement, so a flick through the grid still scrolls.
+
+- **Three kinds of paper, not one.** The background button opens with a **Paper
+  type** row: *Endless* (what it always was), *Sectioned* and *Mindmap*. It is a
+  per-sketch choice, with a default in Settings → Quick Sketch.
+- **Sectioned paper** is the endless sheet cut into A4 pages with a small gap
+  between them. The page edges are visible while you write and real in the
+  exported file — a long note gains landmarks, and a printer gains pages. It
+  always ends at a page edge, so it grows a whole sheet at a time. *A4 the wide
+  way round* turns the pages to landscape and keeps the number of sheets.
+- **Mindmap paper** is no sheet at all: a canvas with no edges, moved in every
+  direction. One finger moves the camera at any zoom, two pinch it, and the
+  wheel scrolls it. The saved file is cropped to what was actually drawn, and
+  the camera is stored with the drawing, so a map reopens where you left it.
+- **Two fingers, tapped three times: back to where you started.** On endless and
+  sectioned paper that is the top of the sheet; on a mindmap it is the camera the
+  drawing was opened with — the one fixed place a canvas without edges has.
+
+### Changed
+
+- **Two fingers tapped twice now waits out the multi-tap window** before it
+  resets the zoom, the same way the one-finger undo does. Without the wait, every
+  trip home would reset the zoom on its way there.
+- **The page list shows the number on the thumbnail.** The name is the only line
+  under the picture; a number and a name stacked below each other read as two
+  competing titles.
+
+### Fixed
+
+- **Vault sync no longer turns a first run into a wall of conflicts.** A second
+  device joining a vault that was already on the server made a conflict copy of
+  almost every file: the server stamps its own time on an upload, and files of
+  the same size were judged by time alone. They are now compared byte for byte,
+  and only real differences become conflicts — reported in one notice, not one
+  toast per file. A file that fails on every run is announced once, not on
+  every scheduled sync. Files that already agree get a record straight away, so their
+  next edit is a plain upload or download.
+- **Vault sync keeps its record per device.** The state file is now
+  `sync-state.<device id>.json`. The old shared `sync-state.json` could be
+  carried to another device by Syncthing, which then judged every file against
+  someone else's record. The old file is ignored and then removed; the first run
+  after the update re-learns the state by comparing files. Identical files make
+  no conflict, and a file that differs is always kept twice on that run, whatever
+  the conflict rule says — with no record, "newer" or "server wins" would be a
+  guess. A file deleted on one side before the update comes back on that run.
+- **A failed daily backup no longer throws away the sync.** The record of the
+  run is saved first; a backup refused by the server (413) is reported and tried
+  again on the next run.
+- **Other sync tools' working files are not uploaded:** Syncthing temp files and
+  the Nextcloud desktop client's journal and log.
+- **A sketchbook opened from the capture hub knows its note again.** The hub
+  opened every drawing without one, so the Sketch tab had no page list: turning
+  a page did nothing and adding one answered "this drawing does not belong to a
+  note, so it has no pages" — about drawings that plainly did.
+- **The page count is the note's page list.** The tile counted *sections inside
+  one file* and, finding none, printed the words "one page" on every drawing in
+  the vault.
+- **A drawing's name survives being drawn on.** The name lives in the sidecar,
+  but it was never handed to the canvas — and the canvas rewrites the whole
+  metadata block on every committed stroke. A rename therefore lasted until the
+  next stroke, and the SVG/PNG/PDF export always fell back to the id.
+- **The "read / not read" chip is gone from the Sketch tab.** Handwriting
+  recognition needs a desktop shell, so on a tablet it said "not read" about
+  everything, for ever, with no way to change that from the device it was shown
+  on.
+- **A sketch in a note kept running after its block was replaced.** The commit
+  debounce, the coasting scroll and the pad's own timers were tied to nothing;
+  a block re-renders on the very first stroke, so they piled up. The pad now
+  belongs to the element Obsidian owns — and the copy being replaced lets go
+  quietly instead of writing its older drawing over its successor's.
+- **The mini calendar marks day texts again.** The method behind the marks
+  was lost in 0.30 while the view kept calling it, so every paint of the sidebar
+  month ended in an error (after the grid was drawn) and the view never
+  subscribed to note changes. The method is back.
+
+### Removed
+
+- **Tasks & Calendar, the whole module.** Gone: the full-page calendar and its
+  pinnable tab, the tasks page with its project tree and board mode, local tasks
+  and projects, *Track this note as a task* (`nexus-task: true`), the
+  ```` ```nexus-agenda ```` block, the calendar and tasks side panels, the
+  calendar and tasks dashboard cards, the Vikunja connection and its sync, and
+  Chatter's *Track the note as a task* box. Its settings tab, ribbon icons and
+  commands went with it.
+
+  **Your notes stay.** Task and project notes are ordinary Markdown and are
+  left exactly where they are; an old `nexus-agenda` block shows as a plain code
+  block. The settings that outlived the module — *Week starts on* and the
+  day-text frontmatter key — moved to **Settings → Mini calendar**, and a value
+  you had set is carried over on the first load. The Vikunja tokens are removed
+  from this device's storage at the same moment. `docs/removed-features.md` §8
+  has every file, key and command, and the way back.
+
 ## 0.31.2 — 2026-09-04
 
 ### Fixed

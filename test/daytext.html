@@ -37,7 +37,7 @@ function makeApp(notes, opts) {
       async processFrontMatter(f, fn) { fn(f.frontmatter); written.push(f.path); },
     },
   };
-  const plugin = { app, settings: { tasksCalendar: { dayTextKey: o.key } } };
+  const plugin = { app, settings: { calendar: { dayTextKey: o.key } } };
   return { app, plugin, files, created, written };
 }
 const day = (iso) => moment(iso, 'YYYY-MM-DD');

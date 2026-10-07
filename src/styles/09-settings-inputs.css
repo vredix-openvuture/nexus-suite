@@ -437,3 +437,7 @@ p.setting-item-description.nx-folded.is-open {
 .nx-cardcfg-sec.is-foldable.is-open::after { transform: rotate(-135deg) translate(-2px, -2px); }
 .nx-sec-body { display: none; }
 .nx-sec-body.is-open { display: block; }
+
+/* The connection list in Settings → Vault sync (moved here from the removed
+   calendar-page stylesheet). */
+.nx-set-list { display: flex; flex-direction: column; margin: 4px 0 8px; }

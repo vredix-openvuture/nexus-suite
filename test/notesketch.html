@@ -232,6 +232,119 @@ function viewFor(plugin, file) {
      marked(bar) ? marked(bar).className : '');
 }
 
+/* ── The way back: which note owns a page ─────────────────────────────────
+   Only the forward direction is on disk, so the capture hub's whole idea of a
+   "book" rests on this sweep. A vault of several notes, one of them with no
+   sketch at all and one naming an id twice. */
+{
+  const NS = window.noteSketches;
+  const notes = [
+    { path: 'Physics.md', basename: 'Physics', extension: 'md', fm: { sketch: ['sk-a', 'sk-b', 'sk-c'] } },
+    { path: 'Groceries.md', basename: 'Groceries', extension: 'md', fm: { tags: ['errand'] } },
+    { path: 'Trip.md', basename: 'Trip', extension: 'md', fm: { sketch: 'sk-solo' } },
+    { path: 'Stolen.md', basename: 'Stolen', extension: 'md', fm: { sketch: ['sk-b'] } },
+  ];
+  const app = {
+    vault: { getMarkdownFiles: () => notes },
+    metadataCache: { getFileCache: (f) => ({ frontmatter: f.fm }) },
+  };
+  const index = NS.ownerIndex(app);
+
+  eq('owner · a page finds its note', index.get('sk-a').path, 'Physics.md');
+  eq('owner · and the note’s name comes with it', index.get('sk-a').basename, 'Physics');
+  eq('owner · the whole page list travels with every page', index.get('sk-c').ids, ['sk-a', 'sk-b', 'sk-c']);
+  eq('owner · so a middle page knows the book is three long', index.get('sk-c').pages, 3);
+  eq('owner · and knows where in it it sits', index.get('sk-c').page, 3);
+  eq('owner · a plain string is a book of one', index.get('sk-solo').pages, 1);
+  ok('owner · a note with no sketch contributes nothing',
+     !Array.from(index.values()).some(v => v.path === 'Groceries.md'));
+  /* Two notes naming the same id is a hand-edit the plugin cannot produce.
+     Answering with the same one every time beats answering with whichever the
+     vault happened to list last. */
+  eq('owner · a contested id goes to the first note, not the last', index.get('sk-b').path, 'Physics.md');
+  ok('owner · an id nobody names is simply absent', index.get('sk-nothing') === undefined);
+  eq('owner · an empty vault is an empty map',
+     NS.ownerIndex({ vault: { getMarkdownFiles: () => [] }, metadataCache: { getFileCache: () => null } }).size, 0);
+}
+
+// ── the shelf: how pages are folded into books ─────────────────────────────
+/* The grouping is the part that can lose a drawing or hand one book another
+   book's page, so it is driven here through the real adapter against a stub
+   vault rather than trusted to read correctly. */
+{
+  const NS = window.noteSketches;
+  const folder = 'Inbox/Quicksketch';
+
+  function shelf(notes, ids) {
+    const files = {};
+    ids.forEach(id => { files[folder + '/' + id + '.svg'] = { path: folder + '/' + id + '.svg', stat: { mtime: 1 } }; });
+    const app = {
+      vault: {
+        getMarkdownFiles: () => notes,
+        getAbstractFileByPath: (path) => files[path] || null,
+      },
+      metadataCache: { getFileCache: (f) => ({ frontmatter: f.fm }) },
+    };
+    const plugin = {
+      app,
+      sketchOwners: () => NS.ownerIndex(app),
+      async sketchDocuments() {
+        return ids.map(id => ({
+          path: folder + '/' + id + '.svg', id, display: id, named: false, hasOcr: false, cover: null,
+          fields: { title: [], sections: [], notes: [], ocr: [] },
+        }));
+      },
+    };
+    return window.captureHub.sketchAdapter(plugin);
+  }
+
+  const note = (path, sketch) => ({ path, basename: path.replace(/\.md$/, ''), extension: 'md', fm: { sketch } });
+
+  {
+    /* Two notes whose lists overlap. ownerIndex gives the contested page to the
+       first note; if the grouping loop took `owner.ids` at face value, BOTH
+       books would list it — and deleting either would trash the other's page. */
+    {
+      const books = await shelf([note('A.md', ['x', 'y']), note('B.md', ['y', 'z'])], ['x', 'y', 'z']).list();
+      const byNote = {};
+      books.forEach(b => { byNote[b.notePath] = b; });
+      eq('shelf · the first note keeps the contested page', byNote['A.md'].paths.map(p => p.split('/').pop()), ['x.svg', 'y.svg']);
+      eq('shelf · and the second is left with only its own', byNote['B.md'].paths.map(p => p.split('/').pop()), ['z.svg']);
+      ok('shelf · so no page is in two books at once',
+         byNote['A.md'].paths.every(p => byNote['B.md'].paths.indexOf(p) < 0));
+      eq('shelf · two notes, two books', books.length, 2);
+    }
+    /* Every page has to end up on the shelf exactly once — a drawing that falls
+       out of the grouping is a drawing the user cannot find any more. */
+    {
+      const books = await shelf([note('A.md', ['x', 'y'])], ['x', 'y', 'loose']).list();
+      const seen = [];
+      books.forEach(b => b.paths.forEach(p => seen.push(p.split('/').pop())));
+      eq('shelf · nothing is lost and nothing is doubled', seen.sort(), ['loose.svg', 'x.svg', 'y.svg']);
+      const loose = books.filter(b => !b.notePath)[0];
+      eq('shelf · a drawing no note names is its own book', loose.pages, 1);
+    }
+    /* A note whose only page belongs to another note is not a book at all. */
+    {
+      const books = await shelf([note('A.md', ['x']), note('B.md', ['x'])], ['x']).list();
+      eq('shelf · a note left with no pages of its own is not on the shelf', books.length, 1);
+      eq('shelf · and the page stayed with the note that named it first', books[0].notePath, 'A.md');
+    }
+    /* A hand-edited list can name an id nothing was ever drawn on. */
+    {
+      const books = await shelf([note('A.md', ['x', 'ghost', 'y'])], ['x', 'y']).list();
+      eq('shelf · an id with no file behind it is not counted as a page', books[0].pages, 2);
+    }
+    /* Page one going missing must not take the rest of the book with it. */
+    {
+      const books = await shelf([note('A.md', ['gone', 'y', 'z'])], ['y', 'z']).list();
+      eq('shelf · a book whose first page is gone still opens', books[0].pages, 2);
+      eq('shelf · on the first page that is actually there', books[0].path.split('/').pop(), 'y.svg');
+    }
+  }
+}
+
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 if (window.__err && window.__err.length) out.push('LOAD ERROR: ' + window.__err.join('\n'));
 out.push('');

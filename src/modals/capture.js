@@ -10,6 +10,7 @@ const { Modal, setIcon } = require('obsidian');
 const { nxAutocomplete, nxMultiRow } = require('../lib/inputs.js');
 const capture = require('../lib/capture.js');
 const inkpages = require('../lib/inkpages.js');
+const sketchcover = require('../lib/sketchcover.js');
 
 /* Where to. A plain field with the vault's folders behind it rather than a
    tree: the folder is usually one you already have, and typing three letters
@@ -196,4 +197,85 @@ class NexusInkTagModal extends Modal {
   onClose() { this.contentEl.empty(); if (this._resolve) { this._resolve(this.result); this._resolve = null; } }
 }
 
-module.exports = { NexusInkTagModal, NexusMoveModal, NexusInkPagesModal };
+/* The cover of one sketchbook: five palette tones by four bindings, picked from
+   swatches rather than from a colour field. The tones ARE the palette's slots
+   (lib/sketchcover.js), so a free colour would be the one thing on the shelf
+   that does not follow the wallpaper.
+
+   The preview is built from the same class names the hub's tile uses, which is
+   why a change to the cover's look can never make the two disagree. */
+class NexusSketchCoverModal extends Modal {
+  constructor(app, bookName, current) {
+    super(app);
+    this.bookName = bookName || 'Sketchbook';
+    this.tone = current.tone;
+    this.pattern = current.pattern;
+    /* A book with no cover of its own is still SHOWN with one — the tone hashed
+       from its id. Opening the picker on that and pressing Save must not turn
+       it into a choice, so nothing is written until a swatch is actually
+       touched. `chosen` says which of the two we started from. */
+    this.touched = !!current.chosen;
+    this.value = null;
+  }
+  openAndGet() { return new Promise(res => { this._resolve = res; this.open(); }); }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('nx-cover-pick');
+    contentEl.createEl('h3', { text: 'Cover' });
+
+    const preview = contentEl.createDiv('nx-cover-preview');
+    const book = preview.createDiv('nx-cap-book');
+    book.createDiv('nx-cap-book-field');
+    book.createDiv('nx-cap-book-spine');
+    book.createDiv('nx-cap-book-face').createDiv({ cls: 'nx-cap-book-name', text: this.bookName });
+    book.createDiv('nx-cap-book-edges');
+
+    const swatches = [];
+    const patterns = [];
+    const paint = () => {
+      book.dataset.tone = this.tone;
+      book.dataset.pattern = this.pattern;
+      swatches.forEach(sw => sw.el.toggleClass('is-on', sw.id === this.tone));
+      patterns.forEach(pt => pt.el.toggleClass('is-on', pt.id === this.pattern));
+    };
+
+    contentEl.createDiv({ cls: 'nx-cover-lbl', text: 'Tone' });
+    const toneRow = contentEl.createDiv('nx-cover-tones');
+    sketchcover.COVER_TONES.forEach(tone => {
+      const el = toneRow.createDiv('nx-cover-sw nx-cap-book');
+      el.dataset.tone = tone.id;
+      el.dataset.pattern = 'solid';
+      el.setAttribute('aria-label', tone.label);
+      el.createDiv('nx-cap-book-field');
+      el.onclick = () => { this.tone = tone.id; this.touched = true; paint(); };
+      swatches.push({ id: tone.id, el });
+    });
+
+    contentEl.createDiv({ cls: 'nx-cover-lbl', text: 'Binding' });
+    const patRow = contentEl.createDiv('nx-cover-pats');
+    sketchcover.COVER_PATTERNS.forEach(pattern => {
+      const el = patRow.createEl('button', { cls: 'nx-btn nx-cover-pat', text: pattern.label });
+      el.onclick = () => { this.pattern = pattern.id; this.touched = true; paint(); };
+      patterns.push({ id: pattern.id, el });
+    });
+
+    const row = contentEl.createDiv('nx-cap-modal-bar');
+    row.createEl('button', { cls: 'nx-btn', text: 'Cancel' }).onclick = () => this.close();
+    /* Reset is an ANSWER, not a cancel: it writes an empty choice, which takes
+       the cover field back out of the sidecar so the book falls back to the
+       tone hashed from its id. */
+    row.createEl('button', { cls: 'nx-btn is-quiet', text: 'Reset' }).onclick = () => {
+      this.value = { tone: '', pattern: '' };
+      this.close();
+    };
+    row.createEl('button', { cls: 'nx-btn is-primary', text: 'Save' }).onclick = () => {
+      if (this.touched) this.value = { tone: this.tone, pattern: this.pattern };
+      this.close();
+    };
+    paint();
+  }
+  onClose() { this.contentEl.empty(); if (this._resolve) { this._resolve(this.value); this._resolve = null; } }
+}
+
+module.exports = { NexusInkTagModal, NexusMoveModal, NexusInkPagesModal, NexusSketchCoverModal };

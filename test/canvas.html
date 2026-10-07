@@ -75,6 +75,52 @@ const C = window.sketchCanvas;
   eq('width · zero means fill', C.resolvePaperWidth(1600, 0), 1600);
 }
 
+// ── paper type: A4 pages, and the camera over a plane ──────────────────────
+{
+  const W = 1600;
+  const gap = C.sheetGap(W);
+  const hP = C.sheetHeight(W, false), hL = C.sheetHeight(W, true);
+  ok('sheet · a portrait page is taller than it is wide', hP > W, 'h ' + hP);
+  ok('sheet · and a landscape one is not', hL < W, 'h ' + hL);
+  near('sheet · portrait is A4', hP / W, 297 / 210, 0.005);
+  near('sheet · landscape is the same paper turned', hL / W, 210 / 297, 0.005);
+  ok('sheet · the gap is small but visible', gap > 2 && gap < W / 20, 'gap ' + gap);
+
+  eq('sheet · blank paper is still one sheet', C.sheetPages(W, 0, false).length, 1);
+  eq('sheet · and so is half a sheet of content', C.sheetPages(W, Math.round(hP / 2), false).length, 1);
+  eq('sheet · one unit past the page edge starts a second', C.sheetPages(W, hP + gap + 1, false).length, 2);
+  const pages = C.sheetPages(W, hP * 2 + gap, false);
+  eq('sheet · two pages are two pages', pages.length, 2);
+  eq('sheet · the second starts a whole pitch down', pages[1].y, hP + gap);
+  eq('sheet · and both are the same size', pages[0].h, pages[1].h);
+
+  // The bottom of sectioned paper is always a page edge — half a sheet is not
+  // something anyone can print.
+  eq('sheet · a height in the middle of a page is rounded up to its edge',
+     C.snapSheetHeight(W, hP - 10, false), hP);
+  eq('sheet · a height in the gap grows to the next whole page',
+     C.snapSheetHeight(W, hP + 3, false), hP * 2 + gap);
+  ok('sheet · snapping never crops what is there', C.snapSheetHeight(W, hP + 3, false) >= hP + 3);
+}
+{
+  const v = { x: 0, y: 0, w: 100, h: 50 };
+  const inn = C.zoomAbout(v, 0.5, 0.5, 0.5, 1, 1000);
+  eq('camera · zooming in halves what is visible', [inn.w, inn.h], [50, 25]);
+  eq('camera · about the middle, which stays where it was',
+     [inn.x + inn.w / 2, inn.y + inn.h / 2], [v.x + v.w / 2, v.y + v.h / 2]);
+  const corner = C.zoomAbout(v, 0.5, 0, 0, 1, 1000);
+  eq('camera · about the top left, which stays where it was', [corner.x, corner.y], [0, 0]);
+  eq('camera · the floor stops it', C.zoomAbout(v, 0.001, 0.5, 0.5, 20, 1000).w, 20);
+  eq('camera · and the ceiling stops it', C.zoomAbout(v, 1000, 0.5, 0.5, 1, 400).w, 400);
+  eq('camera · a clamped zoom keeps the aspect ratio',
+     C.zoomAbout(v, 1000, 0.5, 0.5, 1, 400).h, 200);
+
+  eq('bounds · an empty page has none', C.strokeBounds([]), null);
+  const b = C.strokeBounds([{ size: 4, points: [[-100, -50, .5], [20, 30, .5]] }]);
+  eq('bounds · and a drawn one is measured with the nib width',
+     [b.minX, b.minY, b.maxX, b.maxY], [-102, -52, 22, 32]);
+}
+
 // ── the surface, end to end ────────────────────────────────────────────────
 function makeSurface(strokes, opts) {
   const stage = document.getElementById('stage');
@@ -187,6 +233,154 @@ function stroke(pts) {
   eq('width · zero clears it', s.host.style.maxWidth, '');
 }
 
+// ── sectioned paper: real pages, on the pad and in the file ────────────────
+{
+  const s = makeSurface([], { paperType: 'sectioned', bg: '#ffffff' });
+  const pageH = C.sheetHeight(s.W, false), gap = C.sheetGap(s.W);
+  ok('sectioned · the pad says what it is', s.host.classList.contains('nx-sk-sectioned'));
+  eq('sectioned · a fresh pad is a whole page tall', s.H, pageH);
+  eq('sectioned · and paints exactly one sheet', s.gPaper.children.length, 1);
+  ok('sectioned · with an edge you can see', !!s.gPaper.children[0].getAttribute('stroke'));
+
+  s.setHeight(pageH + 5);
+  eq('sectioned · growing past a page edge adds a whole page', s.H, pageH * 2 + gap);
+  eq('sectioned · which is painted as a second sheet', s.gPaper.children.length, 2);
+  eq('sectioned · with the gap left empty between them',
+     Number(s.gPaper.children[1].getAttribute('y')), pageH + gap);
+
+  const svg = s.toSVGString();
+  const data = window.parseSketchSVG(svg);
+  eq('sectioned · the paper type is in the file', data.paperType, 'sectioned');
+  eq('sectioned · and the file carries one rect per page',
+     (svg.match(/<rect /g) || []).length >= 2, true);
+
+  s.setPaperType('sectioned', true);
+  eq('sectioned · turned landscape, two sheets are still two sheets',
+     C.sheetCount(s.W, s.H, true), 2);
+  eq('sectioned · of the page size it is now', s.H, C.sheetHeight(s.W, true) * 2 + C.sheetGap(s.W));
+  eq('sectioned · and that travels too', window.parseSketchSVG(s.toSVGString()).sheetLandscape, true);
+}
+
+// ── mindmap paper: a camera, not a sheet ───────────────────────────────────
+{
+  const s = makeSurface([], { paperType: 'mindmap', pageZoom: true });
+  ok('mindmap · the pad says what it is', s.host.classList.contains('nx-sk-infinite'));
+  ok('mindmap · page zoom is parked — the camera does that job', !s.pageZoom);
+  eq('mindmap · there is no bottom edge to drag', (s.setHeight(99999), s.H), 400);
+
+  // The whole point: panning is not clamped to anything.
+  s.viewX = -5000; s.viewY = -9000;
+  s._applyView();
+  eq('mindmap · panning off the drawing is allowed', [s.viewX, s.viewY], [-5000, -9000]);
+  ok('mindmap · and the viewBox goes with it', s.svg.getAttribute('viewBox').indexOf('-5000') === 0,
+     s.svg.getAttribute('viewBox'));
+  ok('mindmap · the paper follows the camera',
+     Number(s.gPaper.children.length) === 0 || Number(s.gPaper.children[0].getAttribute('x')) < 0);
+
+  // 100 % means one logical canvas width across the pane, the same thing page
+  // width means on a sheet.
+  s.setPageZoom(1);
+  near('mindmap · back to 100 % is one canvas width', s.viewW, s.W, 0.5);
+  near('mindmap · which is what the pill reads', s.getPageZoom(), 1, 0.001);
+  s.setPageZoom(2);
+  near('mindmap · twice as big shows half as much', s.viewW, s.W / 2, 0.5);
+  s.setPageZoom(9999);
+  ok('mindmap · and it cannot be zoomed past its stop', s.getPageZoom() <= 8.001, s.getPageZoom());
+}
+{
+  // An infinite plane has no edges, so the file is cropped to what was drawn.
+  const s = makeSurface([], { paperType: 'mindmap' });
+  s.strokes = [stroke([[-400, -300, .5], [-380, -280, .5]])];
+  const f = s._exportFrame();
+  ok('mindmap · the export is cropped to the ink, not to the canvas', f.x < -400 && f.y < -300,
+     JSON.stringify(f));
+  const svg = s.toSVGString();
+  ok('mindmap · so the file starts where the drawing does',
+     svg.indexOf('viewBox="' + f.x + ' ' + f.y) > 0, svg.slice(0, 120));
+  eq('mindmap · and a rasteriser is told that size, not the canvas size',
+     [s.exportSize().w, s.exportSize().h], [f.w, f.h]);
+  const data = window.parseSketchSVG(svg);
+  eq('mindmap · the paper type survives the round trip', data.paperType, 'mindmap');
+  ok('mindmap · and so does the camera, which is where it reopens',
+     data.view && data.view.w > 0, JSON.stringify(data.view));
+}
+{
+  // Switching back and forth must leave a usable sheet behind, not a plane's
+  // leftovers.
+  const s = makeSurface([], { paperType: 'endless', pageZoom: true });
+  s.setPageZoom(2.5);
+  s.setPaperType('mindmap');
+  // The sheet's zoom can only be undone while it is still a sheet — afterwards
+  // setPageZoom means something else entirely.
+  near('mindmap · the sheet zoom it came from is undone on the way in', s.pageScale, 1, 0.001);
+  eq('mindmap · and the pad is not left at that width', s.host.style.width, '');
+  s.viewX = 900; s.viewY = 900; s._applyView();
+  s.setPaperType('endless');
+  ok('mindmap · coming back gives page zoom back', s.pageZoom);
+  near('mindmap · at 1x, not at the zoom it left with', s.getPageZoom(), 1, 0.001);
+  eq('mindmap · and puts the sheet back at its own width', [s.viewX, s.viewY, s.viewW], [0, 0, s.W]);
+  ok('mindmap · the pad stops calling itself a plane', !s.host.classList.contains('nx-sk-infinite'));
+}
+{
+  // The chip in the popover fires on every tap. A second tap on the paper it
+  // already is must not move home to wherever you have panned to since.
+  const s = makeSurface([], { paperType: 'mindmap' });
+  s.viewX = 5000; s.viewY = 5000; s._applyView();
+  s.setPaperType('mindmap');
+  eq('mindmap · re-picking the paper it already is does nothing to home',
+     [s._home.x, s._home.y], [0, 0]);
+}
+{
+  /* A sheet clamps its view to 0,0 and exports 0 0 W H, so ink a plane let you
+     draw above or left of the origin would be unreachable AND missing from the
+     file. It has to be moved, not lost — in one undo step. */
+  const s = makeSurface([], { paperType: 'mindmap' });
+  s.strokes = [stroke([[-500, -400, .5], [-450, -350, .5]])];
+  s.sections = [{ y: -600, title: 'Top' }];
+  s.setPaperType('endless');
+  const b = s._contentBounds();
+  ok('mindmap · nothing is left in negative space when it becomes a sheet',
+     b.minX >= 0 && b.minY >= 0, JSON.stringify(b));
+  ok('mindmap · and the sheet is long enough to hold it', s.H >= b.maxY, 'H ' + s.H + ' maxY ' + b.maxY);
+  s.undo();
+  eq('mindmap · one undo puts the whole drawing back where it was',
+     [s.strokes[0].points[0][0], s.strokes[0].points[0][1], s.sections[0].y], [-500, -400, -600]);
+}
+{
+  // A section is drawn by the exporter too, so the crop has to know about it.
+  const s = makeSurface([], { paperType: 'mindmap' });
+  s.strokes = [stroke([[100, 100, .5], [120, 120, .5]])];
+  s.sections = [{ y: -3000, title: 'Way up' }];
+  ok('mindmap · the export frame takes sections in', s._exportFrame().y < -3000,
+     JSON.stringify(s._exportFrame()));
+}
+{
+  // setHeight is a no-op on a plane, so an unguarded auto-grow test would be
+  // true for every sample and pay for a forced layout each time.
+  const mk = (opts) => {
+    const s = makeSurface([], Object.assign({ autoGrow: true }, opts));
+    s._grew = 0;
+    const orig = s._setupLiveCanvas.bind(s);
+    s._setupLiveCanvas = () => { s._grew++; return orig(); };
+    drag(s, [[100, 380], [140, 385], [180, 390], [220, 395], [260, 398]]);
+    return s._grew;
+  };
+  const flat = mk({ paperType: 'endless' });
+  const plane = mk({ paperType: 'mindmap' });
+  ok('mindmap · auto-grow does not run once per sample on a plane', plane <= flat,
+     'plane ' + plane + ' vs sheet ' + flat);
+}
+{
+  // A map read inside a note must not swallow the note's scrolling — the same
+  // exception one finger already makes.
+  const s = makeSurface([], { paperType: 'mindmap', locked: true });
+  const before = s.viewY;
+  const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 300 });
+  s.svg.dispatchEvent(e);
+  ok('mindmap · a locked plane hands the wheel back to the note', !e.defaultPrevented);
+  eq('mindmap · and does not move', s.viewY, before);
+}
+
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }
 
 /* ── Finger taps ───────────────────────────────────────────────────────────
@@ -237,10 +431,36 @@ async function tapTests() {
     near('tap · a single two-finger tap is where a pinch rests, so it does nothing',
          s.getPageZoom(), 3, 0.001);
     tap(s, 2);
+    near('tap · and two of them wait, because a third means something else',
+         s.getPageZoom(), 3, 0.001);
+    await wait(MULTI_WAIT);
     near('tap · two fingers twice put the sheet back to page width', s.getPageZoom(), 1, 0.001);
     const flash = s.host.querySelector('.nx-sk-tapflash');
     eq('tap · and it says so even at 1x, so "seen" and "did nothing" differ',
        flash && flash.textContent, 'Page width');
+  }
+  {
+    // Two fingers, three times: back to the start. On a sheet that is the top of
+    // the paper, and the zoom reset it passed through must NOT have fired.
+    const s = makeSurface([], { pageZoom: true });
+    s.setPageZoom(2.5);
+    tap(s, 2); tap(s, 2); tap(s, 2);
+    const flash = s.host.querySelector('.nx-sk-tapflash');
+    eq('tap · two fingers three times goes back to the start', flash && flash.textContent, 'Top of the page');
+    await wait(MULTI_WAIT);
+    near('tap · and the zoom reset on the way there was cancelled, not delayed',
+         s.getPageZoom(), 2.5, 0.001);
+  }
+  {
+    // On a plane "the start" is the camera the pad was opened with.
+    const s = makeSurface([], { paperType: 'mindmap', view: { x: 40, y: 60, w: 800 } });
+    s.viewX = 9000; s.viewY = -4000; s.viewW = 300;
+    s._applyView();
+    tap(s, 2); tap(s, 2); tap(s, 2);
+    eq('tap · a mindmap goes back to where it was opened',
+       [Math.round(s.viewX), Math.round(s.viewY), Math.round(s.viewW)], [40, 60, 800]);
+    const flash = s.host.querySelector('.nx-sk-tapflash');
+    eq('tap · and says which kind of start it was', flash && flash.textContent, 'Origin');
   }
   {
     // One finger then two is two gestures, not a double tap.
@@ -257,6 +477,7 @@ async function tapTests() {
     const s = makeSurface([], { pageZoom: true, locked: true });
     s.setPageZoom(2);
     tap(s, 2); tap(s, 2);
+    await wait(MULTI_WAIT);
     near('tap · two fingers still reset a locked surface', s.getPageZoom(), 1, 0.001);
   }
   {

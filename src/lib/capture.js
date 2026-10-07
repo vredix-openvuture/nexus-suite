@@ -106,16 +106,66 @@ function inkItem(src) {
 /* ── Sketch ──────────────────────────────────────────────────────────────────
    Built on the search document the sketch index already produces, so the tile
    and the search box read the same fields — a second parse of the SVG would
-   drift from it the first time either side changed. */
-function sketchItem(doc, stat) {
+   drift from it the first time either side changed.
+
+   One item is a BOOK, not a page. A note owns a list of sketch ids (see
+   lib/notesketches.js) and those pages are one notebook: one cover, one name,
+   one row in the hub. Listing them separately is what made a seven-page note
+   read as seven drawings that each claimed to be a single page.
+
+   `book` describes the owner and is absent for a loose sketch — one that no
+   note names. Then the drawing is its own book of one page, which is what it
+   actually is.
+
+     notePath  the note that owns the pages ('' when nothing does)
+     noteName  its basename, used as the book's name when the sketch is unnamed
+     paths     every page's sidecar, in page order — what a delete has to take
+     pageDocs  the search documents of pages TWO and up, so a word written on
+               page four still finds the book instead of nothing */
+function sketchItem(doc, stat, book) {
   const fields = (doc && doc.fields) || {};
   const sections = fields.sections || [];
+  const owner = book || null;
+  const pagePaths = (owner && owner.paths && owner.paths.length) ? owner.paths.slice() : [doc.path];
+  const laterPages = (owner && owner.pageDocs) || [];
+  const search = [doc.display].concat(sections, fields.notes || [], fields.ocr || []);
+  for (const page of laterPages) {
+    const pf = page.fields || {};
+    search.push(page.display);
+    Array.prototype.push.apply(search, pf.sections || []);
+    Array.prototype.push.apply(search, pf.notes || []);
+    Array.prototype.push.apply(search, pf.ocr || []);
+  }
+  /* An unnamed sketch is better called by its note than by `sk-mf3k2a9x`: the
+     id is not a name, it is an address. A title written into the sidecar always
+     wins, because that one someone chose. */
+  const title = doc.named ? doc.display : ((owner && owner.noteName) || doc.display);
+  if (owner && owner.noteName) search.push(owner.noteName);
   return {
-    kind: 'sketch', path: doc.path, title: doc.display,
+    kind: 'sketch',
+    // Page one. It is the selection key, it carries the cover, and it is what
+    // opening the book means.
+    path: doc.path,
+    paths: pagePaths,
+    id: doc.id || '',
+    title,
+    // Whether that title was CHOSEN or merely borrowed from the note. Rename
+    // opens on the chosen one, so confirming the dialog cannot quietly freeze
+    // the note's name into the sidecar.
+    named: !!doc.named,
+    notePath: (owner && owner.notePath) || '',
+    pages: pagePaths.length,
     stamp: (stat && (stat.mtime || stat.ctime)) || 0,
-    sections: sections.length, hasOcr: !!doc.hasOcr,
-    search: [doc.display].concat(sections, fields.notes || [], fields.ocr || []),
+    cover: doc.cover || null,
+    search,
   };
+}
+
+/* "3 pages" — the one place a page count is turned into words, so nothing in
+   the hub can phrase it differently. */
+function pagesLabel(count) {
+  const n = Math.max(1, Number(count) || 1);
+  return n + (n === 1 ? ' page' : ' pages');
 }
 
 /* ── Chatter ─────────────────────────────────────────────────────────────────
@@ -302,7 +352,7 @@ function readOcrSection(note) {
 
 module.exports = {
   SORTS, parseStamp, stripFrontmatter, firstLine, formatDuration, shortDate, tagList,
-  isInkCapture, inkItem, sketchItem, isChatter, chatterItem,
+  isInkCapture, inkItem, sketchItem, pagesLabel, isChatter, chatterItem,
   matchesQuery, filterItems, sortItems, CaptureSelection,
   normalizeFolder, baseName, moveTarget, movePlan, commonFolder,
   OCR_BEGIN, OCR_END, ocrSection, withOcrSection, readOcrSection,

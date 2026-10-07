@@ -1,7 +1,7 @@
 /* ── STYLE "ALMOST NOTHING" · the plugin's own surfaces ────────────────────
    The theme flattens Obsidian (theme.css §21, same body class); this file does
    the same to what the plugin draws. Otherwise the app would go flat and the
-   dashboard, the boards and the tasks page would keep floating rounded, tinted
+   dashboard and the boards would keep floating rounded, tinted
    cards in the middle of it.
 
    Rule of thumb, everywhere below: one hairline instead of a border, the
@@ -22,26 +22,21 @@ body.nx-style-plain {
 }
 
 /* ── pinned tabs: plain icon buttons, no accent chip ── */
-body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"],
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] {
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] {
   background-color: transparent !important;
   box-shadow: none !important;
 }
-body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:hover,
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"]:hover {
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:hover {
   background-color: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 7%, transparent) !important;
 }
-body.nx-style-plain.nx-pin-home  .workspace-split.mod-root .workspace-tab-header[data-type="nx-homepage"].is-active,
-body.nx-style-plain.nx-pin-cal   .workspace-split.mod-root .workspace-tab-header[data-type="nx-calendar-page"].is-active {
+body.nx-style-plain.nx-pin-home  .workspace-split.mod-root .workspace-tab-header[data-type="nx-homepage"].is-active {
   background-color: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 10%, transparent) !important;
   box-shadow: none !important;
 }
-body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon,
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"] .workspace-tab-header-inner-icon {
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon {
   color: var(--nx-fg-muted, var(--text-muted)) !important;
 }
-body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"].is-active .workspace-tab-header-inner-icon,
-body.nx-style-plain.nx-pin-cal   .workspace-tab-header[data-type="nx-calendar-page"].is-active .workspace-tab-header-inner-icon {
+body.nx-style-plain.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"].is-active .workspace-tab-header-inner-icon {
   color: var(--nx-fg-bright, var(--text-normal)) !important;
 }
 
@@ -62,63 +57,31 @@ body.nx-style-plain .nx-home-card:hover {
 body.nx-style-plain .nx-banner,
 body.nx-style-plain .nx-banner-img { border-radius: 0 !important; }
 
-/* ── kanban + task board: columns without tint, cards without weight ── */
-body.nx-style-plain .nx-kb-col,
-body.nx-style-plain .nx-tb-col {
+/* ── kanban: columns without tint, cards without weight ── */
+body.nx-style-plain .nx-kb-col {
   background: transparent !important;
   border: var(--nx-hairline) !important;
   border-top: var(--nx-hairline) !important;
 }
-body.nx-style-plain .nx-kb-col.is-over,
-body.nx-style-plain .nx-tb-col.is-over {
+body.nx-style-plain .nx-kb-col.is-over {
   background: color-mix(in srgb, var(--nx-kb-kind) 10%, transparent) !important;
   border-color: var(--nx-kb-kind) !important;
 }
-body.nx-style-plain .nx-kb-card,
-body.nx-style-plain .nx-tb-card {
+body.nx-style-plain .nx-kb-card {
   background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 4%, transparent);
   border-color: transparent;
 }
-body.nx-style-plain .nx-kb-card:hover,
-body.nx-style-plain .nx-tb-card:hover {
+body.nx-style-plain .nx-kb-card:hover {
   transform: none;
   border-color: var(--nx-border, var(--background-modifier-border));
 }
 /* The column's own colour shrinks to its dot — the header stays plain text. */
-body.nx-style-plain .nx-kb-col-count,
-body.nx-style-plain .nx-tb-col-count {
+body.nx-style-plain .nx-kb-col-count {
   color: var(--text-muted) !important;
   background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 8%, transparent) !important;
 }
-body.nx-style-plain .nx-kb-col-count.is-over,
-body.nx-style-plain .nx-tb-col-count.is-over {
+body.nx-style-plain .nx-kb-col-count.is-over {
   color: var(--text-on-accent, #fff) !important;
   background: var(--color-red, #e5544a) !important;
 }
 
-/* ── tasks page: the project tree is a list, not a stack of image cards ── */
-body.nx-style-plain .nx-tp-side {
-  background: var(--nx-chip-side, var(--background-secondary)) !important;
-  border-right: var(--nx-hairline);
-}
-body.nx-style-plain .nx-tp-card {
-  height: auto !important;
-  min-height: 0 !important;
-  padding: 7px 10px !important;
-  background-image: none !important;
-  border: none !important;
-}
-body.nx-style-plain .nx-tp-card::after,
-body.nx-style-plain .nx-tp-card-stripe { display: none !important; }
-body.nx-style-plain .nx-tp-card.is-active,
-body.nx-style-plain .nx-tp-sub.is-active,
-body.nx-style-plain .nx-tp-all.is-active {
-  background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 9%, transparent) !important;
-}
-/* ── agenda: a rule down the side instead of a framed block ── */
-body.nx-style-plain .nx-agenda {
-  border: none !important;
-  border-left: calc(var(--nx-bw) * 2) solid var(--nx-border, var(--background-modifier-border)) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-}

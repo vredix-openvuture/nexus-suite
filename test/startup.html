@@ -96,12 +96,12 @@ function plugin(viewTypes, homepage, pinned) {
 {
   /* A pinned Nexus page survives "close every tab": guardPinnedTabs would put
      it back 150 ms later, so closing it buys nothing but a flicker. */
-  const p = plugin(['markdown', 'nx-calendar-page'], { startup: 'closeAll' }, { calendar: true });
-  p.settings.tasksCalendar.enabled = true;
+  const p = plugin(['markdown', HOME], { startup: 'closeAll' }, { home: true });
+  const pinnedLeaf = p.workspace.getLeavesOfType(HOME)[0];
   await p.runHomepageStartup();
   eq('closeAll · the note was closed', p.workspace.getLeavesOfType('markdown').length, 0);
-  eq('closeAll · the pinned calendar page stayed', p.workspace.getLeavesOfType('nx-calendar-page').length, 1);
-  eq('closeAll · and the dashboard is up beside it', p.workspace.getLeavesOfType(HOME).length, 1);
+  eq('closeAll · the pinned dashboard stayed, and is the only one', p.workspace.getLeavesOfType(HOME).length, 1);
+  ok('closeAll · it is the same leaf, not a reopened one', p.workspace.getLeavesOfType(HOME)[0] === pinnedLeaf);
 }
 
 {
@@ -191,6 +191,47 @@ function plugin(viewTypes, homepage, pinned) {
   await sleep(400);
   eq('empty · the pin watchdog and this one do not open two dashboards',
      p.workspace.getLeavesOfType(HOME).length, 1);
+}
+
+// ── The removed tasksCalendar module, as an old data.json still has it ──────
+{
+  const loaded = async (raw, deviceId) => {
+    const p = new Suite({ workspace: makeWorkspace([]), vault: {} }, {});
+    p.loadData = async () => JSON.parse(JSON.stringify(raw));
+    p.saveData = async () => {};
+    p._deviceId = deviceId;
+    await p.loadSettings();
+    return p;
+  };
+  const oldFile = {
+    tasksCalendar: { enabled: true, weekStart: '1', dayTextKey: 'focus',
+      accounts: [{ id: 'acc-1', kind: 'vikunja' }], accountsBeforeDeviceStore: [{ id: 'acc-0' }],
+      tasks: { projectsFolder: 'Tasks/Projects' } },
+    devices: { 'dev-a': { migrated: true, taskAccounts: [{ id: 'acc-2' }], vaultSyncUrl: 'https://dav.example' } },
+    pinnedTabs: { home: true, calendar: true },
+    homepage: { widgets: [{ type: 'clock', uid: 'c1' }, { type: 'calendar', uid: 'k1' }, { type: 'tasks', uid: 't1' }],
+      profiles: { 'dev-a': { widgets: [{ type: 'tasks', uid: 't2' }, { type: 'list', uid: 'l1' }] } } },
+  };
+  ['acc-0', 'acc-1', 'acc-2', 'vaultsync'].forEach(id => window.localStorage.setItem('nexus-suite-cred-' + id, '{"secret":"x"}'));
+  const p = await loaded(oldFile, 'dev-a');
+  const saved = JSON.parse(JSON.stringify(p.settings));
+  eq('removed · the tasksCalendar key is gone after loading', saved.tasksCalendar, undefined);
+  eq('removed · the week start moved to the mini calendar', p.settings.calendar.weekStart, '1');
+  eq('removed · and so did the day-text key', p.settings.calendar.dayTextKey, 'focus');
+  eq('removed · the per-device task accounts are gone', saved.devices['dev-a'].taskAccounts, undefined);
+  eq('removed · the vault-sync connection in the same bag is not', saved.devices['dev-a'].vaultSyncUrl, 'https://dav.example');
+  eq('removed · the Vikunja tokens left this device',
+     ['acc-0', 'acc-1', 'acc-2'].map(id => window.localStorage.getItem('nexus-suite-cred-' + id)), [null, null, null]);
+  ok('removed · the vault-sync credential stayed', window.localStorage.getItem('nexus-suite-cred-vaultsync') !== null);
+  eq('removed · the calendar pin is gone, the dashboard pin is not', saved.pinnedTabs, { home: true });
+  eq('removed · calendar and tasks cards left the dashboard', saved.homepage.widgets.map(w => w.uid), ['c1']);
+  eq('removed · in every device profile too', saved.homepage.profiles['dev-a'].widgets.map(w => w.uid), ['l1']);
+  window.localStorage.removeItem('nexus-suite-cred-vaultsync');
+
+  const kept = await loaded({ calendar: { weekStart: '0' }, tasksCalendar: { weekStart: '1' } }, 'dev-b');
+  eq('removed · a week start already saved on the calendar wins', kept.settings.calendar.weekStart, '0');
+  const fresh = await loaded({}, 'dev-c');
+  eq('removed · a fresh install gets the defaults', [fresh.settings.calendar.weekStart, fresh.settings.calendar.dayTextKey], ['locale', 'important']);
 }
 
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }

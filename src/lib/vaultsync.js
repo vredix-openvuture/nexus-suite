@@ -43,7 +43,7 @@ function changedSince(entry, base) {
   return Math.abs((entry.mtime || 0) - (base.mtime || 0)) > 2000;
 }
 
-const ACTIONS = ['upload', 'download', 'deleteRemote', 'deleteLocal', 'conflict', 'none'];
+const ACTIONS = ['upload', 'download', 'deleteRemote', 'deleteLocal', 'conflict', 'compare', 'none'];
 
 /* One file's verdict.
 
@@ -71,9 +71,17 @@ function decide(path, local, remote, base) {
   if (!local && !remote) return { path, action: 'none' };            // both deleted it
   if (!local) return { path, action: 'conflict', reason: 'deleted here, changed on the server' };
   if (!remote) return { path, action: 'conflict', reason: 'changed here, deleted on the server' };
+  // They agree already. The record is taken now, otherwise the first edit on
+  // either side is judged against nothing and becomes a conflict.
   if (local.size === remote.size && Math.abs((local.mtime || 0) - (remote.mtime || 0)) <= 2000) {
-    return { path, action: 'none' };                                  // they agree already
+    return { path, action: 'none', adopt: true };
   }
+  /* Same size, different times: most likely the same bytes. A server stamps
+     the time of the upload, not of the edit, and a vault that already exists
+     on both sides (the first run of a second device) has a different time for
+     every file. Judged by time alone, that first run made a conflict copy of
+     the whole vault. So the runner compares the bytes before calling it one. */
+  if (local.size === remote.size) return { path, action: 'compare', reason: 'changed on both sides' };
   return { path, action: 'conflict', reason: 'changed on both sides' };
 }
 
@@ -87,11 +95,11 @@ function planSync(local, remote, base, options) {
   for (const key of Object.keys(remote || {})) paths.add(key);
   for (const key of Object.keys(base || {})) paths.add(key);
 
-  const plan = { upload: [], download: [], deleteRemote: [], deleteLocal: [], conflict: [], skipped: [] };
+  const plan = { upload: [], download: [], deleteRemote: [], deleteLocal: [], conflict: [], compare: [], adopt: [], skipped: [] };
   for (const path of Array.from(paths).sort()) {
     if (skip(path)) { plan.skipped.push(path); continue; }
     const verdict = decide(path, (local || {})[path], (remote || {})[path], (base || {})[path]);
-    if (verdict.action === 'none') continue;
+    if (verdict.action === 'none') { if (verdict.adopt) plan.adopt.push(path); continue; }
     if (verdict.action === 'conflict') plan.conflict.push(verdict);
     else plan[verdict.action].push(verdict);
   }
@@ -100,7 +108,7 @@ function planSync(local, remote, base, options) {
 
 function planSize(plan) {
   return plan.upload.length + plan.download.length
-    + plan.deleteRemote.length + plan.deleteLocal.length + plan.conflict.length;
+    + plan.deleteRemote.length + plan.deleteLocal.length + plan.conflict.length + plan.compare.length;
 }
 
 /* How a conflict is settled.
@@ -162,6 +170,25 @@ const ALWAYS_SKIP_PARTS = [
   '.git/', '.trash/', '.stfolder/', '.stversions/',
   'node_modules/', '.sync-conflict-', '.DS_Store',
 ];
+/* Files another sync tool keeps in the folder it watches: Syncthing's
+   half-written temp files and the Nextcloud/ownCloud desktop client's journal
+   and log. Carrying them along uploads a database mid-write and makes every
+   device fight over a file that only means something to the machine that made
+   it. Matched on the file name, wherever it sits. */
+const FOREIGN_SYNC_NAMES = [
+  /^\.syncthing\..*\.tmp$/, /^~syncthing~.*\.tmp$/,
+  /^\._?sync_[0-9a-f]+\.db(-wal|-shm)?$/, /^\.sync_journal\.db/,
+  /^\.(nextcloud|owncloud)sync\.log$/,
+];
+/* The record of the last agreement is per device, so it is per-device by NAME
+   as well: another tool that copies the plugin folder around (Syncthing did)
+   then hands each device a file it never reads, instead of overwriting the one
+   it does. Anything under this prefix is never synced. */
+const STATE_PREFIX = '.obsidian/plugins/nexus-suite/sync-state';
+function statePath(deviceId) {
+  const safe = String(deviceId || 'device').replace(/[^A-Za-z0-9_-]+/g, '-');
+  return STATE_PREFIX + '.' + safe + '.json';
+}
 
 function makeSkip(options) {
   const opts = options || {};
@@ -171,6 +198,9 @@ function makeSkip(options) {
     if (!p) return true;
     for (const part of ALWAYS_SKIP_PARTS) if (p.indexOf(part) >= 0) return true;
     for (const file of DEVICE_FILES) if (p === file) return true;
+    if (p.indexOf(STATE_PREFIX) === 0) return true;
+    const name = p.slice(p.lastIndexOf('/') + 1);
+    for (const pattern of FOREIGN_SYNC_NAMES) if (pattern.test(name)) return true;
     if (!opts.config && p.indexOf('.obsidian/') === 0) return true;
     for (const pattern of extra) {
       if (pattern.endsWith('/') ? p.indexOf(pattern) === 0 : p === pattern) return true;
@@ -243,7 +273,7 @@ function agreement(localEntry, remoteEntry) {
 }
 
 module.exports = {
-  ACTIONS, CONFLICT_POLICIES, DEVICE_FILES, ALWAYS_SKIP_PARTS,
+  ACTIONS, CONFLICT_POLICIES, DEVICE_FILES, ALWAYS_SKIP_PARTS, FOREIGN_SYNC_NAMES, statePath,
   DELETE_FLOOR, DELETE_SHARE, safetyCheck, agreement, baseSide,
   changedSince, decide, planSync, planSize,
   conflictCopyName, resolveConflict, makeSkip,

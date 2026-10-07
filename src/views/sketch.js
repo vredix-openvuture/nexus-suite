@@ -30,6 +30,11 @@ const AUTOGROW_LOOKAHEAD = 460;  // ...and keep this much blank space below it (
 const PREDICT_MAX = 34;          // pen prediction: never draw further than this (viewBox units) past the real tip
 const PAGE_ZOOM_MAX = 5;         // page zoom: how far a sheet may be magnified (1 = page width)
 const PAGE_ZOOM_MIN = 0.3;       // …and how far out, for an overview of a long page (1 = fits the pane)
+/* The mindmap camera. A plane has no page width to snap back to, so the only
+   stops it has are these: how far the logical canvas width may be magnified,
+   and how far it may be pulled back. */
+const INF_ZOOM_IN = 8;
+const INF_ZOOM_OUT = 12;
 const TAP_TRAVEL = 6;          // units a stroke may wander and still count as a tap
 const HANDLE_PX = 11;          // selection handle radius, ON SCREEN — converted to units per pad size
 const SEL_DRAG_PX = 3;         // pointer travel before a press counts as a drag and not a tap
@@ -442,6 +447,8 @@ function emptySketchSVG(presets) {
   const H = p.h || Math.round(W * 3 / 4);
   const meta = { v: 1, w: W, h: H, bg: p.bg || '', paper: p.paper || 'paper', strokes: [] };
   if (p.paperStyle != null) meta.paperStyle = !!p.paperStyle;
+  if (p.paperType) meta.paperType = p.paperType;
+  if (p.sheetLandscape != null) meta.sheetLandscape = !!p.sheetLandscape;
   if (p.bgType) meta.bgType = p.bgType;
   if (p.bgSize != null) meta.bgSize = p.bgSize;
   if (p.bgOpacity != null) meta.bgOpacity = p.bgOpacity;
@@ -456,24 +463,42 @@ function sketchPresets(data) {
   if (!data) return {};
   return {
     bg: data.bg, paper: data.paper, paperStyle: data.paperStyle,
+    paperType: data.paperType, sheetLandscape: data.sheetLandscape,
     bgType: data.bgType, bgSize: data.bgSize, bgOpacity: data.bgOpacity, bgColor: data.bgColor,
   };
 }
 
-/* Rename a page without opening it: rewrite the metadata block in the file's own
-   text. The block is exactly what toSVGString emits, so replacing it whole is
-   safe — and far safer than reaching into the CDATA, whose `]]>` escaping would
-   have to be undone and redone by hand. */
-function withSketchTitle(svgText, title, parsed) {
+/* Change one field of a sidecar without opening it: rewrite the metadata block
+   in the file's own text. The block is exactly what toSVGString emits, so
+   replacing it whole is safe — and far safer than reaching into the CDATA,
+   whose `]]>` escaping would have to be undone and redone by hand. A key set to
+   undefined is DELETED rather than written as null, which is the same shape
+   toSVGString emits for an absent field. */
+function withSketchMeta(svgText, patch, parsed) {
   const data = parsed || parseSketchSVG(svgText);
   if (!data) return null;
+  if (!/<metadata>[\s\S]*?<\/metadata>/.test(svgText)) return null;
   const next = Object.assign({}, data);
-  const clean = String(title == null ? '' : title).trim();
-  if (clean) next.title = clean; else delete next.title;
+  Object.keys(patch || {}).forEach(key => {
+    if (patch[key] === undefined) delete next[key];
+    else next[key] = patch[key];
+  });
   const cdata = JSON.stringify(next).split(']]>').join(']]]]><![CDATA[>');
   const block = `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${cdata}]]></nx-sketch></metadata>`;
-  if (!/<metadata>[\s\S]*?<\/metadata>/.test(svgText)) return null;
   return svgText.replace(/<metadata>[\s\S]*?<\/metadata>/, () => block);
+}
+
+/* Rename a page without opening it. An empty name clears it, so the file falls
+   back to being named by its id rather than carrying an empty title. */
+function withSketchTitle(svgText, title, parsed) {
+  const clean = String(title == null ? '' : title).trim();
+  return withSketchMeta(svgText, { title: clean || undefined }, parsed);
+}
+
+/* Give a sketch its book cover. `cover` is {tone, pattern} out of
+   lib/sketchcover.js, or undefined to go back to the hashed default. */
+function withSketchCover(svgText, cover, parsed) {
+  return withSketchMeta(svgText, { cover: cover || undefined }, parsed);
 }
 
 /* Named paper backgrounds. `bg` = solid fill colour ('' = transparent, so the
@@ -507,6 +532,13 @@ class NexusSketchSurface {
       this.bgColor = opts.bgColor || '#334155';
     }
     this.paperStyle = !!opts.paperStyle;   // paper-grain texture overlay — independent of the paper colour
+    /* What SHAPE the paper is, next to what colour it is: endless | sectioned |
+       mindmap. The geometry lives in lib/sketchcanvas.js; this class only draws
+       it and moves over it. `infinite` is the one branch the whole engine cares
+       about — with no edges there is nothing to scroll and nothing to clamp. */
+    this.paperType = canvas.PAPER_TYPES.indexOf(opts.paperType) >= 0 ? opts.paperType : 'endless';
+    this.sheetLandscape = !!opts.sheetLandscape;
+    this.infinite = this.paperType === 'mindmap';
     this.bgType = opts.bgType || 'none';
     this.bgSize = opts.bgSize || 40;
     this.bgOpacity = (opts.bgOpacity != null) ? opts.bgOpacity : 0.12;
@@ -540,19 +572,35 @@ class NexusSketchSurface {
     // Human name for the drawing, kept IN the sidecar (not in the note) so it
     // travels with the sketch to every note that embeds it.
     this.title = opts.title || '';
+    /* The book cover the capture hub draws this sketch with — {tone, pattern},
+       see lib/sketchcover.js. The engine never reads it; it is carried here for
+       one reason only: toSVGString writes the WHOLE metadata block, so a field
+       the surface does not hold is a field the next stroke deletes. */
+    this.cover = opts.cover || null;
     this.locked = !!opts.locked;                         // view mode: gestures work, drawing doesn't (see setLocked)
     this.autoGrow = !!opts.autoGrow;                     // extend the canvas down while drawing near the bottom
     // Page zoom: a pinch magnifies the PAPER — the pad element gets wider, the
     // SVG re-lays out crisply at that size and the surrounding scroller handles
     // the rest. A different thing from the viewBox zoom below, which changes
     // what is visible rather than how big the sheet is drawn.
-    this.pageZoom = !!opts.pageZoom;
+    // Remembered separately: a mindmap zooms its CAMERA, so page zoom is off
+    // there — but switching back to a sheet has to get it back.
+    this._pageZoomWanted = !!opts.pageZoom;
+    this.pageZoom = this._pageZoomWanted && !this.infinite;
     this.pageScale = 1;
     this.onSwipe = opts.onSwipe || null;                 // 'next' | 'prev' — a sideways throw (see _touchUp)
     // Pan/zoom viewport = the visible sub-rect of the canvas (viewBox). Aspect is
     // kept locked to W/H so the element size (height:auto) never jumps. Only pen/
     // mouse draw; fingers pan (1) / pinch-zoom (2). See _touch* below.
     this.viewX = 0; this.viewY = 0; this.viewW = this.W;
+    /* Where the pad was opened. On a sheet that is simply the top; on a plane it
+       is the only "here" there is, and the way back from having panned into the
+       dark — see goHome(). A mindmap stores its camera in the sidecar, so "the
+       point the note was opened at" survives closing it. */
+    if (this.infinite && opts.view && opts.view.w > 0) {
+      this.viewX = opts.view.x || 0; this.viewY = opts.view.y || 0; this.viewW = opts.view.w;
+    }
+    this._home = { x: this.viewX, y: this.viewY, w: this.viewW };
     this._touches = new Map();                           // active touch pointers → client coords
     // -Infinity, not 0: with 0 every touch in the app's first PALM_MS counts as
     // landing right after a pen and is dropped.
@@ -580,6 +628,9 @@ class NexusSketchSurface {
     // ms of quiet before the drawing is written back. See _changed().
     this.commitDelay = (opts.commitDelay != null) ? opts.commitDelay : 700;
     this.undoStack = []; this.redoStack = [];
+    // Sectioned paper ends at a page edge from the very first frame — a pad that
+    // opens on two thirds of a sheet reads as a bug, not as a setting.
+    if (this.paperType === 'sectioned') this.H = canvas.snapSheetHeight(this.W, this.H, this.sheetLandscape);
     this._pid = 'nxsk-' + Math.random().toString(36).slice(2, 9);
     this._texFilt = this._pid + '-tf'; this._texPat = this._pid + '-tp';   // paper-texture def ids
     this._build();
@@ -594,7 +645,16 @@ class NexusSketchSurface {
     // `aspect-ratio`, which older mobile WebViews lack (→ 0-height, invisible pad).
     const svg = svgEl('svg', { class: 'nx-sketch-surface', viewBox: `0 0 ${this.W} ${this.H}`, width: this.W, height: this.H, preserveAspectRatio: 'none' });
     this.svg = svg;
-    if (this.bg) { this.bgRect = svgEl('rect', { x: 0, y: 0, width: this.W, height: this.H, fill: this.bg }); svg.appendChild(this.bgRect); }
+    /* The paper is THREE stacked layers, each a group of rectangles rather than
+       one rectangle: sectioned paper is many sheets, and an infinite plane is a
+       rectangle that follows the camera. One group each keeps the z-order fixed
+       (fill, then grain, then grid) without any insertBefore juggling. */
+    this.gPaper = svgEl('g', { class: 'nx-sk-paper' });
+    this.gTex = svgEl('g', { class: 'nx-sk-papertex' });
+    this.gGrid = svgEl('g', { class: 'nx-sk-papergrid' });
+    svg.appendChild(this.gPaper);
+    svg.appendChild(this.gTex);
+    svg.appendChild(this.gGrid);
     this.gObjects = svgEl('g', { class: 'nx-sk-objects' });
     this.gSections = svgEl('g', { class: 'nx-sk-sections' });
     this.gStrokes = svgEl('g', { class: 'nx-sk-committed' });
@@ -644,9 +704,13 @@ class NexusSketchSurface {
     this.liveLayer.appendChild(this.tipCanvas);
     this.host.appendChild(this.liveLayer);
     this._livePaths = [];
+    this._applyPaperTypeClass();
+    this._buildPaperFill();
     this._buildBg();
     this._buildPaperTex();
     this._applyPaperClass();
+    this._observeSize();
+    this._applyView();   // a stored mindmap camera is the viewBox from the first frame
 
     svg.addEventListener('pointerdown', (e) => this._onDown(e));
     svg.addEventListener('pointermove', (e) => this._onMove(e));
@@ -678,18 +742,83 @@ class NexusSketchSurface {
     } catch (e) { return null; }
   }
 
+  /* Where paper actually IS, in canvas units. Endless is one rectangle the size
+     of the sheet; sectioned is one per A4 page, with the gaps deliberately left
+     unpainted so the sheets read as separate pieces of paper; a plane is a
+     rectangle around the camera, kept in step by _syncInfinitePaper. */
+  _paperRects() {
+    if (this.infinite) return [this._cameraRect()];
+    if (this.paperType === 'sectioned')
+      return canvas.sheetPages(this.W, this.H, this.sheetLandscape)
+        .map(pg => ({ x: 0, y: pg.y, w: this.W, h: pg.h }));
+    return [{ x: 0, y: 0, w: this.W, h: this.H }];
+  }
+  /* Half a view of slack on every side, so a pan never outruns the paper between
+     two frames. Kept small on purpose: one enormous rectangle would tile its
+     pattern across hundreds of thousands of units and lose precision doing it. */
+  _cameraRect(vh) {
+    const h = (vh == null) ? this._vh() : vh;
+    return { x: this.viewX - this.viewW / 2, y: this.viewY - h / 2, w: this.viewW * 2, h: h * 2 };
+  }
+  _syncInfinitePaper(vh) {
+    if (!this.infinite) return;
+    const r = this._cameraRect(vh);
+    for (const g of [this.gPaper, this.gTex, this.gGrid]) {
+      if (!g) continue;
+      for (const el of g.children) {
+        el.setAttribute('x', r.x); el.setAttribute('y', r.y);
+        el.setAttribute('width', r.w); el.setAttribute('height', r.h);
+      }
+    }
+  }
+  /* The hairline around a sectioned page. An exported .svg has no stylesheet, so
+     this is a literal rather than a class — the page edge is the whole point of
+     sectioned paper and it has to survive leaving the vault. */
+  _sheetEdge() {
+    // Transparent paper does not know what it is lying on, so it borrows the
+    // trick the native GRID already uses: a mid grey reads on light and on dark.
+    if (!this.bg) return 'rgba(128,128,128,0.7)';
+    return (PAPER_MODES[this.paper] || {}).dark ? 'rgba(255,255,255,0.26)' : 'rgba(0,0,0,0.28)';
+  }
+  _fillLayer(g, attrs) {
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    for (const r of this._paperRects())
+      g.appendChild(svgEl('rect', Object.assign({ x: r.x, y: r.y, width: r.w, height: r.h }, attrs)));
+  }
+  /* The solid paper colour. '' (native paper) paints nothing and lets the host
+     element show the note's own background — except on sectioned paper, where
+     the page edge still has to be drawn or there are no pages to see. */
+  _buildPaperFill() {
+    const g = this.gPaper;
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    const edged = this.paperType === 'sectioned';
+    if (!this.bg && !edged) return;
+    const attrs = { fill: this.bg || 'none' };
+    if (edged) {
+      attrs.stroke = this._sheetEdge();
+      attrs['stroke-width'] = Math.max(1, this.W / 800);
+      /* Transparent paper cut into sheets still has to look like sheets on a
+         desk, and the only colour that can tell them apart is the theme's own —
+         so the live pad takes its fill from CSS. An exported file has no theme
+         and stays honestly transparent; the edge is what carries the page there. */
+      attrs.class = this.bg ? 'nx-sk-sheet' : 'nx-sk-sheet is-native';
+    }
+    this._fillLayer(g, attrs);
+  }
+
   _buildBg() {
     if (this._defs) { this._defs.remove(); this._defs = null; }
-    if (this.patRect) { this.patRect.remove(); this.patRect = null; }
+    if (this.gGrid) while (this.gGrid.firstChild) this.gGrid.removeChild(this.gGrid.firstChild);
     if (this.bgType === 'none' || !this.bgOpacity) return;
     const tile = bgPatternTile(this.bgType, this.bgSize, this.bgColor, this.bgOpacity);
     if (!tile) return;
     const defs = this._parseDefs(`<pattern id="${this._pid}" width="${tile.w}" height="${tile.h}" patternUnits="userSpaceOnUse">${tile.inner}</pattern>`);
     if (!defs) return;
     this._defs = defs;
-    this.patRect = svgEl('rect', { x: 0, y: 0, width: this.W, height: this.H, fill: `url(#${this._pid})` });
     this.svg.insertBefore(defs, this.svg.firstChild);
-    this.svg.insertBefore(this.patRect, this.gStrokes);   // above paper, below ink
+    this._fillLayer(this.gGrid, { fill: `url(#${this._pid})` });
   }
 
   /* Paper-grain overlay (paper-style toggle) — sits above the solid fill, below
@@ -697,14 +826,38 @@ class NexusSketchSurface {
      so the feTurbulence tile is parsed once, not per drag. */
   _buildPaperTex() {
     if (this._texDefs) { this._texDefs.remove(); this._texDefs = null; }
-    if (this.texRect) { this.texRect.remove(); this.texRect = null; }
+    if (this.gTex) while (this.gTex.firstChild) this.gTex.removeChild(this.gTex.firstChild);
     if (!this.paperStyle) return;
     const defs = this._parseDefs(paperTexDefsStr(this._texFilt, this._texPat));
     if (!defs) return;
     this._texDefs = defs;
     this.svg.insertBefore(defs, this.svg.firstChild);
-    this.texRect = svgEl('rect', { x: 0, y: 0, width: this.W, height: this.H, fill: `url(#${this._texPat})`, style: 'mix-blend-mode:multiply' });
-    this.svg.insertBefore(this.texRect, this.patRect || this.gStrokes);   // above paper, below grid/ink
+    this._fillLayer(this.gTex, { fill: `url(#${this._texPat})`, style: 'mix-blend-mode:multiply' });
+  }
+  _buildPaperLayers() { this._buildPaperFill(); this._buildPaperTex(); this._buildBg(); }
+
+  /* The pad says which paper it is so the CSS can stop the Sketch tab scrolling
+     a plane that has nothing to scroll, and hide the resize strip on it. */
+  _applyPaperTypeClass() {
+    if (!this.host || !this.host.classList) return;
+    this.host.classList.toggle('nx-sk-infinite', this.infinite);
+    this.host.classList.toggle('nx-sk-sectioned', this.paperType === 'sectioned');
+  }
+  /* A plane's camera has the element's aspect ratio, so a pane getting wider or a
+     tablet being turned has to re-shape it — otherwise preserveAspectRatio:none
+     stretches the drawing. A sheet needs none of this: its ratio is its own. */
+  _observeSize() {
+    if (this._ro) { try { this._ro.disconnect(); } catch (e) {} this._ro = null; }
+    if (!this.infinite || typeof ResizeObserver !== 'function' || !this.host) return;
+    this._ro = new ResizeObserver(() => this._applyView());
+    try { this._ro.observe(this.host); }
+    catch (e) {
+      // Without it the camera keeps the aspect it had, which is wrong the moment
+      // the pane is resized — worth a line in the console, not a broken pad.
+      console.error('Nexus: the mindmap camera cannot follow this pane being resized', e);
+      try { this._ro.disconnect(); } catch (err) {}
+      this._ro = null;
+    }
   }
 
   _buildResizeHandle() {
@@ -741,11 +894,14 @@ class NexusSketchSurface {
     return Math.max(120, Math.ceil(maxY) + 8);
   }
   setHeight(H) {
-    this.H = Math.max(this._contentMinHeight(), H);
+    if (this.infinite) return;                  // a plane has no bottom edge to move
+    H = Math.max(this._contentMinHeight(), H);
+    // Sectioned paper only ever ends at a page edge: half a sheet is not
+    // something anyone can print, and a partial page reads as a bug.
+    if (this.paperType === 'sectioned') H = canvas.snapSheetHeight(this.W, H, this.sheetLandscape);
+    this.H = H;
     this.svg.setAttribute('height', this.H);   // updates intrinsic ratio → CSS height:auto follows
-    if (this.bgRect) this.bgRect.setAttribute('height', this.H);
-    if (this.patRect) this.patRect.setAttribute('height', this.H);
-    if (this.texRect) this.texRect.setAttribute('height', this.H);
+    this._buildPaperLayers();                   // endless grows its rect, sectioned gains a page
     this._applyView();                          // viewBox follows the new height (keeps pan/zoom valid)
   }
 
@@ -845,7 +1001,8 @@ class NexusSketchSurface {
   }
   _touchUp(e) {
     if (!this._touches.delete(e.pointerId)) return;
-    const wasScroll = this._gestMode === 'scroll';
+    // On a plane the camera pan is the scroll, so it is what coasts on release.
+    const wasScroll = this._gestMode === 'scroll' || (this.infinite && this._gestMode === 'pan');
     if (this._touches.size === 1) this._startOneFinger();
     else if (!this._touches.size) {
       this._gestMode = null;
@@ -862,6 +1019,7 @@ class NexusSketchSurface {
      mounted it. Returns true when it took the gesture. */
   _swipe(tap) {
     if (!this.onSwipe || tap.max !== 1) return false;
+    if (this.infinite) return false;   // on a plane a sideways throw is how you get about
     if (Math.abs(this.pageScale - 1) > 0.01) return false;   // zoomed: sideways is looking around
     if (performance.now() - tap.t0 > SWIPE_MS) return false;
     const dx = tap.lx - tap.x, dy = tap.ly - tap.y;
@@ -875,7 +1033,9 @@ class NexusSketchSurface {
         one finger, twice   = undo
         one finger, 3×      = redo
         two fingers, twice  = back to page width
-        three fingers, once = the same, for anyone whose OS lets three through
+        two fingers, 3×     = back to where the drawing was opened (goHome)
+        three fingers, once = back to page width, for anyone whose OS lets three
+                              touches through
 
      Two fingers carry the zoom reset because three simultaneous touches are a
      system gesture on a lot of Android tablets and never reach a web page at
@@ -928,9 +1088,18 @@ class NexusSketchSurface {
     this._clearTapSeq();
 
     if (fingers === 2) {
-      // Nothing is ambiguous after two, so it fires at once rather than waiting.
-      if (n >= 2) { this._resetZoom(); return; }
+      // Three is "take me back", so two has to wait out the window the same way
+      // the one-finger undo does — otherwise the zoom reset would fire on the
+      // way to it and the trip home would start from somewhere else.
+      if (n >= 3) { this.goHome(); this._flashTap(this.infinite ? 'Origin' : 'Top of the page'); return; }
       this._tapSeq = { n, fingers, t: now, x, y, timer: null };
+      if (n === 2) {
+        const seq = this._tapSeq;
+        seq.timer = window.setTimeout(() => {
+          if (this._tapSeq === seq) this._tapSeq = null;
+          this._resetZoom();
+        }, MULTITAP_MS);
+      }
       return;
     }
     if (this.locked) return;                       // view mode: read-only, so no undo
@@ -950,12 +1119,48 @@ class NexusSketchSurface {
      it was seen, and "nothing happened" and "not recognised" look the same. */
   _resetZoom() {
     this.setPageZoom(1);
-    this._flashTap('Page width');
+    this._flashTap(this.infinite ? 'Zoom 100%' : 'Page width');
+  }
+
+  /* Back to the start. On a sheet that is the top of the paper — the one place
+     an endless page has. On a plane there is no top, so it is the camera the pad
+     was opened with, which is what makes it possible to get lost on purpose. */
+  goHome() {
+    this._stopFling();
+    if (this.infinite) {
+      const h = this._home;
+      if (h) { this.viewX = h.x; this.viewY = h.y; this.viewW = h.w; }
+      this._applyView();
+      if (this.onZoom) this.onZoom(this.getPageZoom());
+      return true;
+    }
+    this.viewX = 0; this.viewY = 0;
+    this._applyView();
+    const sc = this._findScroller();
+    if (!sc) return false;
+    const rect = this.host.getBoundingClientRect();
+    const scRect = sc.getBoundingClientRect();
+    sc.scrollLeft = 0;
+    sc.scrollTop += (rect.top - scRect.top) - 8;
+    return true;
   }
 
   /* ctrl/⌘ + wheel = page zoom. Without the modifier the wheel stays the page's,
      so scrolling a note that contains a sketch is never hijacked. */
   _onWheel(e) {
+    /* A plane has no scroller to hand the wheel back to, so the wheel is the
+       camera: plain scrolls it, shift scrolls it sideways, ctrl/⌘ zooms. */
+    // View mode hands the wheel back, the same exception _startOneFinger makes
+    // for one finger: a map read inside a note must not swallow its scrolling.
+    if (this.infinite && !this.locked) {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) { this._zoomView(Math.exp(e.deltaY / 300), e.clientX, e.clientY); return; }
+      const u = this._uPerPx();
+      this.viewX += (e.shiftKey ? e.deltaY : e.deltaX) * u;
+      this.viewY += (e.shiftKey ? 0 : e.deltaY) * u;
+      this._applyView();
+      return;
+    }
     if (!this.pageZoom || !(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     this.setPageZoom(this.pageScale * Math.exp(-e.deltaY / 300), e.clientX, e.clientY);
@@ -967,11 +1172,14 @@ class NexusSketchSurface {
     const samples = this._scrollSamples;
     this._scrollSamples = null;
     this._stopFling();
-    const sc = this._scroller;
-    if (!sc || !samples) return;
+    const sc = this.infinite ? null : this._scroller;
+    if (!samples || (!sc && !this.infinite)) return;
     let vy = -canvas.flingVelocity(samples, 'y');
     let vx = -canvas.flingVelocity(samples, 'x');
     if (!vy && !vx) return;
+    // A scroller coasts in pixels; a camera coasts in canvas units, and the
+    // conversion is fixed for the throw because the zoom cannot change mid-fling.
+    const u = this.infinite ? this._uPerPx() : 1;
     let last = performance.now();
     const step = () => {
       const now = performance.now();
@@ -979,8 +1187,8 @@ class NexusSketchSurface {
       last = now;
       const sy = canvas.flingStep(vy, dt);
       const sx = canvas.flingStep(vx, dt);
-      sc.scrollTop += sy.move;
-      sc.scrollLeft += sx.move;
+      if (this.infinite) { this.viewX += sx.move * u; this.viewY += sy.move * u; this._applyView(); }
+      else { sc.scrollTop += sy.move; sc.scrollLeft += sx.move; }
       vy = sy.v; vx = sx.v;
       this._flingRaf = (vy || vx) ? requestAnimationFrame(step) : null;
     };
@@ -995,7 +1203,11 @@ class NexusSketchSurface {
      draws, the finger navigates. */
   _startOneFinger() {
     const f = [...this._touches.values()][0];
-    if (this.viewW >= this.W - 0.5) {
+    /* A plane is panned by one finger at every zoom level — there is no scroller
+       under it and no page width to fall back to. The exception is view mode: a
+       map read inside a note must not swallow the scroll of the note it is in,
+       so there one finger scrolls and two fingers look around. */
+    if (this.infinite ? this.locked : this.viewW >= this.W - 0.5) {
       this._gestMode = 'scroll';
       this._pending = { cx: f.x, cy: f.y };
       this._scroller = this._findScroller();
@@ -1020,7 +1232,7 @@ class NexusSketchSurface {
   }
   _gestureRef() {
     const r = this.svg.getBoundingClientRect();
-    const vh = this.viewW * this.H / this.W;
+    const vh = this._vh();
     const pts = [...this._touches.values()].map(p => ({ x: p.x, y: p.y }));
     this._gesture = {
       e: { left: r.left, top: r.top, w: r.width || 1, h: r.height || 1 },
@@ -1032,12 +1244,17 @@ class NexusSketchSurface {
   }
   _applyGesture() {
     const live = [...this._touches.values()];
-    if (this._gestMode === 'pan' && live.length === 1) {
+    if (this._gestMode === 'pan' && live.length) {
       const g = this._gesture; if (!g || !g.anchors.length) return;
       const a = g.anchors[0], f = live[0], e = g.e;
       this.viewX = a.cx - (f.x - e.left) / e.w * this.viewW;
-      this.viewY = a.cy - (f.y - e.top) / e.h * (this.viewW * this.H / this.W);
+      this.viewY = a.cy - (f.y - e.top) / e.h * this._vh();
       this._applyView();
+      // On a plane the pan IS the scroll, so it is what gets thrown on release.
+      if (this.infinite) {
+        (this._scrollSamples = this._scrollSamples || []).push({ t: performance.now(), x: f.x, y: f.y });
+        if (this._scrollSamples.length > 12) this._scrollSamples.shift();
+      }
       return;
     }
     if (!live.length) return;
@@ -1053,7 +1270,12 @@ class NexusSketchSurface {
           if (this.pageZoom) this._pzStart = { s: this.pageScale, d: this._pending.d || d };
           else this._gestureRef();
         }
-        else if (Math.hypot(cx - this._pending.cx, cy - this._pending.cy) > 12) this._gestMode = 'scroll';
+        else if (Math.hypot(cx - this._pending.cx, cy - this._pending.cy) > 12) {
+          // Two fingers travelling together scroll the page — unless there is no
+          // page, in which case they move the camera like one finger does.
+          if (this.infinite) { this._gestMode = 'pan'; this._gestureRef(); }
+          else this._gestMode = 'scroll';
+        }
         else return;   // not decided yet
       }
       if (this._gestMode === 'zoom') {
@@ -1065,10 +1287,11 @@ class NexusSketchSurface {
         const g = this._gesture; if (!g || g.anchors.length < 2) return;
         const a0 = g.anchors[0], a1 = g.anchors[1], e = g.e;
         const ca = Math.hypot(a1.cx - a0.cx, a1.cy - a0.cy) || 1;
-        this.viewW = Math.max(this.W / 6, Math.min(this.W, ca * e.w / d));
+        this.viewW = this._clampViewW(ca * e.w / d);
         this.viewX = a0.cx - (f0.x - e.left) / e.w * this.viewW;
-        this.viewY = a0.cy - (f0.y - e.top) / e.h * (this.viewW * this.H / this.W);
+        this.viewY = a0.cy - (f0.y - e.top) / e.h * this._vhFor(this.viewW);
         this._applyView();
+        if (this.infinite && this.onZoom) this.onZoom(this.getPageZoom());
         return;
       }
     }
@@ -1087,7 +1310,27 @@ class NexusSketchSurface {
      off its own width at scale 1, so the result is identical on every screen,
      and the SVG re-renders sharp at the new size instead of being upscaled.
      (ax, ay) is the point on screen to hold still — the pinch centroid. */
+  /* Zoom a CAMERA about a point on screen. The plane's counterpart to
+     setPageZoom: nothing is resized, the view just takes in more or less. */
+  _zoomView(factor, ax, ay) {
+    const r = this.svg.getBoundingClientRect();
+    const fx = r.width ? (((ax != null) ? ax : r.left + r.width / 2) - r.left) / r.width : 0.5;
+    const fy = r.height ? (((ay != null) ? ay : r.top + r.height / 2) - r.top) / r.height : 0.5;
+    const before = this.viewW;
+    const v = canvas.zoomAbout({ x: this.viewX, y: this.viewY, w: this.viewW, h: this._vh() },
+      factor, fx, fy, this.W / INF_ZOOM_IN, this.W * INF_ZOOM_OUT);
+    this.viewX = v.x; this.viewY = v.y; this.viewW = v.w;
+    this._ctmInv = null;
+    this._applyView();
+    if (this.viewW !== before && this.onZoom) this.onZoom(this.getPageZoom());
+  }
   setPageZoom(s, ax, ay) {
+    if (this.infinite) {
+      // "100 %" on a plane means one logical canvas width across the pane, which
+      // is the same thing page width means on a sheet.
+      if (s > 0) this._zoomView((this.W / s) / this.viewW, ax, ay);
+      return;
+    }
     if (!this.pageZoom) return;
     s = Math.max(PAGE_ZOOM_MIN, Math.min(PAGE_ZOOM_MAX, s));
     const sc = this._findScroller();
@@ -1118,14 +1361,36 @@ class NexusSketchSurface {
     this._ctmInv = null;   // the screen→viewBox matrix just changed
     if (changed && this.onZoom) this.onZoom(s);
   }
+  /* How tall the view is, for a given width. A sheet takes it from the canvas
+     ratio (the element has that ratio too); a plane takes it from the ELEMENT,
+     because there is no canvas to get it from — and preserveAspectRatio is
+     "none", so a mismatch would stretch the drawing rather than letter-box it. */
+  _elAspect() {
+    const r = this.svg.getBoundingClientRect();
+    return (r.width > 0 && r.height > 0) ? r.height / r.width : this.H / this.W;
+  }
+  _vhFor(vw) { return this.infinite ? vw * this._elAspect() : vw * this.H / this.W; }
+  _vh() { return this._vhFor(this.viewW); }
+  _clampViewW(v) {
+    if (this.infinite) return Math.max(this.W / INF_ZOOM_IN, Math.min(this.W * INF_ZOOM_OUT, v));
+    return Math.max(this.W / 6, Math.min(this.W, v));
+  }
   _applyView() {
-    this.viewW = Math.max(this.W / 6, Math.min(this.W, this.viewW));
-    const vh = this.viewW * this.H / this.W;
-    // HARD clamp to the canvas bounds — the view must never show empty space
-    // beyond an edge. (Fully zoomed out this means panning is a no-op, which is
-    // the expected behavior: there is nothing to pan.)
-    this.viewX = Math.max(0, Math.min(this.W - this.viewW, this.viewX));
-    this.viewY = Math.max(0, Math.min(Math.max(0, this.H - vh), this.viewY));
+    this.viewW = this._clampViewW(this.viewW);
+    const vh = this._vhFor(this.viewW);
+    if (this.infinite) {
+      // No edges, so nothing to clamp to: panning off the drawing is how you get
+      // room for the next branch of a mindmap. `vh` is passed on rather than
+      // measured again — every getBoundingClientRect here is a forced layout,
+      // and this runs on every pan frame and every frame of a fling.
+      this._syncInfinitePaper(vh);
+    } else {
+      // HARD clamp to the canvas bounds — the view must never show empty space
+      // beyond an edge. (Fully zoomed out this means panning is a no-op, which is
+      // the expected behavior: there is nothing to pan.)
+      this.viewX = Math.max(0, Math.min(this.W - this.viewW, this.viewX));
+      this.viewY = Math.max(0, Math.min(Math.max(0, this.H - vh), this.viewY));
+    }
     this.svg.setAttribute('viewBox', `${this.viewX.toFixed(2)} ${this.viewY.toFixed(2)} ${this.viewW.toFixed(2)} ${vh.toFixed(2)}`);
   }
 
@@ -1278,8 +1543,10 @@ class NexusSketchSurface {
     // canvas this is the lowest-latency path Chrome offers; the per-event cost
     // is tiny (cached Path2D fills + a short tail outline).
     this._drawLive();
-    // Auto-grow: keep headroom below the pen so you can keep writing downward.
-    if (this.autoGrow) {
+    /* Auto-grow: keep headroom below the pen so you can keep writing downward.
+       Never on a plane — setHeight is a no-op there, so the test below would be
+       true for every single sample and pay for a forced layout each time. */
+    if (this.autoGrow && !this.infinite) {
       const pts = this._active.points, y = pts.length ? pts[pts.length - 1][1] : 0;
       if (y > this.H - AUTOGROW_MARGIN) {
         this.setHeight(Math.ceil(y + AUTOGROW_LOOKAHEAD));
@@ -1558,6 +1825,9 @@ class NexusSketchSurface {
   /* Bring a y on the page into view. Returns false when there is no scroller to
      move, so the caller can say so instead of silently doing nothing. */
   scrollToY(y) {
+    // A plane has no scroller: the camera goes there instead, a quarter of a
+    // screen above the mark so it lands under the top of the view, not on it.
+    if (this.infinite) { this.viewY = y - this._vh() * 0.25; this._applyView(); return true; }
     const sc = this._findScroller();
     if (!sc) return false;
     const rect = this.host.getBoundingClientRect();
@@ -1627,8 +1897,7 @@ class NexusSketchSurface {
      placed object belongs, rather than the middle of a page that may be metres
      long. */
   viewCenter() {
-    const vh = this.viewW * this.H / this.W;
-    return { x: this.viewX + this.viewW / 2, y: this.viewY + vh / 2 };
+    return { x: this.viewX + this.viewW / 2, y: this.viewY + this._vh() / 2 };
   }
   _uPerPx() {
     const w = this.svg.getBoundingClientRect().width || this.W;
@@ -1984,6 +2253,9 @@ class NexusSketchSurface {
   }
   _applyPaperWidth() {
     if (!this.host || !this.host.style) return;
+    // A plane fills whatever it is given: the cap exists to keep a SHEET the same
+    // width in portrait and landscape, and a camera has no sheet to cap.
+    if (this.infinite) { this.host.style.maxWidth = ''; this.host.style.marginInline = ''; return; }
     // A zoomed sheet owns its own width — the cap applies to the resting state.
     if (this.pageScale !== 1) return;
     if (!this.paperWidth) { this.host.style.maxWidth = ''; this.host.style.marginInline = ''; return; }
@@ -2105,6 +2377,15 @@ class NexusSketchSurface {
       if (op.h != null) this.setHeight(op.h);
       return { t: 'points', items: prev, h: op.h != null ? prevH : undefined };
     }
+    /* Moving the whole drawing back into a sheet, undone in ONE step: three
+       separate ops (ink, objects, sections) would take three presses to undo
+       something the user did with a single tap. */
+    if (op.t === 'origin') {
+      const prevH = this.H;
+      this._shiftAll(-op.dx, -op.dy);
+      if (op.h != null) this.setHeight(op.h);
+      return { t: 'origin', dx: -op.dx, dy: -op.dy, h: prevH };
+    }
     if (op.t === 'color') {
       const prev = op.items.map(it => ({ i: it.i, color: this.strokes[it.i] ? this.strokes[it.i].color : it.color }));
       for (const it of op.items) if (this.strokes[it.i]) this.strokes[it.i].color = it.color;
@@ -2172,10 +2453,17 @@ class NexusSketchSurface {
   /* Write a pending change out now. Safe to call when nothing is pending. */
   flush() { if (this._commitT || this._commitMaxT) this._fire(); }
   /* Call when the pad goes away for good (view closed, overlay torn down). */
-  destroy() {
-    this.flush(); this._disarmFlushGuard(); this._stopFling(); this._clearTapSeq();
+  /* Let go of everything that outlives the element — pending timers, the fling,
+     the resize observer — WITHOUT writing anything back. For a pad that has been
+     superseded: a code block re-renders while it may still be being drawn on, its
+     successor already carries what it held, and flushing here would put the older
+     drawing over the newer one. */
+  teardown() {
+    this._disarmFlushGuard(); this._stopFling(); this._clearTapSeq();
+    if (this._ro) { try { this._ro.disconnect(); } catch (e) {} this._ro = null; }
     window.clearTimeout(this._tapFlashT);
   }
+  destroy() { this.flush(); this.teardown(); }
 
   /* Dark-paper ink inversion. `_inkColor` is applied everywhere a stroke colour
      is painted (live canvas, committed DOM, export) so the flip is consistent and
@@ -2220,7 +2508,7 @@ class NexusSketchSurface {
   hasSelection() { return this._hasSel(); }
   clearSelection() { this.selection = []; this.selObjects = []; this._paintSel(null); this._emitSelect(); }
   setLocked(v) { this.locked = !!v; }
-  getPageZoom() { return this.pageScale; }
+  getPageZoom() { return this.infinite ? this.W / this.viewW : this.pageScale; }
   // Rebuild-only (no persist) so slider drags stay cheap; caller calls persist()
   // on release.
   setBackground(type, size, opacity) {
@@ -2231,6 +2519,63 @@ class NexusSketchSurface {
   }
   /* Toggle the paper-grain texture overlay on/off (works on any paper colour). */
   setPaperStyle(on) { this.paperStyle = !!on; this._buildPaperTex(); }
+  /* Switch what shape the paper is.
+       to a plane   page zoom is undone WHILE IT IS STILL A SHEET (afterwards
+                    setPageZoom means something else entirely) and parked; the
+                    camera starts at the top of what the sheet was showing, and
+                    that is where the trip home leads.
+       to a sheet   page zoom comes back at 1×, and anything the plane let you
+                    draw in negative space is moved into the sheet rather than
+                    left where a sheet can neither show it nor export it.
+     Re-picking the paper it already is does NOTHING — the chip in the popover
+     fires on every tap, and a second tap must not move home to wherever you had
+     panned to since the first. */
+  setPaperType(type, landscape) {
+    if (canvas.PAPER_TYPES.indexOf(type) < 0) return;
+    const wasType = this.paperType, wasLandscape = this.sheetLandscape;
+    if (type === wasType && (landscape == null || !!landscape === wasLandscape)) return;
+    const was = this.infinite;
+    // While `infinite` is still false this resets the SHEET's zoom, which is the
+    // only moment it can be reset at all.
+    if (!was) this.setPageZoom(1);
+    if (landscape != null) this.sheetLandscape = !!landscape;
+    this.paperType = type;
+    this.infinite = type === 'mindmap';
+    if (this.infinite) {
+      this.pageZoom = false;
+      if (!was) {
+        this.viewX = 0; this.viewY = 0; this.viewW = this.W;
+        this._home = { x: this.viewX, y: this.viewY, w: this.viewW };
+      }
+    } else {
+      this.pageZoom = this._pageZoomWanted;
+      this.pageScale = 1;
+      this._pzBase = 0;
+      if (this.host && this.host.style) this.host.style.width = '';
+      this._applyPaperWidth();
+      this.viewX = 0; this.viewY = 0; this.viewW = this.W;
+      if (was) this._reclaimNegativeSpace();
+      /* Turning the paper keeps the number of SHEETS, not the number of units:
+         two pages that silently become four because A4 got shorter is not what
+         "landscape" means. Everything else keeps the length it had, and
+         setHeight lands it on a page edge. */
+      if (type === 'sectioned' && wasType === 'sectioned' && wasLandscape !== this.sheetLandscape) {
+        const pages = canvas.sheetCount(this.W, this.H, wasLandscape);
+        this.H = pages * canvas.sheetPitch(this.W, this.sheetLandscape) - canvas.sheetGap(this.W);
+      }
+      this.setHeight(this.H);
+    }
+    this._applyPaperTypeClass();
+    this._buildPaperLayers();
+    this._applyView();
+    this._observeSize();
+    if (this.onPaperType) {
+      try { this.onPaperType(this.paperType); }
+      catch (e) { console.error('Nexus: the host could not follow the paper type "' + this.paperType + '"', e); }
+    }
+    if (this.onZoom) this.onZoom(this.getPageZoom());
+  }
+  getPaperType() { return this.paperType; }
   /* Switch the paper preset (native/white/black): swaps the solid fill rect and
      repaints the pattern in the mode's matching grid colour. */
   setPaper(mode) {
@@ -2238,13 +2583,7 @@ class NexusSketchSurface {
     this.paper = mode;
     this.bg = PAPER_MODES[mode].bg;
     this.bgColor = PAPER_MODES[mode].grid;
-    if (this.bgRect) { this.bgRect.remove(); this.bgRect = null; }
-    if (this.bg) {
-      this.bgRect = svgEl('rect', { x: 0, y: 0, width: this.W, height: this.H, fill: this.bg });
-      this.svg.insertBefore(this.bgRect, this.svg.firstChild);   // very bottom of the stack
-    }
-    this._buildBg();         // pattern picks up the new bgColor
-    this._buildPaperTex();   // add/remove the paper grain for the new mode
+    this._buildPaperLayers();   // fill, grain and pattern all follow the new mode
     this._applyPaperClass();
     const wasInv = this._inkInv;
     this._updateInvert();
@@ -2280,12 +2619,89 @@ class NexusSketchSurface {
     this._renderStrokes(); this._changed();
   }
 
+  /* Everything that is ON the drawing, as one box: ink, objects AND sections —
+     a section is drawn by the exporter too, so a frame that ignored it would
+     crop a rule and its title out of the file. null for an empty page. */
+  _contentBounds() {
+    let b = canvas.strokeBounds(this.strokes);
+    const fold = (ob) => {
+      if (!ob) return;
+      b = b ? {
+        minX: Math.min(b.minX, ob.minX), minY: Math.min(b.minY, ob.minY),
+        maxX: Math.max(b.maxX, ob.maxX), maxY: Math.max(b.maxY, ob.maxY),
+      } : ob;
+    };
+    for (const o of this.objects) fold(objects.objectBounds(o));
+    // A section is a rule across the page with its name above it — 28 units of
+    // headroom is what _sectionsSVG puts the text in.
+    for (const sec of this.sections) fold({ minX: 0, minY: sec.y - 28, maxX: this.W, maxY: sec.y });
+    return b;
+  }
+  /* Move the whole drawing. Used when a plane becomes a sheet: a sheet clamps
+     its view to 0,0 and exports 0 0 W H, so ink up or left of the origin would
+     be both unreachable and missing from the file. One undo step puts it back. */
+  _shiftAll(dx, dy) {
+    if (!dx && !dy) return;
+    for (const st of this.strokes) {
+      for (const p of st.points) { p[0] = +(p[0] + dx).toFixed(1); p[1] = +(p[1] + dy).toFixed(1); }
+      delete st._d;   // memoised outline is stale now
+    }
+    this.objects = this.objects.map(o => Object.assign({}, o, { x: o.x + dx, y: o.y + dy }));
+    this.sections = this.sections.map(sec => ({ y: sec.y + dy, title: sec.title }));
+    this._renderStrokes(); this._renderObjects(); this._renderSections();
+  }
+  _reclaimNegativeSpace() {
+    const b = this._contentBounds();
+    if (!b) return;
+    const dx = b.minX < 0 ? Math.ceil(-b.minX) : 0;
+    const dy = b.minY < 0 ? Math.ceil(-b.minY) : 0;
+    if (dx || dy) {
+      this._pushUndo({ t: 'origin', dx, dy, h: this.H });
+      this._shiftAll(dx, dy);
+    }
+    // …and the sheet has to be long enough to hold what just landed on it.
+    this.H = Math.max(this.H, Math.ceil(b.maxY + dy) + 40);
+  }
+  /* What a saved file is cropped to. A sheet is its own frame. A plane has none,
+     so the picture is everything that was drawn on it plus a margin — otherwise
+     the file would be a window onto wherever the camera happened to rest. */
+  _exportFrame() {
+    if (!this.infinite) return { x: 0, y: 0, w: this.W, h: this.H };
+    const b = this._contentBounds();
+    if (!b) return { x: 0, y: 0, w: this.W, h: Math.round(this.W * 3 / 4) };
+    const m = Math.max(24, Math.round(this.W * 0.03));
+    return {
+      x: Math.round(b.minX) - m, y: Math.round(b.minY) - m,
+      w: Math.max(1, Math.round(b.maxX - b.minX) + 2 * m),
+      h: Math.max(1, Math.round(b.maxY - b.minY) + 2 * m),
+    };
+  }
+  /* The paper rectangles of the exported file. Same shapes the live pad paints —
+     one sheet, a stack of A4 pages, or the frame the plane was cropped to. */
+  _exportPaperRects(frame) {
+    if (this.infinite) return [frame];
+    if (this.paperType === 'sectioned')
+      return canvas.sheetPages(this.W, this.H, this.sheetLandscape)
+        .map(pg => ({ x: 0, y: pg.y, w: this.W, h: pg.h }));
+    return [{ x: 0, y: 0, w: this.W, h: this.H }];
+  }
+  /* The size of the file toSVGString writes, for whoever has to rasterise it.
+     Not W x H: a mindmap is cropped to its own ink, and a PNG sized to the
+     canvas instead of to the crop would come out stretched. */
+  exportSize() { const f = this._exportFrame(); return { w: f.w, h: f.h }; }
   toSVGString() {
+    const frame = this._exportFrame();
+    const rects = this._exportPaperRects(frame);
+    const rectsWith = (attrs) => rects.map(r =>
+      `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" ${attrs}/>`).join('');
     const meta = JSON.stringify({
       v: 1, w: this.W, h: this.H, bg: this.bg, paper: this.paper, paperStyle: this.paperStyle,
+      paperType: this.paperType, sheetLandscape: this.sheetLandscape || undefined,
+      view: this.infinite ? { x: Math.round(this.viewX), y: Math.round(this.viewY), w: Math.round(this.viewW) } : undefined,
       bgType: this.bgType, bgSize: this.bgSize, bgOpacity: this.bgOpacity, bgColor: this.bgColor,
       autoGrow: this.autoGrow,
       title: this.title || undefined,
+      cover: this.cover || undefined,
       objects: this.objects.length ? this.objects : undefined,
       sections: this.sections.length ? this.sections : undefined,
       ocr: this.ocr.length ? this.ocr : undefined,
@@ -2293,16 +2709,22 @@ class NexusSketchSurface {
     });
     let defs = '', body = '';
     if (this.strokes.some(st => st.grain)) defs += `<defs>${pencilFilterStr(this._pfx)}</defs>`;
-    if (this.bg) body += `<rect x="0" y="0" width="${this.W}" height="${this.H}" fill="${this.bg}"/>`;
+    // Sectioned paper draws its page edge even on transparent paper: the edges
+    // ARE the feature, and a file leaving the vault carries no stylesheet.
+    if (this.bg || this.paperType === 'sectioned') {
+      const edge = (this.paperType === 'sectioned')
+        ? ` stroke="${this._sheetEdge()}" stroke-width="${Math.max(1, this.W / 800)}"` : '';
+      body += rectsWith(`fill="${this.bg || 'none'}"${edge}`);
+    }
     if (this.paperStyle) {
       defs += `<defs>${paperTexDefsStr(this._texFilt, this._texPat)}</defs>`;
-      body += `<rect x="0" y="0" width="${this.W}" height="${this.H}" fill="url(#${this._texPat})" style="mix-blend-mode:multiply"/>`;
+      body += rectsWith(`fill="url(#${this._texPat})" style="mix-blend-mode:multiply"`);
     }
     if (this.bgType !== 'none' && this.bgOpacity) {
       const tile = bgPatternTile(this.bgType, this.bgSize, this.bgColor, this.bgOpacity);
       if (tile) {
         defs += `<defs><pattern id="${this._pid}" width="${tile.w}" height="${tile.h}" patternUnits="userSpaceOnUse">${tile.inner}</pattern></defs>`;
-        body += `<rect x="0" y="0" width="${this.W}" height="${this.H}" fill="url(#${this._pid})"/>`;
+        body += rectsWith(`fill="url(#${this._pid})"`);
       }
     }
     // Same emitter as the live pad — two would drift, and the drift would only
@@ -2339,10 +2761,10 @@ class NexusSketchSurface {
        file behind. Splitting it across two CDATA blocks is the standard escape
        and reads back identically. */
     const cdata = meta.split(']]>').join(']]]]><![CDATA[>');
-    return `<svg xmlns="${SVGNS}" viewBox="0 0 ${this.W} ${this.H}" width="${this.W}" height="${this.H}">`
+    return `<svg xmlns="${SVGNS}" viewBox="${frame.x} ${frame.y} ${frame.w} ${frame.h}" width="${frame.w}" height="${frame.h}">`
       + `<metadata><nx-sketch xmlns="https://nexus-suite/sketch"><![CDATA[${cdata}]]></nx-sketch></metadata>`
       + defs + body + '</svg>';
   }
 }
 
-module.exports = { NexusSketchSurface, parseSketchSVG, emptySketchSVG, sketchPresets, withSketchTitle, sketchStrokePath, recognizeShape, shapeToPoints, ratioWH, LOGICAL_W, PEN_TYPES };
+module.exports = { NexusSketchSurface, parseSketchSVG, emptySketchSVG, sketchPresets, withSketchMeta, withSketchTitle, withSketchCover, sketchStrokePath, recognizeShape, shapeToPoints, ratioWH, LOGICAL_W, PEN_TYPES };

@@ -173,7 +173,7 @@ function blockOf(app) {
   const stage = document.getElementById('stage');
   stage.innerHTML = '';
   const el = stage.createDiv();
-  const plugin = { app, settings: { planner: { enabled: true }, tasksCalendar: {} } };
+  const plugin = { app, settings: { planner: { enabled: true } } };
   const pl = new window.NexusPlanner(plugin);
   pl.today = () => '2026-09-15';
   pl.render('view: month\nmonth: 2026-09', el, ctxFor(app));
@@ -240,7 +240,7 @@ function blockOf(app) {
   const stage = document.getElementById('stage');
   stage.innerHTML = '';
   const el = stage.createDiv();
-  const plugin = { app, settings: { planner: { enabled: true }, tasksCalendar: {} } };
+  const plugin = { app, settings: { planner: { enabled: true } } };
   const pl = new window.NexusPlanner(plugin);
   pl.today = () => '2026-09-15';
   pl.render('view: month\nmonth: 2026-09', el, ctxFor(app));
@@ -303,7 +303,7 @@ function blockOf(app) {
      M.fenceBodies('```nexus-planner\nmonth: 2026-09'), []);
 
   const app = makeApp('```nexus-planner\nmonth: 2026-09\n2026-09-03: Ship 0.25\n2026-09-11: Dentist\n```');
-  const plugin = { app, settings: { planner: { enabled: true }, tasksCalendar: {} } };
+  const plugin = { app, settings: { planner: { enabled: true } } };
   // One day already has a text of its own: the migration must not touch it.
   await app.vault.create('Journal/2026-09-11.md', '');
   app._fm['Journal/2026-09-11.md'] = { important: 'mine, written later' };
@@ -337,7 +337,7 @@ function blockOf(app) {
   const M = window.plannerMigrate;
   const moment = window.obsidianStub.moment;
   const app = makeApp('# no planner here');
-  const plugin = { app, settings: { tasksCalendar: {} } };
+  const plugin = { app, settings: {} };
   const plan = await M.scan(app, plugin, moment);
   eq('scan · a vault with no planner block', M.describe(plan), 'No planner lines found. Nothing to move.');
 }

@@ -3,7 +3,7 @@
 /* ============================================================================
  *  NEXUS SUITE · lib · per-device settings
  *  Settings that describe ONE machine — the server it syncs against, the
- *  schedule it keeps, the accounts it is signed in to — kept inside data.json
+ *  schedule it keeps — kept inside data.json
  *  but under that device's own key.
  *
  *  data.json is a file in the vault, and the vault is what vault sync uploads.
@@ -16,20 +16,14 @@
  * ========================================================================== */
 
 /* Where a setting used to live while it was still vault-wide → its key in the
-   device's own bag.
-
-   `keepAs` is for the one value that cannot simply be left where it was: the
-   accounts are still reached under `tasksCalendar.accounts`, which is now an
-   accessor onto the device's own list. Serialising that would write one
-   device's accounts over the shared key on every save, which is the bug this
-   whole change exists to remove. So the original is parked under a name nothing
-   writes to, and a device that updates later still finds it. */
+   device's own bag. The task accounts (`tasksCalendar.accounts` →
+   `taskAccounts`) were moved here too until the tasks module was removed;
+   loadSettings now deletes what is left of them (plugin.dropTasksCalendar). */
 const LEGACY_KEYS = [
   { module: 'vaultSync', legacy: 'url', key: 'vaultSyncUrl' },
   { module: 'vaultSync', legacy: 'deviceName', key: 'vaultSyncDeviceName' },
   { module: 'vaultSync', legacy: 'onStart', key: 'vaultSyncOnStart' },
   { module: 'vaultSync', legacy: 'intervalMin', key: 'vaultSyncIntervalMin' },
-  { module: 'tasksCalendar', legacy: 'accounts', key: 'taskAccounts', keepAs: 'accountsBeforeDeviceStore' },
 ];
 
 function deviceStore(settings, deviceId) {
@@ -55,10 +49,8 @@ function migrateDeviceSettings(settings, deviceId) {
   for (const move of LEGACY_KEYS) {
     const from = settings[move.module];
     if (!from) continue;
-    const value = from[move.legacy] !== undefined ? from[move.legacy]
-      : (move.keepAs ? from[move.keepAs] : undefined);
+    const value = from[move.legacy];
     if (value === undefined) continue;
-    if (move.keepAs && from[move.keepAs] === undefined) from[move.keepAs] = copyOf(value);
     if (store[move.key] !== undefined) continue;
     store[move.key] = copyOf(value);
   }

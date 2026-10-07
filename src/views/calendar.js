@@ -72,6 +72,16 @@ class NexusCalendarView extends ItemView {
     this.markDayTexts();
   }
 
+  /* A day whose note has a day text gets a mark; the text itself is not
+     written out — a sidebar column is too narrow for a sentence. Lost in
+     a8d22f0 while render() and onOpen() kept calling it, which threw on
+     every paint; restored with the tasksCalendar removal. */
+  markDayTexts() {
+    for (const date of Object.keys(this.cells)) {
+      const has = !!daytext.readDayText(this.plugin.app, this.plugin, moment(date, 'YYYY-MM-DD'));
+      this.cells[date].toggleClass('nx-has-daytext', has);
+    }
+  }
 }
 
 module.exports = { NexusCalendarView };
