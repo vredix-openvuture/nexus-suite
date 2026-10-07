@@ -313,6 +313,20 @@ const E = window.ean13Lib;
   ok('create · allowed with a cover', B.canCreate(true, { bytes: new ArrayBuffer(1) }));
   ok('create · allowed when the template has no cover', B.canCreate(false, null));
 }
+// ── photo decoding ────────────────────────────────────────────────────────
+{
+  const SC = window.bookScanLib;
+  const toBlob = (img) => {
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    c.getContext('2d').putImageData(img, 0, 0);
+    return new Promise(r => c.toBlob(r, 'image/png'));
+  };
+  eq('photo · decodes an upright photo', await SC.decodeFile(await toBlob(testTools.drawBarcode('9783423343824', { noise: 20 }))), '9783423343824');
+  eq('photo · decodes a sideways photo', await SC.decodeFile(await toBlob(testTools.rotate90(testTools.drawBarcode('9780140328721')))), '9780140328721');
+  eq('photo · nothing in it', await SC.decodeFile(await toBlob(new ImageData(200, 200))), null);
+  eq('photo · not an image', await SC.decodeFile(new Blob(['hello'], { type: 'text/plain' })), null);
+  ok('device · the checks answer booleans', typeof SC.cameraAvailable() === 'boolean' && typeof SC.nativeDetectorAvailable() === 'boolean');
+}
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
 for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }
 out.push('', fail ? fail + ' FAILED, ' + pass + ' passed' : 'ALL GREEN (' + pass + ')');

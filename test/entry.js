@@ -53,3 +53,4 @@ window.ean13Lib = require('../src/lib/ean13.js');
 window.bookTemplateLib = require('../src/lib/booktemplate.js');
 window.bookSourcesLib = require('../src/lib/booksources.js');
 window.bookCaptureLib = require('../src/lib/bookcapture.js');
+window.bookScanLib = require('../src/lib/bookscan.js');
