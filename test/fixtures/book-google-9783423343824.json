@@ -1,0 +1,21 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 1,
+  "items": [{
+    "volumeInfo": {
+      "title": "Persönlichkeit und Menschenführung",
+      "subtitle": "Vom Umgang mit sich selbst und anderen",
+      "authors": ["Wolfgang Schmidbauer"],
+      "publisher": "Deutscher Taschenbuch Verlag",
+      "publishedDate": "2007-03",
+      "description": "Ein Klassiker der Führungspsychologie.",
+      "pageCount": 220,
+      "categories": ["Psychology"],
+      "language": "de",
+      "imageLinks": {
+        "smallThumbnail": "http://books.google.com/books/content?id=abc&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+        "thumbnail": "http://books.google.com/books/content?id=abc&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+      }
+    }
+  }]
+}

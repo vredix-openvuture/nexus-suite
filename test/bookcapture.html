@@ -170,6 +170,82 @@ const E = window.ean13Lib;
      T.bookData(rec, { isbn: '1', cover: 'c.jpg', date: 'd' }),
      { isbn: '1', title: 'A', subtitle: '', author: 'X, Y', authors: ['X', 'Y'], publisher: '', year: '', pages: '', language: '', description: '', genres: ['g'], cover: 'c.jpg', date: 'd' });
 }
+// ── sources ───────────────────────────────────────────────────────────────
+{
+  const S = window.bookSourcesLib;
+  const get = async (p) => (await fetch(p)).text();
+  const dnbXml = await get('fixtures/book-dnb-9783423343824.xml');
+  const dnbEmpty = await get('fixtures/book-dnb-empty.xml');
+  const olJson = JSON.parse(await get('fixtures/book-ol-9780140328721.json'));
+  const gJson = JSON.parse(await get('fixtures/book-google-9783423343824.json'));
+
+  const d = S.parseDnb(dnbXml, '9783423343824');
+  eq('dnb · title', d.title, 'Persönlichkeit und Menschenführung');
+  eq('dnb · subtitle', d.subtitle, 'vom Umgang mit sich selbst und anderen');
+  eq('dnb · author flipped to first-last', d.authors, ['Wolfgang Schmidbauer']);
+  // ISBD punctuation is cut, which also takes an abbreviation's last dot.
+  eq('dnb · publisher', d.publisher, 'Dt. Taschenbuch-Verl');
+  eq('dnb · year', d.year, '2007');
+  eq('dnb · pages', d.pages, '220');
+  eq('dnb · language', d.language, 'ger');
+  eq('dnb · subjects become genres', d.genres, ['Führungspsychologie']);
+  eq('dnb · the MVB cover', d.covers, ['https://portal.dnb.de/opac/mvb/cover?isbn=9783423343824']);
+  eq('dnb · no record is null', S.parseDnb(dnbEmpty, '9780140328721'), null);
+
+  const o = S.parseOpenLibrary(olJson, '9780140328721');
+  eq('ol · title', o.title, 'Fantastic Mr. Fox');
+  eq('ol · authors', o.authors, ['Roald Dahl']);
+  eq('ol · year from a long date', o.year, '1988');
+  eq('ol · pages', o.pages, '96');
+  ok('ol · has a cover', o.covers.length === 1 && /^https:\/\/covers\.openlibrary\.org\//.test(o.covers[0]), o.covers[0]);
+  eq('ol · unknown ISBN is null', S.parseOpenLibrary({}, '9783423343824'), null);
+
+  const g = S.parseGoogle(gJson);
+  eq('google · year from YYYY-MM', g.year, '2007');
+  eq('google · pages as text', g.pages, '220');
+  eq('google · cover upgraded to https without the page curl', g.covers,
+     ['https://books.google.com/books/content?id=abc&printsec=frontcover&img=1&zoom=1&source=gbs_api']);
+  eq('google · nothing found is null', S.parseGoogle({ totalItems: 0 }), null);
+
+  // merge: first source in order wins a field, covers come from all
+  const m = S.merge([{ id: 'dnb', record: d }, { id: 'google', record: g }]);
+  eq('merge · subtitle from the first source', m.subtitle, 'vom Umgang mit sich selbst und anderen');
+  eq('merge · description filled by the second', m.description, 'Ein Klassiker der Führungspsychologie.');
+  eq('merge · genres from the first that has any', m.genres, ['Führungspsychologie']);
+  eq('merge · covers from both, labelled', m.covers.map(c => c.source), ['dnb', 'google']);
+
+  // queryAll with a fake request: one hit, one miss, one timeout, one HTTP error
+  const fake = async ({ url }) => {
+    if (url.includes('dnb.de')) return { status: 200, text: dnbXml, json: null };
+    if (url.includes('openlibrary')) return { status: 200, text: '{}', json: {} };
+    if (url.includes('googleapis')) return new Promise(() => {});
+    return { status: 500, text: '', json: null };
+  };
+  const q = await S.queryAll('9783423343824',
+    [{ id: 'dnb' }, { id: 'openlibrary' }, { id: 'google', key: 'k' }], { request: fake, timeoutMs: 50 });
+  eq('query · only the hit becomes a record', q.records.map(r => r.id), ['dnb']);
+  eq('query · status per source', q.status.map(s => [s.id, s.ok, s.found]),
+     [['dnb', true, true], ['openlibrary', true, false], ['google', false, false]]);
+  eq('query · a timeout is named', q.status[2].error, 'timeout');
+  const noKey = await S.queryAll('9783423343824', [{ id: 'google' }], { request: fake, timeoutMs: 50 });
+  eq('query · google without a key is skipped, not called', noKey.status[0].error, 'no API key');
+
+  // cover loading: only real images survive
+  const jpeg = new Uint8Array(5000).buffer;
+  const coverReq = async ({ url }) => {
+    if (url === 'ok') return { status: 200, headers: { 'Content-Type': 'image/jpeg; charset=UTF-8' }, arrayBuffer: jpeg };
+    if (url === 'html') return { status: 200, headers: { 'content-type': 'text/html' }, arrayBuffer: jpeg };
+    if (url === 'tiny') return { status: 200, headers: { 'content-type': 'image/gif' }, arrayBuffer: new ArrayBuffer(43) };
+    if (url === 'hang') return new Promise(() => {});
+    return { status: 404, headers: {}, arrayBuffer: new ArrayBuffer(0) };
+  };
+  const covers = await S.loadCovers(['ok', 'html', 'tiny', 'missing', 'hang'].map(u => ({ url: u, source: u })),
+    { request: coverReq, timeoutMs: 50 });
+  eq('cover · only the real image is kept', covers.map(c => c.url), ['ok']);
+  eq('cover · extension from the content type', covers[0].ext, 'jpg');
+  eq('cover · png', S.extFor('image/png'), 'png');
+  eq('cover · unknown image type falls back to jpg', S.extFor('image/x-foo'), 'jpg');
+}
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
 for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }
 out.push('', fail ? fail + ' FAILED, ' + pass + ' passed' : 'ALL GREEN (' + pass + ')');
