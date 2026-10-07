@@ -54,3 +54,6 @@ window.bookTemplateLib = require('../src/lib/booktemplate.js');
 window.bookSourcesLib = require('../src/lib/booksources.js');
 window.bookCaptureLib = require('../src/lib/bookcapture.js');
 window.bookScanLib = require('../src/lib/bookscan.js');
+window.NexusSettingsTab = require('../src/settings.js').NexusSettingsTab;
+window.NexusHomepageView = require('../src/views/homepage.js').NexusHomepageView;
+window.accountModal = require('../src/modals/account.js');

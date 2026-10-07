@@ -118,7 +118,6 @@ const DEFAULT_SETTINGS = {
     config: true,           // carry .obsidian too, minus the device-specific files
     backup: true, keepBackups: 30,
     conflict: 'keepBoth',   // keepBoth | newer | local | remote
-    shared: false,          // announce this device, and say who else is in the vault
     exclude: [] },
   tagTools:   { enabled: true },
   inkCapture: { enabled: true, ribbon: true, tagOnCapture: true,

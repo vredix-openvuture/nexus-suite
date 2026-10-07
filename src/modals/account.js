@@ -15,13 +15,12 @@
 const { Modal, Setting, Notice } = require('obsidian');
 
 class NexusAccountModal extends Modal {
-  constructor(plugin, connection, onSave) {
+  constructor(plugin, onSave) {
     super(plugin.app);
     this.plugin = plugin;
     // Vault sync is the only kind left (the Vikunja accounts went with the
     // tasks module, see docs/removed-features.md).
-    this.kind = 'vaultsync';
-    this.entry = { kind: this.kind, label: '', url: '', username: '' };
+    this.entry = { label: '', url: '', username: '' };
     this.secret = '';
     this.onSave = onSave;
   }
@@ -35,7 +34,7 @@ class NexusAccountModal extends Modal {
     new Setting(contentEl).setName('Connection').setDesc('Ask the server whether it is there and whether it knows you.')
       .addButton(b => b.setButtonText('Test').setCta().onClick(() => this._test(b)));
 
-    const foot = contentEl.createDiv('nx-event-foot');
+    const foot = contentEl.createDiv('nx-account-foot');
     foot.createDiv().style.flex = '1';
     foot.createEl('button', { text: 'Save', cls: 'mod-cta' }).onclick = () => this._save();
   }
@@ -55,7 +54,7 @@ class NexusAccountModal extends Modal {
   async _test(btn) {
     btn.setButtonText('Testing…').setDisabled(true);
     try {
-      const message = await this.plugin.testConnection(this.kind, Object.assign({}, this.entry, { secret: this.secret }));
+      const message = await this.plugin.testConnection(Object.assign({}, this.entry, { secret: this.secret }));
       new Notice('Nexus: ' + message + '.');
     } catch (e) { new Notice('Nexus: ' + (e && e.message ? e.message : 'the test failed.')); }
     finally { btn.setButtonText('Test').setDisabled(false); }

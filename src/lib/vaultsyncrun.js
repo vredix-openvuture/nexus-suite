@@ -17,6 +17,8 @@ const zip = require('./zip.js');
 const { WebDavClient } = require('./webdav.js');
 
 const BACKUP_FOLDER = '_backups';
+// Written by the removed "Shared vault" presence notes. Still skipped, so a
+// server that has the folder never pulls it into the vault.
 const PRESENCE_FOLDER = '_presence';
 
 class NexusVaultSync {
@@ -433,33 +435,6 @@ class NexusVaultSync {
       try { await client.remove(BACKUP_FOLDER + '/' + name); }
       catch (e) { /* a backup that will not delete is not worth failing the run over */ }
     }
-  }
-
-  /* ── Who else is in here ──────────────────────────────────────────────────
-     Not live collaboration — see the README for why that needs a server this
-     does not have. This is the honest part of the same idea: each device leaves
-     a note saying it is here, so a shared vault can warn you that someone else
-     is editing rather than letting you find out through a conflict. */
-  async announce(client) {
-    if (!this.s.shared) return [];
-    const id = this.plugin.deviceId();
-    const body = JSON.stringify({ device: this.deviceName || id, at: moment().format('YYYY-MM-DDTHH:mm:ss') });
-    try {
-      await client.ensureFolder(PRESENCE_FOLDER);
-      await client.put(PRESENCE_FOLDER + '/' + id + '.json', body, 'application/json');
-    } catch (e) { return []; }
-    try {
-      const listing = await client.list(PRESENCE_FOLDER);
-      const others = [];
-      for (const entry of listing) {
-        if (entry.folder) continue;
-        if (entry.path.indexOf(id) >= 0) continue;
-        // Older than a quarter of an hour is not "here" any more.
-        if (entry.mtime && Date.now() - entry.mtime > 15 * 60 * 1000) continue;
-        others.push(entry.path.split('/').pop().replace(/\.json$/, ''));
-      }
-      return others;
-    } catch (e) { return []; }
   }
 }
 

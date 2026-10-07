@@ -2177,18 +2177,17 @@ module.exports = class NexusSuite extends Plugin {
 
   /* Ask the vault-sync server whether it is there and whether it knows this
      device. The answer has to be a sentence, not a status code. */
-  async testConnection(kind, entry) {
+  /* Test the vault-sync server. `entry` is what the add-a-server dialog holds
+     before saving; without it the stored connection is tested. */
+  async testConnection(entry) {
     const conn = entry || {};
-    if (kind === 'vaultsync') {
-      const url = conn.url || this.deviceSetting('vaultSyncUrl', '');
-      if (!url) throw new Error('fill in the URL first');
-      const cred = this.getCredential('vaultsync');
-      const client = new WebDavClient({ baseUrl: url,
-        username: conn.username !== undefined ? conn.username : (cred.username || ''),
-        password: conn.secret !== undefined ? conn.secret : (cred.secret || '') });
-      return (await client.check()).message;
-    }
-    throw new Error('unknown connection kind "' + kind + '"');
+    const url = conn.url || this.deviceSetting('vaultSyncUrl', '');
+    if (!url) throw new Error('fill in the URL first');
+    const cred = this.getCredential('vaultsync');
+    const client = new WebDavClient({ baseUrl: url,
+      username: conn.username !== undefined ? conn.username : (cred.username || ''),
+      password: conn.secret !== undefined ? conn.secret : (cred.secret || '') });
+    return (await client.check()).message;
   }
 
   /* ---- Credentials ----

@@ -105,3 +105,5 @@
 }
 .nx-banner-drag-done .svg-icon { width: 16px; height: 16px; }
 
+/* The add-a-server dialog: Save sits at the right, under the fields. */
+.nx-account-foot { display: flex; align-items: center; gap: var(--nx-sp-2); margin-top: 16px; }

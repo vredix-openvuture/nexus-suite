@@ -1,0 +1,120 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>smoke harness</title>
+<style>
+body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }
+#stage { display:none }
+</style></head><body>
+<div id="stage"></div>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+/* Smoke: every settings page, the add-a-server dialog and the dashboard render
+   without throwing, and each puts something on screen. Nothing here checks
+   what a page SAYS — the point is that splitting a 1700-line file into parts
+   cannot lose a method that one page calls and no other test reaches. */
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+const errText = (e) => (e && (e.stack || e.message)) || String(e);
+
+(async () => {
+try {
+const Suite = window.NexusSuite;
+const stub = window.obsidianStub;
+
+/* A vault with a handful of files and the API surface the pages read. */
+function makeApp() {
+  const files = ['Welcome.md', 'Projects/Alpha.md', 'Books/Dune.md'].map(path => ({
+    path, name: path.split('/').pop(), basename: path.split('/').pop().replace(/\.md$/, ''),
+    extension: 'md', stat: { mtime: 0, ctime: 0, size: 1 }, parent: { path: path.split('/').slice(0, -1).join('/') || '/' },
+  }));
+  const root = { path: '/', name: '', children: files, isRoot: () => true };
+  const vault = {
+    getMarkdownFiles: () => files.slice(),
+    getFiles: () => files.slice(),
+    getAllLoadedFiles: () => [root].concat(files),
+    getAllFolders: () => [root],
+    getAbstractFileByPath: (p) => files.find(f => f.path === p) || null,
+    getRoot: () => root,
+    read: async () => '', cachedRead: async () => '',
+    getName: () => 'smoke', configDir: '.obsidian',
+    adapter: { exists: async () => false, read: async () => '', write: async () => {}, list: async () => ({ files: [], folders: [] }) },
+    on: () => ({}), offref: () => {},
+  };
+  const metadataCache = {
+    getFileCache: () => ({ frontmatter: {} }), getTags: () => ({ '#a': 1 }),
+    getFirstLinkpathDest: () => null, resolvedLinks: {}, unresolvedLinks: {},
+    on: () => ({}), offref: () => {},
+  };
+  const workspace = stub.makeWorkspace(['markdown']);
+  workspace.getActiveFile = () => null;
+  workspace.getActiveViewOfType = () => null;
+  workspace.containerEl = document.getElementById('stage').createDiv();
+  return { vault, metadataCache, workspace, plugins: { plugins: {}, enabledPlugins: new Set() },
+    internalPlugins: { getPluginById: () => null, plugins: {} }, setting: { open() {}, openTabById() {} },
+    customCss: { themes: {}, theme: '', snippets: [] }, commands: { commands: {} }, isMobile: false };
+}
+
+function makePlugin() {
+  const app = makeApp();
+  const p = new Suite(app, { id: 'nexus-suite', dir: '.obsidian/plugins/nexus-suite', version: '0.0.0' });
+  p.settings = JSON.parse(JSON.stringify(window.DEFAULT_SETTINGS));
+  p.saveSettings = async () => {};
+  p.saveData = async () => {};
+  return p;
+}
+
+// ── every settings page ────────────────────────────────────────────────────
+{
+  const p = makePlugin();
+  const SettingsTab = window.NexusSettingsTab;
+  const tab = new SettingsTab(p.app, p);
+  document.getElementById('stage').appendChild(tab.containerEl);
+  // Learn the ids from the page itself, so a new tab is covered without an edit here.
+  tab.display();
+  const ids = Array.from(tab.containerEl.querySelectorAll('.nx-settings-tab[data-id]')).map(el => el.getAttribute('data-id'));
+  ok('settings · the nav lists the pages', ids.length >= 20, 'found ' + ids.length);
+  for (const id of ids) {
+    tab.active = id;
+    let err = null;
+    try { tab.display(); } catch (e) { err = e; }
+    const body = tab.containerEl.querySelector('.nx-settings-body');
+    ok('settings · ' + id + ' renders', !err, errText(err));
+    ok('settings · ' + id + ' shows something', !!body && body.querySelectorAll('.setting-item, p, .nx-row').length > 0);
+  }
+}
+
+// ── the add-a-server dialog ────────────────────────────────────────────────
+{
+  const p = makePlugin();
+  const { NexusAccountModal } = window.accountModal;
+  let err = null; const m = new NexusAccountModal(p, () => {});
+  try { m.open(); } catch (e) { err = e; }
+  ok('account · opens', !err, errText(err));
+  const foot = m.contentEl.querySelector('.nx-account-foot');
+  ok('account · has its footer with Save', !!foot && /Save/.test(foot.textContent));
+}
+
+// ── the dashboard ──────────────────────────────────────────────────────────
+{
+  const p = makePlugin();
+  p.settings.homepage.enabled = true;
+  const leaf = p.app.workspace.leaves[0];
+  leaf.app = p.app;
+  const View = window.NexusHomepageView;
+  const v = new View(leaf, p);
+  document.getElementById('stage').appendChild(v.containerEl);
+  let err = null;
+  try { await v.onOpen(); } catch (e) { err = e; }
+  ok('dashboard · renders', !err, errText(err));
+  ok('dashboard · draws widgets', v.contentEl.querySelectorAll('*').length > 10);
+}
+
+} catch (e) { fail++; out.push('FAIL  threw: ' + errText(e)); }
+if (window.__err.length) { fail++; out.push('FAIL  page errors:\n' + window.__err.join('\n')); }
+out.push('');
+out.push(fail ? (fail + ' FAILED, ' + pass + ' passed') : ('ALL GREEN — ' + pass + ' checks'));
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

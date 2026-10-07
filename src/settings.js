@@ -865,7 +865,7 @@ class NexusSettingsTab extends PluginSettingTab {
     return p;
   }
 
-  connectionList(wrap, kind) {
+  connectionList(wrap) {
     const paint = () => {
       wrap.empty();
       const list = wrap.createDiv('nx-list');
@@ -886,23 +886,23 @@ class NexusSettingsTab extends PluginSettingTab {
         const test = aside.createEl('button', { cls: 'nx-btn is-sm', text: 'Test' });
         test.onclick = async () => {
           test.disabled = true; test.textContent = 'Testing…';
-          try { new Notice('Nexus: ' + (await this.plugin.testConnection(kind, entry.account)) + '.'); }
+          try { new Notice('Nexus: ' + (await this.plugin.testConnection()) + '.'); }
           catch (err) { new Notice('Nexus: ' + (err && err.message ? err.message : 'the test failed.')); }
           test.disabled = false; test.textContent = 'Test';
         };
         const remove = aside.createEl('button', { cls: 'nx-btn is-sm is-quiet is-danger', text: 'Remove' });
-        remove.onclick = async () => { await this.removeConnection(kind, entry); paint(); };
+        remove.onclick = async () => { await this.removeConnection(); paint(); };
       });
       // One vault lives on one server, so the sync list stops at one entry.
       if (entries.length) return;
       const add = list.createEl('button', { cls: 'nx-btn nx-list-add', text: 'Add a server' });
-      add.onclick = () => new NexusAccountModal(this.plugin, { kind }, paint).open();
+      add.onclick = () => new NexusAccountModal(this.plugin, paint).open();
     };
     paint();
   }
   /* Removing a connection takes its credential with it: a stored password for a
      server nothing lists any more is not a convenience, it is a leftover. */
-  async removeConnection(kind, entry) {
+  async removeConnection() {
     this.plugin.setCredential('vaultsync', {});
     /* The vault-wide husks the migration reads from are emptied as well.
        Left behind, a device whose id changed — localStorage cleared, a
@@ -925,7 +925,7 @@ class NexusSettingsTab extends PluginSettingTab {
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Server' });
     e.createEl('p', { cls: 'setting-item-description',
       text: 'The server, the user name and this device\'s name belong to THIS device: they are stored under its own key, so a sync carries them nowhere. Every device connects itself. A connection cannot be edited afterwards — remove it and add it again.' });
-    this.connectionList(e.createDiv('nx-set-list'), 'vaultsync');
+    this.connectionList(e.createDiv('nx-set-list'));
     this.secretNote(e);
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'When' });
@@ -958,9 +958,6 @@ class NexusSettingsTab extends PluginSettingTab {
         vaultsync.CONFLICT_POLICIES.forEach(p => dd.addOption(p.id, p.label));
         dd.setValue(s.conflict || 'keepBoth').onChange(async v => { s.conflict = v; await this.save(); });
       });
-    new Setting(e).setName('Shared vault')
-      .setDesc('Each device leaves a note on the server saying it is here, so you can be told when someone else is in the vault. This is NOT live co-editing — see the README for why that needs a server this does not have.')
-      .addToggle(t => t.setValue(!!s.shared).onChange(async v => { s.shared = v; await this.save(); }));
 
     /* What the last run actually did, including what it could not do. Without
        this the only trace of a failure was a Notice that had already gone and a

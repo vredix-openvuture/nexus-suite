@@ -1,10 +1,86 @@
 /* Minimal stand-in for Obsidian's runtime, enough to drive _buildSketchBar in
    a real browser: the DOM is real, only the app shell is faked. */
 class Plugin { constructor(app, manifest) { this.app = app; this.manifest = manifest; } }
-class PluginSettingTab {}
-class Setting {}
-class Modal {}
-class ItemView {}
+/* The settings tab, Setting, Modal and ItemView carry just enough real DOM for
+   test/smoke.html to render every settings page and dialog: each control is a
+   fluent object whose unknown methods return itself, so a page that calls
+   something new does not crash here before it can crash for a real reason. */
+class PluginSettingTab {
+  constructor(app, plugin) { this.app = app; this.plugin = plugin; this.containerEl = document.createElement('div'); }
+}
+function control(host) {
+  const el = (tag, cls) => host.createEl(tag, { cls });
+  const state = { value: undefined, change: null, click: null };
+  const named = {
+    inputEl: () => el('input'), textAreaEl: () => el('textarea'), selectEl: () => el('select'),
+    buttonEl: () => el('button'), toggleEl: () => el('div', 'checkbox-container'),
+    sliderEl: () => el('input'), extraSettingsEl: () => el('div', 'clickable-icon'),
+  };
+  const cache = {};
+  const proxy = new Proxy(state, {
+    get(target, key) {
+      if (key in named) return cache[key] || (cache[key] = named[key]());
+      if (key === 'getValue') return () => state.value;
+      if (key === 'setValue') return (v) => { state.value = v; return proxy; };
+      if (key === 'onChange') return (fn) => { state.change = fn; return proxy; };
+      if (key === 'onClick') return (fn) => { state.click = fn; return proxy; };
+      if (key === 'then') return undefined;            // not a thenable
+      if (key === '__state') return state;
+      return () => proxy;
+    },
+  });
+  return proxy;
+}
+class Setting {
+  constructor(containerEl) {
+    this.settingEl = (containerEl || document.createElement('div')).createDiv('setting-item');
+    this.infoEl = this.settingEl.createDiv('setting-item-info');
+    this.nameEl = this.infoEl.createDiv('setting-item-name');
+    this.descEl = this.infoEl.createDiv('setting-item-description');
+    this.controlEl = this.settingEl.createDiv('setting-item-control');
+    this.components = [];
+  }
+  _text(el, v) { if (v instanceof Node) el.appendChild(v); else el.textContent = v == null ? '' : String(v); return this; }
+  setName(v) { return this._text(this.nameEl, v); }
+  setDesc(v) { return this._text(this.descEl, v); }
+  setClass(c) { this.settingEl.addClass(c); return this; }
+  setHeading() { this.settingEl.addClass('setting-item-heading'); return this; }
+  setTooltip() { return this; }
+  setDisabled() { return this; }
+  then(fn) { fn(this); return this; }
+}
+for (const kind of ['Toggle', 'Text', 'TextArea', 'Dropdown', 'Button', 'ExtraButton', 'Slider',
+  'ColorPicker', 'Search', 'MomentFormat', 'ProgressBar']) {
+  Setting.prototype['add' + kind] = function (fn) {
+    const c = control(this.controlEl); this.components.push(c); if (fn) fn(c); return this;
+  };
+}
+class Modal {
+  constructor(app) {
+    this.app = app;
+    this.modalEl = document.createElement('div');
+    this.titleEl = this.modalEl.createDiv('modal-title');
+    this.contentEl = this.modalEl.createDiv('modal-content');
+    this.scope = { register() {}, unregister() {} };
+  }
+  setTitle(t) { this.titleEl.textContent = t; return this; }
+  open() { this.isOpen = true; if (this.onOpen) return this.onOpen(); }
+  close() { this.isOpen = false; if (this.onClose) this.onClose(); }
+}
+class ItemView {
+  constructor(leaf) {
+    this.leaf = leaf;
+    this.app = leaf && leaf.app;      // as in Obsidian: a view reaches the app through its leaf
+    this.containerEl = document.createElement('div');
+    this.containerEl.createDiv('view-header');
+    this.contentEl = this.containerEl.createDiv('view-content');
+  }
+  register() {}
+  registerEvent() {}
+  registerDomEvent(el, type, fn, opts) { el.addEventListener(type, fn, opts); }
+  registerInterval(id) { return id; }
+  addAction() { return document.createElement('div'); }
+}
 class Notice { constructor(msg) { (window.__notices = window.__notices || []).push(msg); } }
 class TFile {}
 class TFolder {}
@@ -67,8 +143,17 @@ function moment(value) {
       format: (f) => (f && f.indexOf('T') < 0 ? FIXED.slice(0, 10) : FIXED),
       isValid: () => true,
       add() { return this; },
+      subtract() { return this; },
       from: () => 'a while ago',
+      fromNow: () => 'a while ago',
       toISOString: () => FIXED + ':00.000Z',
+      // Enough for the dashboard's clock and greeting (test/smoke.html).
+      hour: () => 3, minute: () => 4, second: () => 0, day: () => 5, date: () => 2,
+      month: () => 0, year: () => 2026, weekday: () => 5, isoWeekday: () => 5,
+      valueOf: () => Date.UTC(2026, 0, 2, 3, 4),
+      clone() { return moment(); }, startOf() { return this; }, endOf() { return this; },
+      diff: () => 0, isSame: () => true, isBefore: () => false, isAfter: () => false,
+      locale: () => 'en',
     };
   }
   const m = /^(\d{4})\D(\d{2})\D(\d{2})/.exec(String(value));
@@ -76,6 +161,12 @@ function moment(value) {
   return calendarDay(+m[1], +m[2] - 1, +m[3]);
 }
 moment.locale = () => 'en';
+moment.weekdays = () => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+moment.weekdaysShort = () => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+moment.weekdaysMin = () => ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+moment.months = () => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+moment.monthsShort = () => moment.months().map(m => m.slice(0, 3));
+moment.localeData = () => ({ firstDayOfWeek: () => 1 });
 const requestUrl = async () => ({ status: 200, text: '', json: {} });
 const normalizePath = (p) => p;
 const debounce = (fn) => fn;
