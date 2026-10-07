@@ -1,13 +1,6 @@
 /* ── Hero action bar: tools equal size, Save/Refresh set apart on the right ── */
 .nx-home-actions { gap: 48px !important; }              /* klare Trennung primary ↔ tools */
 .nx-home-actions-grp { gap: 12px !important; }          /* Buttons innerhalb einer Gruppe */
-.nx-home-tools-wrap { display: flex; align-items: center; gap: var(--nx-sp-3); flex-wrap: wrap; }
-/* Editing tools (+/image/pattern) clearly set apart */
-.nx-home-tools-wrap > .nx-home-actions-grp + .nx-home-actions-grp,
-.nx-home-tools-right {
-  margin-left: 34px; padding-left: 34px;
-  border-left: var(--nx-hairline);
-}
 /* Icon-only variant of the same button — the square is the one control height,
    so it cannot drift away from the labelled buttons beside it. */
 .nx-home-btn.nx-home-btn-icononly {
@@ -31,12 +24,6 @@
    separates them instead of one beside. */
 @container nxhome (max-width: 620px) {
   .nx-home-actions { gap: 16px !important; }
-  .nx-home-tools-wrap { gap: 10px; width: 100%; justify-content: center; }
-  .nx-home-tools-wrap > .nx-home-actions-grp + .nx-home-actions-grp,
-  .nx-home-tools-right {
-    margin-left: 0; padding-left: 0; border-left: none;
-  }
-  .nx-home-tools { padding-left: 0; border-left: none; }
 }
 
 /* Keep absolute children (e.g. gears) inside the stat tile, don't escape */

@@ -115,8 +115,7 @@
    sit in one bar. The markup moves to .nx-btn in a later pass. */
 .nx-sk-subpen,
 .nx-sk-btn,
-.nx-sk-fav,
-.nx-sk-penchip {
+.nx-sk-fav {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
   height: var(--nx-ctl-h);
   border: var(--nx-hairline); border-radius: var(--nx-r-tile);
@@ -204,22 +203,6 @@
 }
 .nx-sk-pop-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: var(--nx-sp-2); }
 
-.nx-sk-pen-row { display: flex; flex-direction: column; gap: 2px; }
-/* Legacy alias of .nx-row (00-tokens.css) — one pen in the picker. */
-.nx-sk-pen {
-  display: flex; align-items: center; gap: var(--nx-sp-2);
-  min-height: var(--nx-row-h);
-  padding: var(--nx-sp-1) var(--nx-sp-2);
-  border-radius: var(--nx-r-tile); cursor: pointer;
-}
-.nx-sk-pen:hover { background: var(--nx-sf-1); }
-.nx-sk-pen.is-active { background: var(--nx-sf-2); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
-.nx-sk-pen-ic { display: flex; color: var(--text-normal); }
-.nx-sk-pen-ic .svg-icon { width: 16px; height: 16px; }
-.nx-sk-pen-lbl { font-size: 13px; }
-
-/* A native <input type=color>: full width, one control height. */
-.nx-sk-colorinput { width: 100%; height: var(--nx-ctl-h); border: none; background: none; cursor: pointer; padding: 0; }
 .nx-sk-savecol { width: 100%; margin-top: var(--nx-sp-2); }
 
 .nx-sk-bgtypes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--nx-sp-1); margin-bottom: 10px; }
@@ -242,10 +225,6 @@
 
 /* Drawing-pen chooser popover: a row of pen chips + the selected pen's settings. */
 .nx-sk-penpop { min-width: 222px; }
-.nx-sk-penrow { display: flex; gap: 5px; margin-bottom: 6px; }
-.nx-sk-penchip:hover { background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal)); }
-.nx-sk-penchip.is-active { background: var(--nx-sf-2); color: var(--interactive-accent); box-shadow: 0 0 0 1px var(--interactive-accent) inset; }
-.nx-sk-penchip .svg-icon { width: 18px; height: 18px; }
 .nx-sk-pensettings { margin-top: 2px; }
 
 /* ── Selection overlay ──────────────────────────────────────────────────────
@@ -838,44 +817,6 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
 .nx-skpick-new-lbl { font-weight: 600; }
 .nx-skpick-new-sub { font-size: .82em; color: var(--text-muted); }
 
-.nx-skpick-label {
-  margin: 20px 0 8px; font-size: .74em; font-weight: 600;
-  letter-spacing: .07em; text-transform: uppercase; color: var(--text-faint);
-}
-
-/* Scribble notes: a page, not a thumbnail — a chip row reads as "a different kind
-   of thing" without competing with the sketch grid below it. */
-.nx-skpick-notes {
-  display: flex; flex-wrap: wrap; gap: 6px;
-  max-height: 116px; overflow-y: auto;
-}
-/* Legacy alias of .nx-btn (00-tokens.css) — one scribble note to open. */
-.nx-skpick-note {
-  display: inline-flex; align-items: center; justify-content: center;
-  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
-  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
-  background: var(--nx-sf-1); color: var(--nx-fg, var(--text-normal));
-  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
-  cursor: pointer; box-shadow: none;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-  gap: var(--nx-sp-2);
-  max-width: 100%;
-}
-.nx-skpick-note:hover { border-color: var(--interactive-accent); }
-.nx-skpick-note:focus-visible { outline: calc(var(--nx-bw) * 2) solid var(--interactive-accent); outline-offset: 2px; }
-.nx-skpick-note-ic { display: inline-flex; flex: 0 0 auto; color: var(--text-accent); }
-.nx-skpick-note-ic .svg-icon { width: 15px; height: 15px; }
-.nx-skpick-note-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Legacy alias of .nx-input.is-grow (00-tokens.css). */
-.nx-skpick-search {
-  height: var(--nx-ctl-h); padding: 0 var(--nx-ctl-pad-x);
-  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
-  background: var(--background-modifier-form-field);
-  color: var(--nx-fg, var(--text-normal));
-  font-size: var(--font-ui-small, .85em); box-shadow: none;
-  width: 100%; margin-bottom: var(--nx-sp-3);
-}
-.nx-skpick-search:focus { outline: none; border-color: var(--nx-accent, var(--interactive-accent)); }
 .nx-skpick-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   gap: var(--nx-sp-3); max-height: 52vh; overflow-y: auto; padding: 2px;
@@ -939,11 +880,6 @@ body.is-mobile .nx-skpick-drop { opacity: .8; }
   color: var(--text-on-accent);
 }
 .nx-skpick-idx.is-missing { color: var(--wl-color1, #ce3737); }
-.nx-skpick-meta {
-  padding: 0 9px 8px; font-size: .7em; color: var(--text-faint);
-  font-family: var(--font-monospace);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 .nx-skpick-empty { color: var(--text-muted); font-size: .9em; padding: 14px 2px; grid-column: 1 / -1; }
 
 @media (max-width: 620px) {

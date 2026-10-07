@@ -71,9 +71,6 @@
 
 .nx-home-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 22px; }
 .nx-home-actions-grp { display: flex; flex-wrap: wrap; gap: var(--nx-sp-2); }
-/* Tool group (edit/card/image/reload) visibly set apart */
-.nx-home-tools { padding-left: 22px; border-left: var(--nx-bw) solid color-mix(in srgb, var(--nx-border, var(--background-modifier-border)) 75%, transparent); }
-.nx-home-hero.has-img .nx-home-tools { border-left-color: rgba(255,255,255,.28); }
 /* Legacy alias of .nx-btn (00-tokens.css) — the dashboard's own button class.
    Geometry is the shared rule; only the accent tint stays the dashboard's own,
    because the hero is where the eye is meant to land. The markup moves to
@@ -255,20 +252,6 @@
 .nx-home-item-sub { color: var(--text-faint); font-size: .78em; white-space: nowrap; }
 .nx-home-empty { padding: 10px; color: var(--text-faint); font-size: .85em; font-style: italic; }
 
-/* Chips (priority / due date / rating / status) */
-.nx-home-chip {
-  flex-shrink: 0; font-size: .74em; font-weight: 600;
-  padding: 2px 8px; border-radius: var(--nx-r-pill);
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
-}
-.nx-home-chip.is-prio { color: var(--text-on-accent); background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 55%, transparent); }
-/* The three states a chip can carry. Obsidian's own named colours, so a chip
-   means the same thing here as in a callout and follows the palette. */
-.nx-home-chip.is-soon { color: var(--color-orange); background: color-mix(in srgb, var(--color-orange) 26%, transparent); }
-.nx-home-chip.is-overdue { color: var(--text-on-accent); background: color-mix(in srgb, var(--color-red) 82%, transparent); }
-.nx-home-chip.is-rating { color: var(--color-yellow); background: color-mix(in srgb, var(--color-yellow) 18%, transparent); letter-spacing: 1px; }
-
 /* Book cover gallery ("Currently reading"). Right-click a cover → choose image. */
 .nx-home-books { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 14px; padding: 8px 6px; }
 .nx-home-book { cursor: pointer; }
@@ -421,9 +404,6 @@
 }
 .nx-timer-btn:hover { background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 28%, transparent); }
 .nx-timer-btn .svg-icon { width: 17px; height: 17px; }
-/* Set-time button (available in any mode) a bit subtler */
-.nx-timer-btn.nx-timer-edit { background: transparent; color: var(--text-muted); }
-.nx-timer-btn.nx-timer-edit:hover { color: var(--text-normal); background: var(--nx-sf-1); }
 .nx-timer-btn.nx-timer-dismiss { border-color: var(--color-green, var(--interactive-accent)); color: var(--color-green, var(--text-success)); }
 /* Abgelaufener Timer: Anzeige hervorheben (sanft pulsierend) */
 .nx-timer.is-done .nx-timer-disp { color: var(--color-red, var(--text-error)); animation: nx-timer-flash 1s ease-in-out infinite; }

@@ -132,62 +132,6 @@
 .nx-ink-pdf-pages.nx-ink-pdf-book { display: flex; align-items: flex-start; gap: 10px; }
 .nx-ink-pdf-pages.nx-ink-pdf-book .nx-ink-pdf-canvas { width: auto; flex: 1 1 0; min-width: 0; margin-top: 0; }
 
-.nx-ink-gallery-inner { padding: 18px 20px 26px; }
-.nx-ink-gallery-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.nx-ink-gallery-head h2 { margin: 0; }
-.nx-ink-gallery-empty { color: var(--text-muted); text-align: center; padding: 40px 8px; font-size: .95em; }
-.nx-ink-gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
-.nx-ink-tile { position: relative; cursor: pointer; }
-.nx-ink-tile-cover {
-  position: relative; aspect-ratio: 3 / 4; border-radius: var(--nx-radius); overflow: hidden;
-  border: var(--nx-hairline);
-  box-shadow: 0 2px 6px rgba(0,0,0,.22);
-  background-image: var(--img); background-size: cover; background-position: center;
-  background-color: var(--background-secondary);
-  transition: transform .13s ease, box-shadow .13s ease;
-}
-.nx-ink-tile:hover .nx-ink-tile-cover { transform: translateY(-2px); box-shadow: 0 5px 12px rgba(0,0,0,.28); }
-.nx-ink-tile-cover.is-missing::after { content: '?'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.6em; color: var(--text-faint); }
-.nx-ink-tile-cover.is-pdf, .nx-ink-tile-cover.is-excalidraw {
-  display: flex; align-items: center; justify-content: center;
-  background-image: none;
-  background: linear-gradient(150deg,
-    color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 22%, var(--background-secondary)),
-    color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 10%, var(--background-secondary)));
-}
-.nx-ink-tile-icon { display: flex; opacity: .75; }
-.nx-ink-tile-icon .svg-icon { width: 30px; height: 30px; }
-.nx-ink-tile-source {
-  position: absolute; left: 6px; bottom: 6px;
-  font-size: .62em; font-weight: 600; text-transform: capitalize; padding: 1px 7px; border-radius: var(--nx-r-pill);
-  background: rgba(0,0,0,.62); color: #fff; backdrop-filter: blur(3px);
-}
-.nx-ink-tile-title {
-  margin-top: 7px; font-size: .85em; line-height: 1.25; color: var(--text-normal);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.nx-ink-tile-tags { display: flex; flex-wrap: wrap; gap: var(--nx-sp-1); margin-top: 5px; }
-.nx-ink-tag-chip {
-  font-size: .68em; padding: 2px 8px; border-radius: var(--nx-r-pill);
-  background: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%, transparent);
-  color: var(--text-normal);
-}
-/* Legacy alias of .nx-btn.is-icon.is-sm — floats over a scan, so it keeps its
-   own scrim and a white glyph instead of the theme's colours. */
-.nx-ink-tile-edit {
-  display: inline-flex; align-items: center; justify-content: center; gap: var(--nx-sp-1);
-  border: var(--nx-hairline); border-radius: var(--nx-r-tile);
-  font-size: var(--font-ui-small, .85em); line-height: 1; white-space: nowrap;
-  cursor: pointer; box-shadow: none;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
-  width: var(--nx-ctl-h-sm); height: var(--nx-ctl-h-sm); padding: 0;
-  position: absolute; top: 6px; right: 6px;
-  border-color: transparent;
-  background: rgba(0, 0, 0, .55); color: #fff;
-  opacity: 0;
-}
-.nx-ink-tile-edit .svg-icon { width: 14px; height: 14px; }
-.nx-ink-tile:hover .nx-ink-tile-edit { opacity: 1; }
 
 /* ── narrow / phone ────────────────────────────────────────────────────────
    50% of a phone's width is a thumbnail, not a page: the PDF viewer takes the
@@ -209,10 +153,5 @@
   .nx-ink-pdf-pages.nx-ink-pdf-book { display: block; }
   .nx-ink-pdf-pages.nx-ink-pdf-book .nx-ink-pdf-canvas { width: 100%; }
   .nx-ink-pdf-pages.nx-ink-pdf-book .nx-ink-pdf-canvas + .nx-ink-pdf-canvas { margin-top: 10px; }
-
-  .nx-ink-gallery-inner { padding: 14px 14px 22px; }
-  .nx-ink-gallery-grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 14px; }
-  /* No hover on touch — the edit affordance has to be there from the start. */
-  .nx-ink-tile-edit { opacity: 1; }
 }
 

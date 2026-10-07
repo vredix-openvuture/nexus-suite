@@ -53,10 +53,6 @@ body.nx-style-plain.nx-blocked.theme-dark .nx-home-card:not(.nx-noborder):hover,
 body.nx-style-plain .nx-home-card:hover {
   background: color-mix(in srgb, var(--nx-fg, var(--text-normal)) 4%, transparent) !important;
 }
-/* ── banner: a picture, not a rounded plate ── */
-body.nx-style-plain .nx-banner,
-body.nx-style-plain .nx-banner-img { border-radius: 0 !important; }
-
 /* ── kanban: columns without tint, cards without weight ── */
 body.nx-style-plain .nx-kb-col {
   background: transparent !important;

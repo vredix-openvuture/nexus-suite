@@ -226,7 +226,6 @@
    — class AND rule from a single call, no reload mismatch.) */
 
 /* ── Structured property filter (property | value | AND/OR) ── */
-.nx-proprows { display: flex; flex-direction: column; gap: 5px; margin: 0 0 12px; }
 .nx-proprow { display: flex; align-items: center; gap: 6px; }
 /* Two equal halves. It used to be `flex: 0 0 38%` beside a `flex: 1` sibling,
    which is the "one is x long and the next is y long" from the review; a fixed
@@ -235,15 +234,6 @@
    every width. */
 .nx-proprow-key,
 .nx-proprow-val { flex: 1 1 0; min-width: 0; }
-.nx-propconn { display: flex; gap: 4px; padding: 1px 0 1px 4px; }
-.nx-propconn-btn {
-  font-size: .68em; letter-spacing: .04em; padding: 2px 12px; border-radius: var(--nx-r-tile); cursor: pointer;
-  border: var(--nx-hairline); background: transparent; color: var(--text-muted);
-}
-.nx-propconn-btn.is-active {
-  background: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
-  border-color: var(--interactive-accent); color: var(--text-normal);
-}
 
 /* ── Gruppierter Property-Filter ── */
 .nx-propgroups { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; }

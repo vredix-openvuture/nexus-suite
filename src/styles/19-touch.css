@@ -22,8 +22,7 @@
  * ========================================================================== */
 
 /* ── Hover-only affordances: visible from the start ── */
-body.is-mobile .nx-orph-more,
-body.is-mobile .nx-ink-tile-edit { opacity: .75; }
+body.is-mobile .nx-orph-more { opacity: .75; }
 body.is-mobile .nx-ws-tile-actions { opacity: .85; }
 
 /* ── Icon-only controls: pad the box out, leave the glyph alone ──
