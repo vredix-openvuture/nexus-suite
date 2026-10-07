@@ -6,7 +6,7 @@
  * ========================================================================== */
 
 const { ItemView, Menu, Notice, moment, setIcon } = require('obsidian');
-const { NexusActionConfigModal, NexusCardConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal } = require('../modals/cards.js');
+const { NexusActionConfigModal, NexusHabitConfigModal, NexusHeroSettingsModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal } = require('../modals/cards.js');
 const capture = require('../lib/capture.js');
 const scratch = require('../lib/scratch.js');
 const { CARD_DEFS, HOME_VIEW, NX_DEFAULT_ACTIONS, NX_GREETINGS, NX_MODULES, WMO, WMO_ICON } = require('../constants.js');
@@ -100,27 +100,9 @@ class NexusHomepageView extends ItemView {
     else delete document.body.dataset.ignoreSwipe;
   }
 
-  /* ---- small data helpers ---- */
-  _files(prefix) { return this.app.vault.getMarkdownFiles().filter(f => f.path.startsWith(prefix)); }
   _fm(f) { return (this.app.metadataCache.getFileCache(f) || {}).frontmatter || {}; }
-  _date(v) {
-    if (!v) return null;
-    const s = (typeof v === 'string') ? v.slice(0, 10) : v;   // Date object or ISO string
-    const m = moment(s, 'YYYY-MM-DD', false);
-    return m.isValid() ? m.startOf('day') : null;
-  }
   _open(file) { this.app.workspace.getLeaf(false).openFile(file); }
 
-  /* Background image menu (choose / remove) */
-  _heroMenu(evt) {
-    const menu = new Menu();
-    menu.addItem(i => i.setTitle('Choose image …').setIcon('image-plus').onClick(() => this._pickHero()));
-    if ((this.plugin.hp().hero || '').trim())
-      menu.addItem(i => i.setTitle('Remove image').setIcon('x').onClick(async () => {
-        this.plugin.hp().hero = ''; await this.plugin.saveSettings(); this.render();
-      }));
-    menu.showAtMouseEvent(evt);
-  }
   /* Choose image via system dialog, copy to attachments/homepage, set as hero */
   _pickHero() {
     const input = document.createElement('input');
@@ -1418,21 +1400,6 @@ class NexusHomepageView extends ItemView {
     const y = Math.max(1, Math.floor((e.clientY - r.top) / (rowH + gap)) + 1);
     return { x, y };
   }
-  /* Occupied cells of all cards except `key` (for collision check). */
-  _occExcept(key) {
-    const occ = new Set();
-    for (const k in this._pos) {
-      if (k === key) continue;
-      const p = this._pos[k];
-      for (let i = 0; i < p.w; i++) for (let j = 0; j < p.h; j++) occ.add((p.x + i) + ',' + (p.y + j));
-    }
-    return occ;
-  }
-  _fits(occ, x, y, w, h) {
-    if (x < 1 || x + w - 1 > (this._cols || 1)) return false;
-    for (let i = 0; i < w; i++) for (let j = 0; j < h; j++) if (occ.has((x + i) + ',' + (y + j))) return false;
-    return true;
-  }
   /* Write a card's size (w,h) to its config (fixed ID or widget). */
   _setSize(key, w, h) {
     w = Math.max(1, Math.min(48, w)); h = Math.max(1, Math.min(48, h));
@@ -1558,57 +1525,15 @@ class NexusHomepageView extends ItemView {
     const have = this._fileTags(f);
     return want.some(w => have.some(hv => hv === w || hv.startsWith(w + '/')));
   }
-  _sortProjects(a, b, sort) {
-    if (sort === 'name') return a.f.basename.localeCompare(b.f.basename);
-    if (sort === 'created') { const da = this._date(a.fm.created), db = this._date(b.fm.created); return (db ? +db : 0) - (da ? +da : 0); }
-    if (sort === 'priority') { const o = { hoch: 0, mittel: 1, niedrig: 2 }; const oa = o[String(a.fm.priority || '').toLowerCase()], ob = o[String(b.fm.priority || '').toLowerCase()]; return (oa == null ? 9 : oa) - (ob == null ? 9 : ob); }
-    const da = this._date(a.fm.due), db = this._date(b.fm.due);
-    if (!da && !db) return 0; if (!da) return 1; if (!db) return -1; return da - db;
-  }
-  _lim(n) { return n && n > 0 ? n : 9999; }
 
-  /* ---- UI-Bausteine ---- */
-  _card(parent, id, icon, title, count) {
-    const card = parent.createDiv('nx-home-card');
-    if (id) { this._dragify(card, id); this._place(card); this._resizable(card, id); }
-    const head = card.createDiv('nx-home-card-head');
-    setIcon(head.createSpan('nx-home-card-icon'), icon);
-    head.createSpan({ cls: 'nx-home-card-title', text: title });
-    if (count != null) head.createSpan({ cls: 'nx-home-card-count', text: String(count) });
-    if (id && this._editing) {
-      const gear = head.createSpan('nx-home-card-gear');
-      setIcon(gear, 'settings-2');
-      gear.setAttribute('aria-label', 'Configure card');
-      gear.onclick = (e) => { e.stopPropagation(); new NexusCardConfigModal(this.plugin, this, id).open(); };
-    }
-    return card.createDiv('nx-home-card-body');
-  }
   _row(body, file) {
     const row = body.createDiv('nx-home-item');
     row.createSpan({ cls: 'nx-home-item-title', text: file.basename });
     row.onclick = () => this._open(file);
     return row;
   }
-  _chip(row, text, mod) {
-    const c = row.createSpan({ cls: 'nx-home-chip', text });
-    if (mod) c.addClass('is-' + mod);
-    return c;
-  }
   _empty(body, text) { body.createDiv({ cls: 'nx-home-empty', text }); }
 
-  /* Due-date chip with traffic-light state relative to today */
-  _dueChip(row, due) {
-    if (!due) return;
-    const today = moment().startOf('day');
-    const days = due.diff(today, 'days');
-    let text, mod;
-    if (days < 0)      { text = 'overdue';  mod = 'overdue'; }
-    else if (days === 0) { text = 'today';    mod = 'soon'; }
-    else if (days === 1) { text = 'tomorrow'; mod = 'soon'; }
-    else if (days <= 6)  { text = 'in ' + days + 'd'; mod = 'soon'; }
-    else               { text = due.format('MMM D'); mod = null; }
-    this._chip(row, text, mod);
-  }
 
   render() {
     const root = this.contentEl;

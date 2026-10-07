@@ -2,90 +2,14 @@
 
 /* ============================================================================
  *  NEXUS SUITE · modals · homepage card config
- *  Per-card config: card, list, quicknote, stat, action, hero.
+ *  Per-card config: list, scratch, orphans, random, sketch, stat, action, hero, habit.
  * ========================================================================== */
 
 const { Modal, Setting, moment, setIcon } = require('obsidian');
-const { CARD_DEFS, NX_GREETINGS } = require('../constants.js');
+const { NX_GREETINGS } = require('../constants.js');
 const { getDailyNoteSettings } = require('../lib/helpers.js');
 const { nxAutocomplete, nxIconField, nxMultiRow, nxPropGroups, nxPropRulesToGroups, nxPropsToRules } = require('../lib/inputs.js');
 const { KIND_LABEL, KIND_ORDER } = require('../lib/orphans.js');
-
-class NexusCardConfigModal extends Modal {
-  constructor(plugin, view, id) { super(plugin.app); this.plugin = plugin; this.view = view; this.id = id; }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.addClass('nx-cardcfg');
-    const meta = CARD_DEFS[this.id] || { title: 'Card' };
-    contentEl.createEl('h3', { text: 'Configure ' + meta.title });
-
-    const cards = this.plugin.hp().cards || (this.plugin.hp().cards = {});
-    const cfg = cards[this.id] || (cards[this.id] = {});
-    const d = this.view._cfg(this.id);                 // current merge (for initial values)
-    const save = async () => { await this.plugin.saveSettings(); this.view.render(); };
-
-    const num = (label, key, min, max, desc) => new Setting(contentEl).setName(label).setDesc(desc || '')
-      .addText(t => {
-        t.inputEl.type = 'number'; t.inputEl.min = String(min); t.inputEl.max = String(max);
-        t.setValue(String(d[key] != null ? d[key] : ''));
-        t.onChange(async v => { const n = parseInt(v, 10); if (!isNaN(n)) { cfg[key] = Math.max(min, Math.min(max, n)); await save(); } });
-      });
-    const text = (label, key, ph, desc) => new Setting(contentEl).setName(label).setDesc(desc || '')
-      .addText(t => t.setPlaceholder(ph || '').setValue(d[key] || '').onChange(async v => { cfg[key] = v.trim(); await save(); }));
-    const checks = (label, key, opts) => {
-      const wrap = contentEl.createDiv('nx-cardcfg-group');
-      wrap.createDiv({ cls: 'nx-cardcfg-group-label', text: label });
-      const row = wrap.createDiv('nx-cardcfg-checks');
-      let cur = (d[key] || []).slice();
-      opts.forEach(o => {
-        const lbl = row.createEl('label', { cls: 'nx-cardcfg-check' });
-        const cb = lbl.createEl('input', { type: 'checkbox' });
-        cb.checked = cur.includes(o);
-        lbl.createSpan({ text: o });
-        cb.onchange = async () => {
-          const set = new Set(cur);
-          cb.checked ? set.add(o) : set.delete(o);
-          cur = [...set]; cfg[key] = cur; await save();
-        };
-      });
-    };
-
-    // Size (always)
-    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Size (grid units, min. 1)' });
-    num('Width', 'w', 1, 48);
-    num('Height', 'h', 1, 48);
-
-    // Type-specific
-    contentEl.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Content' });
-    if (this.id !== 'recent') text('Folder', 'folder', '01 Projects', 'Path prefix in the vault');
-    if (this.id === 'projects' || this.id === 'reading') text('Tags (comma)', 'tags', 'project/work, tech', 'empty = all');
-    if (this.id === 'projects') { checks('Status', 'statuses', ['aktiv', 'pausiert', 'idee', 'fertig']);
-      new Setting(contentEl).setName('Sort by').addDropdown(dd => dd
-        .addOption('due', 'Due date').addOption('priority', 'Priority').addOption('created', 'Created').addOption('name', 'Name')
-        .setValue(d.sort || 'due').onChange(async v => { cfg.sort = v; await save(); })); }
-    if (this.id === 'meetings') new Setting(contentEl).setName('Mode').addDropdown(dd => dd
-      .addOption('auto', 'Upcoming, else latest').addOption('upcoming', 'Only upcoming').addOption('past', 'Only latest')
-      .setValue(d.mode || 'auto').onChange(async v => { cfg.mode = v; await save(); }));
-    if (this.id === 'reading') {
-      checks('Status (books)', 'states', ['am-lesen', 'geplant', 'gelesen', 'abgebrochen']);
-      text('Cover field', 'coverField', 'cover', 'Frontmatter field for the cover');
-      new Setting(contentEl).setName('Also show "geplant"').addToggle(t => t.setValue(!!d.planned).onChange(async v => { cfg.planned = v; await save(); }));
-    }
-    if (this.id === 'ideas') checks('Status', 'statuses', ['in-prüfung', 'neu', 'umgesetzt']);
-    if (this.id === 'recent') text('Exclude folders (comma)', 'exclude', 'JOURNAL, Archive');
-    num('Limit (max)', 'count', this.id === 'recent' ? 1 : 0, 60, this.id === 'recent' ? '' : '0 = no limit');
-
-    new Setting(contentEl)
-      .addButton(b => b.setButtonText('Reset to defaults')
-        .onClick(async () => { delete cards[this.id]; await this.plugin.saveSettings(); this.view.render(); this.close(); }))
-      .addButton(b => b.setButtonText('Hide card').setWarning().onClick(async () => {
-        const hid = this.plugin.hp().hidden || (this.plugin.hp().hidden = []);
-        if (!hid.includes(this.id)) hid.push(this.id);
-        await this.plugin.saveSettings(); this.view.render(); this.close();
-      }));
-  }
-  onClose() { this.contentEl.empty(); }
-}
 
 class NexusListConfigModal extends Modal {
   constructor(plugin, view, item) { super(plugin.app); this.plugin = plugin; this.view = view; this.item = item; }
@@ -543,4 +467,4 @@ class NexusHabitConfigModal extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 
-module.exports = { NexusCardConfigModal, NexusHabitConfigModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };
+module.exports = { NexusHabitConfigModal, NexusListConfigModal, NexusOrphanConfigModal, NexusScratchConfigModal, NexusRandomConfigModal, NexusSketchConfigModal, NexusStatConfigModal, NexusActionConfigModal, NexusHeroSettingsModal };
