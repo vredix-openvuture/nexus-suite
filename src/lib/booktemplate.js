@@ -34,10 +34,20 @@ function scan(text) {
   return { fields: [...fields], asks, unknown, usesCover: fields.has('cover') };
 }
 
+/* Catalogue data is written by strangers: Open Library is a wiki anyone can
+   edit. Other plugins run code they find in a new note — Templater's `<% %>`
+   on file creation, Dataview's inline `$=` spans — so those markers are broken
+   in every field value. Answers and the template itself are the user's own and
+   stay as they are. */
+function inert(value) {
+  if (Array.isArray(value)) return value.map(inert);
+  return String(value).replace(/<%/g, '<\u200B%').replace(/%>/g, '%\u200B>').replace(/`/g, '\u02BC');
+}
+
 // null = unknown placeholder, left exactly as written.
 function valueOf(t, data, answers) {
   if (t.kind === 'ask') return answers[t.label] == null ? '' : answers[t.label];
-  if (t.kind === 'field') return data[t.name] == null ? '' : data[t.name];
+  if (t.kind === 'field') return data[t.name] == null ? '' : inert(data[t.name]);
   return null;
 }
 const asText = v => Array.isArray(v) ? v.filter(Boolean).join(', ') : String(v);
@@ -201,4 +211,4 @@ function bookData(record, extra) {
   };
 }
 
-module.exports = { FIELDS, scan, render, renderName, frontmatterEntries, splitFrontmatter, bookData, yamlScalar };
+module.exports = { FIELDS, inert, scan, render, renderName, frontmatterEntries, splitFrontmatter, bookData, yamlScalar };

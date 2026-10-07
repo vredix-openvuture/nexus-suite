@@ -78,16 +78,15 @@ A rename is finished when the module file has no rule left that sets `height`,
 Deliberately **not** `.nx-input`, because the point of each is that it does not
 look like a field: `.nx-pl-input` (writing on paper), `.nx-kb-add-input` (inside the dashed add
 row), `.nx-sk-palname` (inline rename
-with a dashed underline), `.nx-sk-colorinput` (a native colour swatch).
+with a dashed underline).
 
 ## Rows → `.nx-row`
 
 | Legacy class | File |
 |---|---|
 | `.nx-home-item` | `04-homepage.css` |
-| `.nx-popmenu-item` | `10-hero-callouts-image.css` |
+| `.nx-popmenu-item` | `05-modals.css` |
 | `.nx-ink-pdf-toc-list a` | `11-ink.css` |
-| `.nx-sk-pen` | `12-sketch.css` |
 | `.nx-sk-palrow` | `12-sketch.css` |
 | `.nx-sk-menuitem` | `12-sketch.css` |
 | `.nx-iconlist-row` (inside an Obsidian `.setting-item`) | `14-explorer-companions.css` |
@@ -133,12 +132,12 @@ override for those two stayed.
 The CSS aliases above are the bridge; these are the markup changes that let them
 be deleted.
 
-- **`lib/inputs.js` builds its own rows.** `nxMultiRow` and `nxPropRows` emit
+- **`lib/inputs.js` builds its own rows.** `nxMultiRow` and `nxPropGroups` emit
   `.nx-multirow-row` / `.nx-proprow` and their own field and delete classes.
   They now share one rule with `.nx-input` and `.nx-btn.is-icon`, so they look
   right — but the markup should simply be `.nx-row`, `.nx-input` and
   `.nx-btn`, and then the aliases go.
-- **`settings.js · tIcons` builds each assigned icon as an Obsidian `Setting`.**
+- **`settings/workspace.js · tIcons` builds each assigned icon as an Obsidian `Setting`.**
   The one-line row is reached with `:has(.nx-iconlist-row)` overrides in
   `14-explorer-companions.css` rather than with markup. Verified at 34 px, so it
   is correct — it is just reached the long way round.

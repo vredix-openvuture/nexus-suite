@@ -780,7 +780,7 @@ npm run build      # one production build (minified, no sourcemap) — the resti
 
 `test/run.sh` bundles the plugin against a stub of the Obsidian API and drives
 it in headless Chromium against a real DOM. It needs `chromium` and `python3` on
-PATH. Twenty-one pages, ~1640 checks: the toolbar and its options row, selection
+PATH. Twenty-one pages, ~1650 checks: the toolbar and its options row, selection
 and transforms, the canvas and the spacing tool, objects and the ruler, pen
 gestures, export (the PDF is checked byte by byte), sketch search and the OCR
 command line, the kanban board writing itself back, the planner, the sync

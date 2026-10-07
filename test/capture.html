@@ -28,6 +28,13 @@ const C = window.captureLib;
 
 // ── the underscore stamp Date.parse cannot read ────────────────────────────
 {
+  {
+    const X = window.textLib;
+    eq('frontmatter · a real block goes', X.stripFrontmatter('---\na: 1\n---\nBody'), 'Body');
+    eq('frontmatter · CRLF and trailing spaces on the fences', X.stripFrontmatter('--- \r\na: 1\r\n---  \r\nBody'), 'Body');
+    eq('frontmatter · a horizontal rule at the top is not one', X.stripFrontmatter('-----\nIntro\n\n----------\nRest'), '-----\nIntro\n\n----------\nRest');
+    eq('frontmatter · an opening fence that never closes is left alone', X.stripFrontmatter('---\na: 1\nBody'), '---\na: 1\nBody');
+  }
   eq('stamp · the sidecar format is understood', C.parseStamp('2026-08-29_10:14'), Date.parse('2026-08-29T10:14'));
   eq('stamp · so is a plain ISO one', C.parseStamp('2026-08-29T10:14'), Date.parse('2026-08-29T10:14'));
   eq('stamp · and junk is null rather than NaN', C.parseStamp('whenever'), null);

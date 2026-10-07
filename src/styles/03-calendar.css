@@ -32,9 +32,9 @@
   border-radius: var(--nx-r-circle); background: var(--text-accent);
 }
 .nx-cal-day.nx-today.nx-has-note::after { background: var(--text-on-accent); }
-/* A day with something written for it — its own text — is MARKED
-  , never written out: a sidebar column is too narrow for a sentence and
-   this view is for navigating, not reading. */
+/* A day with something written for it is MARKED, never written out: a
+   sidebar column is too narrow for a sentence and this view is for
+   navigating, not reading. */
 .nx-cal-day.nx-has-daytext::before {
   content: ""; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
   width: 3px; height: 3px; border-radius: var(--nx-r-circle); background: var(--text-muted);

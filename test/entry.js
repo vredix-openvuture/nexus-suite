@@ -57,3 +57,4 @@ window.bookScanLib = require('../src/lib/bookscan.js');
 window.NexusSettingsTab = require('../src/settings.js').NexusSettingsTab;
 window.NexusHomepageView = require('../src/views/homepage.js').NexusHomepageView;
 window.accountModal = require('../src/modals/account.js');
+window.textLib = require('../src/lib/text.js');

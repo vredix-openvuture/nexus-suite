@@ -15,7 +15,10 @@ Grouped by what changed for you, not by commit. Newest first.
 - **A second file of the same name is now `Name (2)`** wherever the plugin
   creates one — banner imports, scans, kanban card and board notes, sketch
   notes, exports, a renamed ink sidecar. They used to be `Name-1` or `Name 2`
-  depending on which part of the plugin wrote them.
+  depending on which part of the plugin wrote them. File names are cleaned by
+  one rule everywhere: `:` and the like become spaces, `#^[]` are dropped,
+  names stop at 120 characters (a renamed scan note `10:30 Meeting #1` is now
+  `10 30 Meeting 1`).
 - **The hold menu on a note's sketch button ignores a press that moves.** A
   flick across the button scrolls instead of opening the menu, like the hold
   menus in the capture hub already did.
@@ -25,6 +28,11 @@ Grouped by what changed for you, not by commit. Newest first.
 
 ### Fixed
 
+- **Book capture writes catalogue text inert.** Open Library is a public wiki,
+  and plugins such as Templater (on file creation) and Dataview (inline JS) run
+  code they find in a new note. `<%`, `%>` and backticks in a fetched title,
+  author, subject or description are broken up before the note is written;
+  your own template is left as it is.
 - **The add-a-server dialog lost its footer layout in 0.29** — its CSS went with
   the calendar page. Save sits at the right under the fields again.
 

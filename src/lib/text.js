@@ -18,14 +18,13 @@ function cssAttrValue(value) {
 }
 
 /* A note read from the vault still has its frontmatter block on the front.
-   Tolerates CRLF, and leaves a note alone whose opening fence never closes. */
+   Only a real block counts: a first line that is exactly `---`, closed by
+   another line that is exactly `---`. A note that opens with a horizontal rule
+   (`-----`) keeps its text. Tolerates CRLF and trailing spaces on the fences. */
 function stripFrontmatter(text) {
   const s = String(text == null ? '' : text).replace(/\r/g, '');
-  if (!s.startsWith('---')) return s;
-  const close = s.indexOf('\n---', 3);
-  if (close < 0) return s;
-  const nl = s.indexOf('\n', close + 1);
-  return nl < 0 ? '' : s.slice(nl + 1);
+  const m = /^---[ \t]*\n[\s\S]*?\n---[ \t]*(?:\n|$)/.exec(s);
+  return m ? s.slice(m[0].length) : s;
 }
 
 module.exports = { cssAttrValue, escapeRegExp, stripFrontmatter };

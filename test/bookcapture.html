@@ -159,6 +159,18 @@ const E = window.ean13Lib;
   }
   eq('tpl · no frontmatter is plain text', T.render('{{title}} — {{year}}', data), 'Persönlichkeit: und Menschenführung — 2007');
   eq('tpl · a name pattern', T.renderName('atm-{{title}}', data), 'atm-Persönlichkeit: und Menschenführung');
+  {
+    // Catalogue values are strangers' text: Templater and Dataview run code they find in a new note.
+    const evil = Object.assign({}, data, { title: 'X <%* require("child_process") %>', subtitle: '`$=dv.x()`',
+      genres: ['Fiction', 'Y <% tp.x %>'] });
+    const out = T.render('---\ngenres: [{{genres}}]\nauthor: {{title}}\n---\n# {{title}}\n{{subtitle}}\n', evil);
+    ok('inert · no Templater opener survives, body or frontmatter', !/<%/.test(out), out);
+    ok('inert · no Templater closer survives', !/%>/.test(out), out);
+    ok('inert · no backtick survives, so no inline $= span', !/`/.test(out), out);
+    ok('inert · the text itself is still readable', /require\("child_process"\)/.test(out));
+    eq('inert · the user\u2019s own template keeps its Templater code',
+       T.render('<% tp.date.now() %> {{title}}', data), '<% tp.date.now() %> ' + data.title);
+  }
 
   const entries = T.frontmatterEntries(r);
   eq('tpl · entries: scalar unquoted', entries.find(e => e.key === 'book_title').value, 'Persönlichkeit: und Menschenführung');

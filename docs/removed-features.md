@@ -721,7 +721,8 @@ that has the folder never pulls it into a vault. A `shared` key already in a
 ### To bring it back
 
 `git show cleanup-before-2026-10-07-0954:src/lib/vaultsyncrun.js` for
-`announce`, restore the toggle and the default, and — the part that was never
+`announce`, restore the toggle (its page builder is `tVaultSync`, in
+`src/settings/vault.js` since the same cleanup) and the default, and — the part that was never
 built — call `announce` from the sync run and show its result (for example in
 *The last run*).
 
