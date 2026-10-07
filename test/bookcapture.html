@@ -1,0 +1,100 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>book capture harness</title>
+<style>body { margin:0; background:#141414; color:#ddd; font:13px/1.5 system-ui; padding:20px; }</style>
+</head><body>
+<pre id="out"></pre>
+<script>window.__err=[];window.onerror=(m,f,l,c,e)=>{window.__err.push(String(m)+"\n"+(e&&e.stack||""));};</script>
+<script src="bundle.js"></script>
+<script>
+const out = []; let pass = 0, fail = 0;
+function ok(n, c, d) { if (c) { pass++; out.push('PASS  ' + n); } else { fail++; out.push('FAIL  ' + n + (d ? '  →  ' + d : '')); } }
+function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n, a === b, 'got ' + a + ' want ' + b); }
+
+/* ── a test-only EAN-13 encoder: digits → 95 modules → canvas ─────────────── */
+const L_W = ['3211','2221','2122','1411','1132','1231','1114','1312','1213','3112'];
+const PARITY = ['000000','001011','001101','001110','010011','011001','011100','010101','010110','011010'];
+function widthsToBits(w, startDark) { let s = '', dark = startDark; for (const n of w) { s += (dark ? '1' : '0').repeat(Number(n)); dark = !dark; } return s; }
+function eanBits(code) {
+  let bits = '101';
+  const par = PARITY[Number(code[0])];
+  for (let i = 1; i <= 6; i++) {
+    const w = L_W[Number(code[i])];
+    bits += widthsToBits(par[i - 1] === '1' ? w.split('').reverse().join('') : w, false);
+  }
+  bits += '01010';
+  for (let i = 7; i <= 12; i++) bits += widthsToBits(L_W[Number(code[i])], true);
+  return bits + '101';
+}
+function drawBarcode(code, o = {}) {
+  const scale = o.scale || 3, bits = eanBits(code);
+  const c = document.createElement('canvas');
+  c.width = (bits.length + 30) * scale + (o.pad || 0); c.height = 80 * scale;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+  g.save();
+  if (o.tilt) { g.translate(c.width / 2, c.height / 2); g.rotate(o.tilt * Math.PI / 180); g.translate(-c.width / 2, -c.height / 2); }
+  if (o.blur) g.filter = 'blur(' + o.blur + 'px)';
+  g.fillStyle = '#111';
+  for (let i = 0; i < bits.length; i++) if (bits[i] === '1') g.fillRect((15 + i) * scale, 5 * scale, scale, 70 * scale);
+  g.restore();
+  const img = g.getImageData(0, 0, c.width, c.height);
+  if (o.noise) for (let i = 0; i < img.data.length; i += 4) {
+    const n = (Math.random() * 2 - 1) * o.noise;
+    for (let k = 0; k < 3; k++) img.data[i + k] = Math.max(0, Math.min(255, img.data[i + k] + n));
+  }
+  if (o.shade) for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+    const i = (y * img.width + x) * 4, f = 1 - o.shade * x / img.width;
+    for (let k = 0; k < 3; k++) img.data[i + k] *= f;
+  }
+  return img;
+}
+function rotate90(img) {
+  const o = new ImageData(img.height, img.width);
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++)
+    for (let k = 0; k < 4; k++) o.data[(x * img.height + (img.height - 1 - y)) * 4 + k] = img.data[(y * img.width + x) * 4 + k];
+  return o;
+}
+window.testTools = { drawBarcode, rotate90 };
+
+(async () => {
+try {
+const E = window.ean13Lib;
+
+// ── checksum and ISBN forms ────────────────────────────────────────────────
+{
+  ok('ean · a valid code passes', E.checksumOk('9783423343824'));
+  ok('ean · one digit off fails', !E.checksumOk('9783423343825'));
+  ok('ean · a book code starts 978/979', E.isBookCode('9783423343824'));
+  ok('ean · a grocery code is not a book', !E.isBookCode('4006381333931'));
+  eq('isbn · ISBN-10 becomes ISBN-13', E.toIsbn13('3-423-34382-6'), '9783423343824');
+  eq('isbn · an X check digit is accepted', E.toIsbn13('080442957X'), '9780804429573');
+  eq('isbn · hyphens and spaces go', E.toIsbn13(' 978-3-423-34382-4 '), '9783423343824');
+  eq('isbn · a number works too', E.toIsbn13(9783423343824), '9783423343824');
+  eq('isbn · a bad ISBN-10 is refused', E.toIsbn13('3423343827'), null);
+  eq('isbn · a bad ISBN-13 is refused', E.toIsbn13('9783423343825'), null);
+  eq('isbn · rubbish is refused', E.toIsbn13('hello'), null);
+}
+
+// ── decoding pixels ────────────────────────────────────────────────────────
+{
+  const codes = ['9783423343824', '9780140328721', '9791032305690', '9783257228007'];
+  for (const c of codes) eq('decode · clean ' + c, E.decodeImage(drawBarcode(c)), c);
+  eq('decode · small (2 px per module)', E.decodeImage(drawBarcode(codes[0], { scale: 2 })), codes[0]);
+  eq('decode · blurred', E.decodeImage(drawBarcode(codes[1], { blur: 1.2 })), codes[1]);
+  eq('decode · noisy', E.decodeImage(drawBarcode(codes[2], { noise: 25 })), codes[2]);
+  eq('decode · a shadow across it', E.decodeImage(drawBarcode(codes[3], { shade: 0.6 })), codes[3]);
+  eq('decode · tilted 3°', E.decodeImage(drawBarcode(codes[0], { tilt: 3 })), codes[0]);
+  eq('decode · upside down', E.decodeImage(rotate90(rotate90(drawBarcode(codes[1])))), codes[1]);
+  eq('decode · sideways needs columns', E.decodeImage(rotate90(drawBarcode(codes[2])), { columns: true }), codes[2]);
+  eq('decode · a blank image is nothing', E.decodeImage(new ImageData(300, 100)), null);
+  const flat = new ImageData(300, 100); flat.data.fill(255);
+  eq('decode · a white image is nothing', E.decodeImage(flat), null);
+}
+
+} catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
+for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }
+out.push('', fail ? fail + ' FAILED, ' + pass + ' passed' : 'ALL GREEN (' + pass + ')');
+document.getElementById('out').textContent = out.join('\n');
+})();
+</script>
+</body></html>

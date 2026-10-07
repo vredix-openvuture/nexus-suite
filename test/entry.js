@@ -49,3 +49,4 @@ window.kanbanCardLib = require('../src/modals/kanbancard.js');
 window.vaultSyncRunLib = require('../src/lib/vaultsyncrun.js');
 window.deviceSettingsLib = require('../src/lib/devicesettings.js');
 window.HOME_VIEW = require('../src/constants.js').HOME_VIEW;
+window.ean13Lib = require('../src/lib/ean13.js');
