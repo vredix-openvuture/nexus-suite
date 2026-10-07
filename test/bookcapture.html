@@ -260,6 +260,59 @@ const E = window.ean13Lib;
   eq('cover · png', S.extFor('image/png'), 'png');
   eq('cover · unknown image type falls back to jpg', S.extFor('image/x-foo'), 'jpg');
 }
+// ── flow helpers ──────────────────────────────────────────────────────────
+{
+  const B = window.bookCaptureLib;
+  eq('name · forbidden characters go', B.safeFileName('Persönlichkeit: und/oder? "Ja" #1 [x]'), 'Persönlichkeit und oder Ja 1 x');
+  eq('name · a leading dot would hide it', B.safeFileName('...Hidden'), 'Hidden');
+  eq('name · empty falls back', B.safeFileName('  /// '), 'Untitled');
+  ok('name · long titles are cut', B.safeFileName('a'.repeat(300)).length <= 120);
+
+  const taken = new Set(['Books/A.md', 'Books/A (2).md']);
+  eq('path · free name stays', B.uniquePath(p => taken.has(p), 'Books', 'B', 'md'), 'Books/B.md');
+  eq('path · never overwrite', B.uniquePath(p => taken.has(p), 'Books', 'A', 'md'), 'Books/A (3).md');
+  eq('path · vault root', B.uniquePath(() => false, '', 'A', 'jpg'), 'A.jpg');
+
+  const files = [{ path: 'Lib/Books/A.md' }, { path: 'Lib/Books/B.md' }, { path: 'Elsewhere/C.md' }, { path: 'Lib/Books/D.md' }];
+  const fm = { 'Lib/Books/A.md': { isbn: '3-423-34382-6' }, 'Lib/Books/B.md': { isbn: '9780140328721' },
+               'Elsewhere/C.md': { isbn: '9783423343824' }, 'Lib/Books/D.md': null };
+  eq('dup · ISBN-10 in a note matches the scanned ISBN-13',
+     B.findDuplicates(files, f => fm[f.path], 'Lib/Books', 'isbn', '9783423343824').map(f => f.path), ['Lib/Books/A.md']);
+  eq('dup · only inside the profile folder',
+     B.findDuplicates(files, f => fm[f.path], 'Lib/Books', 'isbn', '9780140328721').map(f => f.path), ['Lib/Books/B.md']);
+  eq('dup · no ISBN property, no check', B.findDuplicates(files, f => fm[f.path], 'Lib/Books', '', '9783423343824'), []);
+  eq('dup · a list value counts', B.findDuplicates([{ path: 'X/a.md' }], () => ({ isbn: ['9783423343824'] }), 'X', 'isbn', '9783423343824').length, 1);
+
+  const profiles = [{ folder: 'Lib' }, { folder: 'Lib/Audio' }, { folder: 'Other' }];
+  eq('profile · the deepest folder wins', B.profileForPath(profiles, 'Lib/Audio/x.md'), 1);
+  eq('profile · parent folder', B.profileForPath(profiles, 'Lib/x.md'), 0);
+  eq('profile · a prefix is not a folder', B.profileForPath(profiles, 'Library/x.md'), -1);
+
+  ok('empty · undefined, "", [], [""]', [undefined, null, '', [], ['']].every(B.isEmptyValue));
+  ok('empty · 0 and "-----" are values', !B.isEmptyValue(0) && !B.isEmptyValue('-----'));
+
+  const tpl = '---\nisbn: {{isbn}}\nauthor: {{author}}\ncover: "[[{{cover}}]]"\ntype:\n  - {{ask:Type|a,b}}\nrating: {{ask:Rating}}\ntags:\n  - books\n---\nBody';
+  const data = window.bookTemplateLib.bookData({ title: 'T', authors: ['X'], genres: [] }, { isbn: '978', cover: 'c.jpg', date: '' });
+  const note = { author: 'Someone', cover: '', type: ['a'], tags: [] };
+  eq('fill · only empty or missing keys, never existing values',
+     B.fillProposals(tpl, data, { Rating: '5' }, note),
+     [{ key: 'isbn', value: '978' }, { key: 'cover', value: '[[c.jpg]]' }, { key: 'rating', value: '5' }, { key: 'tags', value: ['books'] }]);
+  eq('fill · asks only for keys that are empty', B.fillAsks(tpl, note), [{ label: 'Rating', options: [] }]);
+
+  eq('validate · all good', B.validateProfile({ template: 'T.md', folder: 'Lib', coverFolder: 'Img' },
+     { exists: () => true, templateText: '{{title}}' }), []);
+  eq('validate · names what is wrong', B.validateProfile({ template: '', folder: 'Nope', coverFolder: '' },
+     { exists: p => p !== 'Nope', templateText: null }),
+     ['No template chosen.', 'Folder "Nope" does not exist.']);
+  eq('validate · missing template file', B.validateProfile({ template: 'Gone.md', folder: '', coverFolder: '' },
+     { exists: () => false, templateText: null }), ['Template "Gone.md" does not exist.']);
+  eq('validate · unknown placeholders', B.validateProfile({ template: 'T.md', folder: '', coverFolder: '' },
+     { exists: () => true, templateText: '{{titel}} {{title}}' }), ['Unknown placeholder in the template: {{titel}}']);
+
+  ok('create · blocked while the template needs a cover and none is chosen', !B.canCreate(true, null));
+  ok('create · allowed with a cover', B.canCreate(true, { bytes: new ArrayBuffer(1) }));
+  ok('create · allowed when the template has no cover', B.canCreate(false, null));
+}
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
 for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }
 out.push('', fail ? fail + ' FAILED, ' + pass + ' passed' : 'ALL GREEN (' + pass + ')');
