@@ -2,12 +2,19 @@
 
 /* ============================================================================
  *  NEXUS SUITE · lib · text
- *  String jobs several modules share. Pure: no Obsidian, no DOM.
+ *  String jobs several modules share. No Obsidian; CSS.escape is used where
+ *  the host has one.
  * ========================================================================== */
 
 /* Text to match literally inside a RegExp. */
 function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/* A value for a quoted CSS attribute selector, e.g. [data-callout="…"]. */
+function cssAttrValue(value) {
+  const s = String(value);
+  return (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(s) : s.replace(/["\\]/g, '\\$&');
 }
 
 /* A note read from the vault still has its frontmatter block on the front.
@@ -21,4 +28,4 @@ function stripFrontmatter(text) {
   return nl < 0 ? '' : s.slice(nl + 1);
 }
 
-module.exports = { escapeRegExp, stripFrontmatter };
+module.exports = { cssAttrValue, escapeRegExp, stripFrontmatter };

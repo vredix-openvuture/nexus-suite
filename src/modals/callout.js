@@ -56,8 +56,6 @@ class NexusCalloutModal extends Modal {
 }
 
 /* Quick picker to insert a callout at the cursor. */
-
-/* Quick picker to insert a callout at the cursor. */
 class NexusCalloutInsertModal extends SuggestModal {
   constructor(app, plugin, editor) { super(app); this.plugin = plugin; this.editor = editor;
     this.setPlaceholder('Insert callout …'); }
@@ -80,11 +78,6 @@ class NexusCalloutInsertModal extends SuggestModal {
     ed.replaceRange(`${prefix}> [!${id}] \n> `, cur);
   }
 }
-
-/* Live autocomplete while typing "> [!" in the editor (Live Preview + source):
-   suggests every known callout (custom + built-in + aliases) with its icon,
-   like the eth-p Callout Manager's suggester. Uses Obsidian's EditorSuggest API
-   (no CodeMirror extension needed). */
 
 /* Live autocomplete while typing "> [!" in the editor (Live Preview + source):
    suggests every known callout (custom + built-in + aliases) with its icon,

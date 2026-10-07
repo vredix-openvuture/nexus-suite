@@ -120,8 +120,6 @@ class NexusTimerDoneModal extends Modal {
 }
 
 /* Timer widget settings (edit mode): duration, done message, break timer. */
-
-/* Timer widget settings (edit mode): duration, done message, break timer. */
 class NexusTimerConfigModal extends Modal {
   constructor(plugin, view, item) { super(plugin.app); this.plugin = plugin; this.view = view; this.item = item; }
   onOpen() { this.contentEl.addClass('nx-cardcfg'); this.render(); }

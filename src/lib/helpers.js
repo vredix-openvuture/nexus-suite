@@ -14,8 +14,6 @@ function renderMd(plugin, src, el, path) {
 }
 
 /* Read Daily Notes settings (core plugin) */
-
-/* Read Daily Notes settings (core plugin) */
 function getDailyNoteSettings(app) {
   const dn = app.internalPlugins && app.internalPlugins.getPluginById
     ? app.internalPlugins.getPluginById('daily-notes') : null;
@@ -101,10 +99,6 @@ function nxInkZoomEnd(img) {
   delete img._nxZoomBase;
   delete img.dataset.nxZoom;
 }
-
-/* Resolves a pdf.js outline entry's `dest` (either a named destination string
-   or an already-explicit [ref, ...] array) to a 1-based page number, for the
-   Ink Capture PDF viewer's table-of-contents jump-to-page. */
 
 /* Resolves a pdf.js outline entry's `dest` (either a named destination string
    or an already-explicit [ref, ...] array) to a 1-based page number, for the

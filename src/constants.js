@@ -185,14 +185,9 @@ const DEFAULT_SETTINGS = {
 };
 
 /* WMO weather codes → short text (open-meteo) */
-
-/* WMO weather codes → short text (open-meteo) */
 const WMO = { 0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Rime fog', 51: 'Drizzle', 53: 'Drizzle', 55: 'Drizzle', 56: 'Freezing rain', 57: 'Freezing rain', 61: 'Rain', 63: 'Rain', 65: 'Heavy rain', 66: 'Freezing rain', 67: 'Freezing rain', 71: 'Snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains', 80: 'Showers', 81: 'Showers', 82: 'Heavy showers', 85: 'Snow showers', 86: 'Snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm', 99: 'Thunderstorm' };
 
 const WMO_ICON = { 0: 'sun', 1: 'sun', 2: 'cloud-sun', 3: 'cloud', 45: 'cloud-fog', 48: 'cloud-fog', 51: 'cloud-drizzle', 53: 'cloud-drizzle', 55: 'cloud-drizzle', 61: 'cloud-rain', 63: 'cloud-rain', 65: 'cloud-rain-wind', 71: 'cloud-snow', 73: 'cloud-snow', 75: 'cloud-snow', 80: 'cloud-rain', 81: 'cloud-rain', 82: 'cloud-rain-wind', 95: 'cloud-lightning', 96: 'cloud-lightning', 99: 'cloud-lightning' };
-
-/* Homepage cards: metadata + default config (filter/size). Runtime merge
-   via view._cfg(id) → new fields always get defaults, even after saving. */
 
 /* Homepage cards: metadata + default config (filter/size). Runtime merge
    via view._cfg(id) → new fields always get defaults, even after saving. */
@@ -206,19 +201,12 @@ const CARD_DEFS = {
 
 /* Default primary actions of the homepage (kind + label + icon). Kinds:
    journal | newNote | search | calendar | command(arg=cmdId) | note(arg=Name) | url(arg) */
-
-/* Default primary actions of the homepage (kind + label + icon). Kinds:
-   journal | newNote | search | calendar | command(arg=cmdId) | note(arg=Name) | url(arg) */
 const NX_DEFAULT_ACTIONS = [
   { kind: 'journal',  label: "Today's journal", icon: 'sun' },
   { kind: 'newNote',  label: 'New note',        icon: 'file-plus' },
   { kind: 'search',   label: 'Search',          icon: 'search' },
   { kind: 'calendar', label: 'Calendar',        icon: 'calendar' },
 ];
-
-/* Obsidian's built-in callout types with their default lucide icons (for preview
-   + recognition in the Callouts manager). id = canonical type; aliases share the
-   same styling in Obsidian and are only needed to avoid listing them as "custom". */
 
 /* Obsidian's built-in callout types with their default lucide icons (for preview
    + recognition in the Callouts manager). id = canonical type; aliases share the
@@ -246,8 +234,6 @@ const NX_BUILTIN_CALLOUTS = [
 ];
 
 const NX_BUILTIN_IDS = new Set(NX_BUILTIN_CALLOUTS.map(b => b.id));
-
-/* Greeting styles for the homepage (h = hour, n = name). */
 
 /* Greeting styles for the homepage (h = hour, n = name). */
 const NX_GREETINGS = {

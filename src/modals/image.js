@@ -79,8 +79,6 @@ class NexusImageConfigModal extends Modal {
 }
 
 /* Searchable vault image picker (with thumbnails). */
-
-/* Searchable vault image picker (with thumbnails). */
 class NexusVaultImageModal extends SuggestModal {
   constructor(app, onPick) { super(app); this.onPick = onPick; this.setPlaceholder('Search vault images …'); }
   getSuggestions(q) {

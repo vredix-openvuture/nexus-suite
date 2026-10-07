@@ -31,7 +31,7 @@ const notesketches = require('./lib/notesketches.js');
 const sketchObjects = require('./lib/sketchobjects.js');
 const penGestures = require('./lib/sketchgestures.js');
 const sketchExport = require('./lib/sketchexport.js');
-const { escapeRegExp } = require('./lib/text.js');
+const { cssAttrValue, escapeRegExp } = require('./lib/text.js');
 const { ensureFolder, safeFileName, uniquePath } = require('./lib/vaultpaths.js');
 const sketchSearch = require('./lib/sketchsearch.js');
 const quicknote = require('./lib/quicknote.js');
@@ -1811,9 +1811,8 @@ module.exports = class NexusSuite extends Plugin {
       this.mountPropToggle();
       return;
     }
-    const esc = (k) => (window.CSS && CSS.escape) ? CSS.escape(k) : k.replace(/"/g, '\\"');
-    const hide = s.hidden.map(k => `.metadata-property[data-property-key="${esc(k)}"]`).join(',');
-    const show = s.hidden.map(k => `body.nx-reveal-props .metadata-property[data-property-key="${esc(k)}"]`).join(',');
+    const hide = s.hidden.map(k => `.metadata-property[data-property-key="${cssAttrValue(k)}"]`).join(',');
+    const show = s.hidden.map(k => `body.nx-reveal-props .metadata-property[data-property-key="${cssAttrValue(k)}"]`).join(',');
     this._propStyle.textContent = `${hide}{display:none!important;}${show}{display:flex!important;opacity:.45;}`;
     document.body.toggleClass('nx-reveal-props', !!s.reveal);
     this.mountPropToggle();
@@ -1874,12 +1873,11 @@ module.exports = class NexusSuite extends Plugin {
     const norm = `.callout{--nx-callout-c:${triplet ? 'rgb(var(--callout-color))' : 'var(--callout-color)'};}\n`;
     const s = this.settings.callouts;
     if (!s.enabled) { this._calloutStyle.textContent = norm; return; }
-    const esc = (k) => (window.CSS && CSS.escape) ? CSS.escape(k) : k.replace(/"/g, '\\"');
     let css = '';
     for (const c of s.items) {
       const id = (c.id || '').toLowerCase().trim();
       if (!id) continue;
-      const sel = `.callout[data-callout="${esc(id)}"]`;
+      const sel = `.callout[data-callout="${cssAttrValue(id)}"]`;
       // --callout-color is a COLOUR, not a triplet: Obsidian defines its own as
       // `--callout-quote: #9e9e9e` / `var(--color-blue)` and consumes them as
       // `color-mix(in oklch, var(--callout-color) 10%, transparent)` and
