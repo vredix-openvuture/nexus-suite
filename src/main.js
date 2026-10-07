@@ -254,6 +254,15 @@ module.exports = class NexusSuite extends Plugin {
         const { NexusQuickNoteModal } = require('./modals/quicknote.js');
         new NexusQuickNoteModal(this).open();
       } });
+    this.addCommand({ id: 'nexus-book-capture', name: 'Capture book',
+      callback: () => this.openBookCapture('create') });
+    this.addCommand({ id: 'nexus-book-fill', name: 'Fill book from ISBN',
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file || file.extension !== 'md') return false;
+        if (!checking) this.openBookCapture('fill', file);
+        return true;
+      } });
     this.addCommand({ id: 'nexus-search-sketches', name: 'Search sketches', callback: () => this.openSketchSearch() });
     this.addCommand({ id: 'nexus-ocr-sketch', name: 'Read the handwriting in this sketch',
       callback: () => this.ocrActiveSketch() });
@@ -315,6 +324,8 @@ module.exports = class NexusSuite extends Plugin {
     this.registerView(GALAXY_VIEW, (leaf) => new NexusGalaxyView(leaf, this));
     if (this.settings.galaxy.enabled && this.settings.galaxy.ribbon)
       this.addRibbonIcon('orbit', NX_MODULES.galaxy.name, () => this.openGalaxy());
+    if (this.settings.bookCapture && this.settings.bookCapture.enabled)
+      this.addRibbonIcon('book-open', NX_MODULES.bookCapture.name, () => this.openBookCapture('create'));
     this.addCommand({ id: 'nexus-open-galaxy', name: 'Open the galaxy', callback: () => this.openGalaxy() });
 
     /* The same hub in the sidebar. A second view id rather than a flag, because
@@ -2360,6 +2371,46 @@ module.exports = class NexusSuite extends Plugin {
     });
     const file = await this.app.vault.create(path, body);
     if (cfg.openAfter !== false) this.app.workspace.getLeaf(false).openFile(file);
+    return path;
+  }
+  openBookCapture(mode, file) {
+    const s = this.settings.bookCapture;
+    if (!s || !s.enabled) { new Notice('Nexus: Book capture is off — Settings → Book capture.'); return; }
+    const { NexusBookCaptureModal } = require('./modals/bookcapture.js');
+    new NexusBookCaptureModal(this, mode, file || null).open();
+  }
+
+  /* A starting point for someone with no book notes yet. Never overwrites: an
+     existing file at the path is simply used. */
+  async writeExampleBookTemplate(path) {
+    if (this.app.vault.getAbstractFileByPath(path)) return path;
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    if (folder) await this.ensureFolderPath(folder);
+    await this.app.vault.create(path, [
+      '---',
+      'isbn: {{isbn}}',
+      'author: {{author}}',
+      'year: {{year}}',
+      'pages: {{pages}}',
+      'publisher: {{publisher}}',
+      'cover: "[[{{cover}}]]"',
+      'format: {{ask:Format|paper,ebook,audiobook}}',
+      'tags:',
+      '  - book',
+      '  - {{genres}}',
+      'added: {{date}}',
+      '---',
+      '',
+      '![[{{cover}}|200]]',
+      '',
+      '# {{title}}',
+      '{{subtitle}}',
+      '',
+      '{{description}}',
+      '',
+      '## Notes',
+      '',
+    ].join('\n'));
     return path;
   }
   /* Create a folder and its parents. The sketch module has its own version for
