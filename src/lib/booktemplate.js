@@ -76,6 +76,16 @@ function renderFmLine(line, data, answers) {
     const val = yamlScalar(asText(v));
     return [val ? kv[1] + ' ' + val : kv[1]];
   }
+  // Unquoted value with placeholders mixed into literal text: render it, then
+  // quote the whole result only if YAML needs it. Unknown placeholders stay raw.
+  const valuePart = item ? item[2] : kv ? kv[2] : null;
+  if (valuePart !== null && !/["']/.test(valuePart)
+      && tokens.every(m => parseToken(m[1]).kind !== 'unknown')) {
+    const prefix = item ? item[1] : kv[1] + ' ';
+    const val = yamlScalar(renderPlain(valuePart, data, answers));
+    if (val) return [prefix + val];
+    return item ? [] : [kv[1]];
+  }
   // A placeholder inside a larger value: escape for the quotes around it.
   let out = '', last = 0;
   for (const m of tokens) {
@@ -84,7 +94,7 @@ function renderFmLine(line, data, answers) {
     if (v !== null) {
       s = oneLine(asText(v));
       const before = line.slice(0, m.index);
-      const dq = (before.match(/(^|[^\\])"/g) || []).length % 2 === 1;
+      const dq = (before.match(/(?<!\\)"/g) || []).length % 2 === 1;
       const sq = !dq && (before.match(/'/g) || []).length % 2 === 1;
       if (dq) s = s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       else if (sq) s = s.replace(/'/g, "''");

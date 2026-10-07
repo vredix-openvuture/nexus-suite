@@ -149,6 +149,14 @@ const E = window.ean13Lib;
   ok('tpl · an empty list placeholder drops its line', noGenres.includes('  - books\nbook_author'), noGenres);
   ok('tpl · an unanswered list ask drops its line', noGenres.includes('book_type:\nbook_where:'), noGenres);
 
+  {
+    const f = (line, d) => T.render('---\n' + line + '\n---\n', Object.assign({}, data, d || {})).split('\n')[1];
+    eq('tpl · mixed unquoted value with a colon is quoted', f('book_title: Book - {{title}}'), 'book_title: "Book - Persönlichkeit: und Menschenführung"');
+    eq('tpl · mixed unquoted value with a hash is quoted', f('src: {{publisher}} #{{year}}'), 'src: "dtv #2007"');
+    eq('tpl · mixed plain value stays unquoted', f('plain: by {{publisher}}'), 'plain: by dtv');
+    eq('tpl · mixed plain list item stays unquoted', f('  - {{publisher}} {{year}}'), '  - dtv 2007');
+    eq('tpl · empty quote pair does not break parity', f('x: "" {{year}}'), 'x: "" 2007');
+  }
   eq('tpl · no frontmatter is plain text', T.render('{{title}} — {{year}}', data), 'Persönlichkeit: und Menschenführung — 2007');
   eq('tpl · a name pattern', T.renderName('atm-{{title}}', data), 'atm-Persönlichkeit: und Menschenführung');
 
