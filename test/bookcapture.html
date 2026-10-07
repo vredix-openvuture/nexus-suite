@@ -91,6 +91,77 @@ const E = window.ean13Lib;
   eq('decode · a white image is nothing', E.decodeImage(flat), null);
 }
 
+// ── template engine ───────────────────────────────────────────────────────
+{
+  const T = window.bookTemplateLib;
+  const data = {
+    isbn: '9783423343824', title: 'Persönlichkeit: und Menschenführung', subtitle: '',
+    author: 'Wolfgang Schmidbauer, Anna "Ann" Muster', authors: ['Wolfgang Schmidbauer', 'Anna "Ann" Muster'],
+    publisher: 'dtv', year: '2007', pages: '220', language: 'ger', description: 'Line one\nline two',
+    genres: ['Psychologie', 'Führung'], cover: 'atm-Persönlichkeit.jpg', date: '2026-10-07',
+  };
+  const tpl = [
+    '---',
+    'tags:',
+    '  - books',
+    '  - {{genres}}',
+    'book_author: {{author}}',
+    'book_title: {{title}}',
+    'book_sub: {{subtitle}}',
+    'book_cover: "[[{{cover}}]]"',
+    'book_type:',
+    '  - {{ask:Type|physical,digital}}',
+    'book_where: {{ask:Shelf}}',
+    'book_rating:',
+    '  - -----',
+    'custom: {{nonsense}}',
+    '---',
+    '',
+    '# {{title}}',
+    '![[{{cover}}|200]]',
+    'By {{authors}} · {{ask:Type|physical,digital}}',
+    '{{description}}',
+  ].join('\n');
+
+  const s = T.scan(tpl);
+  ok('tpl · scan finds the cover', s.usesCover);
+  eq('tpl · scan lists each ask once', s.asks, [{ label: 'Type', options: ['physical', 'digital'] }, { label: 'Shelf', options: [] }]);
+  eq('tpl · scan flags unknown placeholders', s.unknown, ['{{nonsense}}']);
+  ok('tpl · a template without cover says so', !T.scan('# {{title}}').usesCover);
+
+  const r = T.render(tpl, data, { Type: 'physical', Shelf: 'Living room' });
+  const lines = r.split('\n');
+  ok('tpl · a list placeholder becomes one item per value',
+     r.includes('  - books\n  - Psychologie\n  - Führung\nbook_author'), r);
+  eq('tpl · a scalar with a colon is quoted', lines.find(l => l.startsWith('book_title:')), 'book_title: "Persönlichkeit: und Menschenführung"');
+  eq('tpl · quotes inside a value are escaped', lines.find(l => l.startsWith('book_author:')), 'book_author: "Wolfgang Schmidbauer, Anna \\"Ann\\" Muster"');
+  eq('tpl · an empty scalar stays an empty key', lines.find(l => l.startsWith('book_sub')), 'book_sub:');
+  eq('tpl · a placeholder inside quotes', lines.find(l => l.startsWith('book_cover:')), 'book_cover: "[[atm-Persönlichkeit.jpg]]"');
+  ok('tpl · an ask answer lands in a list', r.includes('book_type:\n  - physical\n'));
+  eq('tpl · a free-text ask', lines.find(l => l.startsWith('book_where:')), 'book_where: Living room');
+  ok('tpl · literal list items are kept', r.includes('book_rating:\n  - -----'));
+  eq('tpl · unknown placeholders stay as written', lines.find(l => l.startsWith('custom:')), 'custom: {{nonsense}}');
+  ok('tpl · body: lists join with a comma', r.includes('By Wolfgang Schmidbauer, Anna "Ann" Muster · physical'));
+  ok('tpl · body: a multi-line value stays multi-line', r.includes('Line one\nline two'));
+  ok('tpl · body: cover embed', r.includes('![[atm-Persönlichkeit.jpg|200]]'));
+
+  const noGenres = T.render(tpl, Object.assign({}, data, { genres: [] }), { Type: '', Shelf: '' });
+  ok('tpl · an empty list placeholder drops its line', noGenres.includes('  - books\nbook_author'), noGenres);
+  ok('tpl · an unanswered list ask drops its line', noGenres.includes('book_type:\nbook_where:'), noGenres);
+
+  eq('tpl · no frontmatter is plain text', T.render('{{title}} — {{year}}', data), 'Persönlichkeit: und Menschenführung — 2007');
+  eq('tpl · a name pattern', T.renderName('atm-{{title}}', data), 'atm-Persönlichkeit: und Menschenführung');
+
+  const entries = T.frontmatterEntries(r);
+  eq('tpl · entries: scalar unquoted', entries.find(e => e.key === 'book_title').value, 'Persönlichkeit: und Menschenführung');
+  eq('tpl · entries: list', entries.find(e => e.key === 'tags').value, ['books', 'Psychologie', 'Führung']);
+  eq('tpl · entries: empty', entries.find(e => e.key === 'book_sub').value, '');
+
+  const rec = { title: 'A', subtitle: '', authors: ['X', 'Y'], publisher: '', year: '', pages: '', language: '', description: '', genres: ['g'], covers: [] };
+  eq('tpl · bookData joins author and keeps authors',
+     T.bookData(rec, { isbn: '1', cover: 'c.jpg', date: 'd' }),
+     { isbn: '1', title: 'A', subtitle: '', author: 'X, Y', authors: ['X', 'Y'], publisher: '', year: '', pages: '', language: '', description: '', genres: ['g'], cover: 'c.jpg', date: 'd' });
+}
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
 for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }
 out.push('', fail ? fail + ' FAILED, ' + pass + ' passed' : 'ALL GREEN (' + pass + ')');
