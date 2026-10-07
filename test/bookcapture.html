@@ -327,6 +327,15 @@ const E = window.ean13Lib;
   eq('photo · not an image', await SC.decodeFile(new Blob(['hello'], { type: 'text/plain' })), null);
   ok('device · the checks answer booleans', typeof SC.cameraAvailable() === 'boolean' && typeof SC.nativeDetectorAvailable() === 'boolean');
 }
+// ── settings defaults ─────────────────────────────────────────────────────
+{
+  const d = window.DEFAULT_SETTINGS.bookCapture;
+  ok('settings · off by default', d && d.enabled === false);
+  eq('settings · one empty profile, nothing of anyone\'s library in it', d.profiles,
+     [{ name: 'Books', template: '', folder: '', coverFolder: '', fileName: '{{title}}', coverName: '{{title}}',
+        isbnProperty: 'isbn', coverProperty: 'cover' }]);
+  eq('settings · every source, in the default order', d.sources.map(s => s.id), window.bookSourcesLib.SOURCES.map(s => s.id));
+}
 } catch (e) { fail++; out.push('FAIL  threw: ' + (e && e.stack || e)); }
 for (const e of window.__err) { fail++; out.push('FAIL  page error: ' + e); }
 out.push('', fail ? fail + ' FAILED, ' + pass + ' passed' : 'ALL GREEN (' + pass + ')');

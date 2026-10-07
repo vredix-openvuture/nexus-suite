@@ -103,6 +103,14 @@ const DEFAULT_SETTINGS = {
   quicknote:  { enabled: true, folder: 'Inbox/Quicknote', engine: 'local',
     command: 'whisper-cli -f {in} -otxt -of {out} -l auto',
     language: 'en-US', openAfter: true },
+  /* Book capture: a book note from its ISBN. Profiles, not one setup — a
+     library can have paper, ebooks and audiobooks in different folders with
+     different templates. Empty on purpose: the template and folders are the
+     user's, and the command refuses until they are chosen. */
+  bookCapture: { enabled: false, lastProfile: 0,
+    profiles: [{ name: 'Books', template: '', folder: '', coverFolder: '', fileName: '{{title}}',
+      coverName: '{{title}}', isbnProperty: 'isbn', coverProperty: 'cover' }],
+    sources: [{ id: 'dnb', on: true }, { id: 'openlibrary', on: true }, { id: 'google', on: true }] },
   /* url, deviceName, onStart and intervalMin are NOT here: they describe one
      machine and live in the per-device store (see lib/devicesettings.js).
      What is left is shared policy — the same answer on every device. */
@@ -374,6 +382,7 @@ const NX_MODULES = {
   planner:       { name: 'Planner',      sub: 'A month on one screen, one line per day — the paper-calendar view' },
   vaultSync:     { name: 'Vault sync',   sub: 'The whole vault to a WebDAV server, with daily backups and conflict copies' },
   quicknote:     { name: 'Chatter',      sub: 'A note you speak instead of type' },
+  bookCapture:   { name: 'Book capture', sub: 'A book note from its ISBN — scan the barcode, the cover comes with it' },
   galaxy:        { name: 'Galaxy',       sub: 'The vault as a turnable map of its links' },
 };
 
