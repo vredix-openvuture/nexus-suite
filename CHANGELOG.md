@@ -10,6 +10,37 @@ Grouped by what changed for you, not by commit. Newest first.
   note from your own template with the cover saved into the vault; fill the empty
   fields of an existing book note.
 
+### Changed
+
+- **A second file of the same name is now `Name (2)`** wherever the plugin
+  creates one — banner imports, scans, kanban card and board notes, sketch
+  notes, exports, a renamed ink sidecar. They used to be `Name-1` or `Name 2`
+  depending on which part of the plugin wrote them.
+- **The hold menu on a note's sketch button ignores a press that moves.** A
+  flick across the button scrolls instead of opening the menu, like the hold
+  menus in the capture hub already did.
+- **A folder the plugin cannot create is reported by name** instead of failing
+  silently and then failing again on the file inside it. Quick Note and book
+  capture show it in their notice; elsewhere it reaches the console.
+
+### Fixed
+
+- **The add-a-server dialog lost its footer layout in 0.29** — its CSS went with
+  the calendar page. Save sits at the right under the fields again.
+
+### Removed
+
+- **The *Shared vault* switch** under Vault sync. It saved a setting nothing
+  read: the code that would have announced each device on the server was never
+  called. `docs/removed-features.md` §9 has what it was and the way back.
+
+### Internal
+
+- **Cleanup pass** — dead code and CSS removed, duplicated helpers merged, the
+  four largest files split by job (`src/features/`, `src/settings/`,
+  `src/views/home/`, `src/views/sketch/`). The full list, with the reason and the
+  commit for each item and how to roll it back: `docs/cleanup/2026-10-07.md`.
+
 ## 0.32.0 — 2026-10-07
 
 ### Added

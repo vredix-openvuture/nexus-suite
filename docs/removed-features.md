@@ -575,8 +575,11 @@ and creates a daily note only for a day that has none.
 
 Removed from `src/lib/planner.js`: `monthNotePath`, `readMonthPlan`,
 `readMonthPlans`, `writeMonthEntry` and `ensureParentFolder` — the whole month
-note layer. `parsePlanner`, `stringifyPlanner` and `setEntry` stay: the fence
-still carries config, and the migration reads the old entries with them.
+note layer. `parsePlanner` and `stringifyPlanner` stay: the fence still carries
+config, and the migration reads the old entries with `parsePlanner`. (`setEntry`
+and `monthsInRange` are still exported and tested, but nothing in `src/` calls
+them any more; the 2026-10-07 cleanup also removed the last of the month-note
+helpers, `formatMonthName`, `findPlannerBlock` and `fencePlanner`.)
 
 Removed from `DEFAULT_SETTINGS.tasksCalendar`: `planner` (`{ folder, pattern }`).
 Added at the top level: `plannerMigrated`. The settings tab lost *Planner folder*
@@ -670,7 +673,8 @@ there.
 
 ### Settings migration
 
-`main.js · dropTasksCalendar` runs at the end of `loadSettings`:
+`dropTasksCalendar` (`src/features/settings-migrations.js` since the 2026-10-07
+cleanup, `main.js` before) runs at the end of `loadSettings`:
 
 - `tasksCalendar.weekStart` / `dayTextKey` → `calendar.*`, unless `data.json`
   already has a value under `calendar`;
@@ -692,3 +696,32 @@ empty tab; nothing in the plugin iterates them.
 reverse. The settings migration is one-way: it deleted `tasksCalendar` from
 `data.json`, so the module would start from its defaults — accounts have to be
 added again on each device.
+
+---
+
+## 9. *Shared vault* (device presence over WebDAV)
+
+Removed in the 2026-10-07 cleanup (`docs/cleanup/2026-10-07.md`), not because it
+failed but because it never ran: the settings switch saved
+`vaultSync.shared`, and the method that acted on it,
+`NexusVaultSync.announce(client)` in `src/lib/vaultsyncrun.js`, had no caller.
+It would have written `_presence/<device id>.json` on the server and listed the
+other devices seen in the last fifteen minutes.
+
+| Where | What went |
+|---|---|
+| `src/settings.js` (Vault sync page) | the *Shared vault* toggle |
+| `src/constants.js` | `vaultSync.shared` in `DEFAULT_SETTINGS` |
+| `src/lib/vaultsyncrun.js` | `announce(client)` |
+
+`PRESENCE_FOLDER` (`_presence`) **stays** in the sync's skip filter, so a server
+that has the folder never pulls it into a vault. A `shared` key already in a
+`data.json` is left alone and ignored.
+
+### To bring it back
+
+`git show cleanup-before-2026-10-07-0954:src/lib/vaultsyncrun.js` for
+`announce`, restore the toggle and the default, and — the part that was never
+built — call `announce` from the sync run and show its result (for example in
+*The last run*).
+

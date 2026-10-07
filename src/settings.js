@@ -2,7 +2,8 @@
 
 /* ============================================================================
  *  NEXUS SUITE · settings tab
- *  Plugin settings tab.
+ *  The tab's shell: the nav rail, the page header, folding. Each page's
+ *  builder (tHomepage, tSketch, …) lives in src/settings/ and is mixed in.
  * ========================================================================== */
 
 const { PluginSettingTab, Setting, setIcon } = require('obsidian');

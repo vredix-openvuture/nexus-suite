@@ -658,7 +658,7 @@ with conflicts. Their working files (`.syncthing.*.tmp`, `.sync_*.db`,
 |---|---|
 | **Credentials** | localStorage, per device. Never in `data.json` — that is a file in the vault, and the vault is what gets uploaded. |
 | **Connections** | A connection is an **entry in a list**, not a row of text fields: you declare it once in a modal and afterwards only *Test* or *Remove* it. Half-editing one — a new URL against the old password — produces something whose first news of being wrong is a failed sync. To change one, remove it and add it again; removing it takes its stored credential with it. |
-| **Per device** | The server, its user name, this device's name and the schedule (*Sync on start*, *Every*) belong to **this machine** and are stored under its own key in `data.json`, so a sync carries them nowhere. Every device connects itself. Shared policy is not per device: the exclude list, *Carry the settings too*, the conflict rule, *Shared vault* and the backup count are one answer for the whole vault. |
+| **Per device** | The server, its user name, this device's name and the schedule (*Sync on start*, *Every*) belong to **this machine** and are stored under its own key in `data.json`, so a sync carries them nowhere. Every device connects itself. Shared policy is not per device: the exclude list, *Carry the settings too*, the conflict rule and the backup count are one answer for the whole vault. |
 | **Conflicts** | Keep both by default: the server version keeps the file name, yours is saved beside it with the device name and time in it. Newer-wins, this-device-wins and server-wins are offered and are described as what they are, which is a choice to discard something. A file whose two sides have the **same size** but different times is downloaded and compared byte for byte first — the server stamps the time of the upload, not of the edit, so on the first run of a second device every file differs in time. Only real differences become conflicts, and a run reports them in one notice, not one per file. A path with **no record yet** (a device's first run) is always kept twice, whatever the rule: without a record, "newer" would compare the server's upload time with an edit time. |
 | **Deletions** | Go through Obsidian's trash, not `unlink`. A sync that deletes the wrong file has to be recoverable. |
 | **Settings** | With *Carry the settings too* on, `.obsidian` travels — **except** `workspace.json`, `workspace-mobile.json`, `graph.json` and the sync's own state. Those describe this machine; carrying them would rearrange panes you deliberately arranged. |
@@ -668,13 +668,12 @@ with conflicts. Their working files (`.syncthing.*.tmp`, `.sync_*.db`,
 
 ### What it is not
 
-*Shared vault* makes each device leave a note on the server saying it is here,
-so you can be told when someone else is in the same vault. That is not live
-co-editing. Two people typing in the same paragraph at the same time needs a
-CRDT and a relay server holding the document in memory — a WebDAV server stores
-files and answers requests, and no arrangement of file uploads adds up to
-character-level merging. The honest version of that feature is a short sync
-interval plus a warning that someone else is in here.
+Not live co-editing. Two people typing in the same paragraph at the same time
+needs a CRDT and a relay server holding the document in memory — a WebDAV
+server stores files and answers requests, and no arrangement of file uploads
+adds up to character-level merging. A short sync interval is the honest version.
+(A *Shared vault* switch that was meant to announce each device on the server
+never ran and was removed — `docs/removed-features.md` §9.)
 
 ## Chatter
 
@@ -781,11 +780,14 @@ npm run build      # one production build (minified, no sourcemap) — the resti
 
 `test/run.sh` bundles the plugin against a stub of the Obsidian API and drives
 it in headless Chromium against a real DOM. It needs `chromium` and `python3` on
-PATH. Nineteen pages, ~1400 checks: the toolbar and its options row, selection and
-transforms, the canvas and the spacing tool, objects and the ruler, pen gestures,
-export (the PDF is checked byte by byte), sketch search and the OCR command line,
-the kanban board writing itself back, the planner, the sync
-decision table with the ZIP writer, Chatter, the capture hub, and the galaxy.
+PATH. Twenty-one pages, ~1640 checks: the toolbar and its options row, selection
+and transforms, the canvas and the spacing tool, objects and the ruler, pen
+gestures, export (the PDF is checked byte by byte), sketch search and the OCR
+command line, the kanban board writing itself back, the planner, the sync
+decision table with the ZIP writer, Chatter, the capture hub, the galaxy, book
+capture — and `smoke.html`, which renders every settings page, the add-a-server
+dialog and the dashboard, so a split file cannot lose a method that only one
+page calls.
 
 Two of those pages are the capture hub, on purpose. `capture.html` proves the
 pure layer — what an item is, search, sort, select, a capture's page list and
@@ -811,48 +813,57 @@ tags and uploads the three assets BRAT needs.
 
 ### Source layout
 
+The plugin class, the settings tab, the dashboard view and the sketch surface
+are each ONE object with many jobs. Their methods live one file per job, written
+as plain classes, and `lib/mixin.js` copies them onto the real class (it throws
+if a name is defined twice) — so every `this.x()` works without forwarding stubs.
+
 ```
 src/
-  main.js            entry — the NexusSuite plugin class; wires every module together
-  constants.js       data tables: extensions, view ids, DEFAULT_SETTINGS, weather, palettes, typography rules
-  settings.js        NexusSettingsTab
-  lib/
-    helpers.js       renderMd, daily-note, ink zoom/pan, pdf page, colour conversion
-    inputs.js        reusable settings inputs (autocomplete, multi-row, property rules, icon field)
-    daytext.js       what a day is FOR — one frontmatter field of that day's note
-    plannermigrate.js the one-off move of old planner lines into the daily notes
-    notesketches.js  the PAGES of a note's drawing: the id list in its frontmatter
-    kanban.js        the ```nexus-kanban``` block: head, column strip, card and drag — shared by both sources
-    kanbanblock.js   how a board is written down: the parser and the writer of the block's own text
-    kanbanedit.js    source “block”: the fence IS the board — its card menu, card editor and write-back
-    board.js         source “folder”: the notes of a folder are the cards, the column is their frontmatter
-    graph.js         the ```nexus-graph``` block: the same notes as a grid or as a force-directed web
-    devicesettings.js settings that belong to ONE machine, keyed by device id inside data.json
-    capture.js       the hub's pure layer: what an item is, search, sort, select, the move plan
-    inkpages.js      a capture's pages — the list, its order, the migration, the annotated sketch
-    inkactions.js    the writes: annotate a scan, add a page, save a page list, merge captures
+  main.js            the plugin class: onload/onunload, per-device settings; mixes in features/
+  constants.js       data tables: view ids, DEFAULT_SETTINGS, palettes, toolbar items, typography rules
+  settings.js        the settings tab shell (nav, header, folding); mixes in settings/
+  features/          the plugin's jobs, one file each (mixed into the plugin class)
+    settings-migrations.js  loadSettings + one-off migrations
+    banner.js, banner-library.js, note-decor.js, property-hider.js, callouts.js,
+    typography.js, image-separator.js, theme.js, tabs.js (dashboard + pinned tabs)
+    sketch-store.js, sketch-block.js, sketch-bar.js, sketch-export.js, sketch-open.js,
+    color-picker.js, ocr.js
+    ink-open.js, ink-import.js, ink-sidecar.js, ink-pdf.js
+    quick-capture.js (Quick Note, Book capture), timer-state.js, connection.js (sync secrets)
+  settings/          one file per nav group: look, workspace, note, sketch, capture, vault
+  lib/               pure logic and small shared helpers
+    mixin.js         copies a part's methods onto a class
+    text.js          escapeRegExp, stripFrontmatter, cssAttrValue
+    vaultpaths.js    safeFileName, uniquePath, ensureFolder (segment by segment)
+    color.js         parseColor, rgbToHex, callout triplets, palette → Obsidian accent
+    holdmenu.js      press-and-hold / right-click menu with movement slop
+    helpers.js       renderMd, daily notes, ink zoom/pan, pdf page, week start, suggestion sources
+    inputs.js        settings inputs (autocomplete, multi-row, property groups, icon field)
+    sketchstroke.js  pen presets, stroke outline, shape recognition
+    sketchsvg.js     the sketch sidecar format, paper patterns, dark-paper ink
+    sketchcanvas.js, sketchselect.js, sketchobjects.js, sketchgestures.js, sketchexport.js,
+    sketchsearch.js, sketchcover.js, notesketches.js   (the rest of Quick Sketch)
+    capture.js, inkpages.js, inkactions.js             (the capture hub's pure layer and writes)
+    kanban.js, kanbanblock.js, kanbanedit.js, board.js, graph.js, blockedit.js
+    planner.js, plannermigrate.js, daytext.js
+    vaultsync.js (decisions), vaultsyncrun.js (performing them), webdav.js, zip.js, secrets.js
+    bookcapture.js, booktemplate.js, booksources.js, bookscan.js, ean13.js
+    devicesettings.js, foldernotes.js, icons.js, tagtools.js, orphans.js, scratch.js,
+    quicknote.js, extcommand.js, force3d.js
   views/
-    calendar.js      NexusCalendarView (sidebar)
-    timers.js        timer sidebar view + done/config modals
-    ink.js           the capture hub's Ink tab: its adapter, its verbs and its card actions
-    capturehub.js    the capture hub itself — one toolbar over a small per-tab adapter
-    sketch.js        Quick Sketch — vector drawing engine + SVG (de)serialization
-    homepage.js      NexusHomepageView (the hub)
-  modals/
-    pickers.js       popup menu + icon picker (leaf UI)
-    callout.js       callout editor / insert / suggest
-    cards.js         homepage card config modals (card/list/quicknote/stat/action/hero)
-    image.js         hero image config, vault picker, zoom/crop
-    misc.js          generic name-input modal
-    kanbancard.js    one kanban card: text, description, due, tags, column, its note
-    search.js        fuzzy search suggest modal
-    banner.js        top-banner modal
-    workspace.js     workspace switcher
-    account.js       add the vault-sync WebDAV server + test it
-    capture.js       where a set of captures moves to, and what pages one capture is made of
+    homepage.js + home/   the dashboard: lifecycle and render, then hero, query, orphans,
+                          widgets, captures, menus, habit, layout
+    sketch.js + sketch/   the drawing surface: constructor and setters, then paper, touch,
+                          view, pen, live, objects, selection, space, history, export, tuning
+    sketchpane.js         the Sketch tab
+    capturehub.js, ink.js the capture hub and its Ink tab
+    calendar.js, plannerblock.js, timers.js, galaxy.js, scratch.js
+  modals/            one dialog per file (account, banner, cards, kanbancard, bookcapture, …)
   styles/
-    index.css        @imports the parts below, IN ORDER (cascade-preserving) → styles.css
-    00-tokens.css … 24-galaxy.css
+    index.css        @imports the parts IN ORDER (cascade-preserving) → styles.css
+    00-tokens.css … 25-bookcapture.css, 19-touch.css last; a split part keeps its
+                     parent's number (02a-note-corners.css after 02-banner.css)
 ```
 
 **Styling rule:** every radius, border, surface, control height and spacing step
@@ -880,5 +891,8 @@ so no device can overwrite another's entry. That is the same arrangement
 Every module is CommonJS (`require` / `module.exports`); esbuild resolves the
 local graph. The dependency graph is a DAG (nothing requires `main`), so there
 are no circular-load pitfalls.
+
+Cleanup passes are logged in `docs/cleanup/` — what went, why, the commit, and
+how to roll it back ([2026-10-07](docs/cleanup/2026-10-07.md)).
 
 > `_pre-split-backup/` holds the pre-split `main.js` / `styles.css` (stignored).
