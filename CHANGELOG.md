@@ -2,7 +2,7 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
-## Unreleased
+## 0.34.0 — 2026-10-11
 
 ### Changed
 
@@ -21,6 +21,8 @@ Grouped by what changed for you, not by commit. Newest first.
   listed every setting where its defaults differed from the vault's as changed
   on both sides. The vault's values were already taken; now nothing is
   announced until the devices have a common earlier state.
+
+Commits: v0.33.0...v0.34.0
 
 ## 0.33.0 — 2026-10-11
 
