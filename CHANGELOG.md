@@ -2,7 +2,7 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
-## Unreleased
+## 0.33.0 — 2026-10-11
 
 ### Added
 
@@ -88,6 +88,8 @@ Grouped by what changed for you, not by commit. Newest first.
   four largest files split by job (`src/features/`, `src/settings/`,
   `src/views/home/`, `src/views/sketch/`). The full list, with the reason and the
   commit for each item and how to roll it back: `docs/cleanup/2026-10-07.md`.
+
+Commits: v0.32.0...v0.33.0
 
 ## 0.32.0 — 2026-10-07
 
