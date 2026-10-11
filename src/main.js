@@ -424,7 +424,8 @@ class NexusSuite extends Plugin {
     this.applyExplorer();
     this.applyRibbon();
 
-    this.addSettingTab(new NexusSettingsTab(this.app, this));
+    this.settingTab = new NexusSettingsTab(this.app, this);
+    this.addSettingTab(this.settingTab);
     console.log('[Nexus] Suite loaded · Banner module:', this.settings.banner.enabled);
   }
 
@@ -488,6 +489,91 @@ class NexusSuite extends Plugin {
   async setDeviceSetting(key, value) {
     deviceSettings.deviceStore(this.settings, this.deviceId())[key] = value;
     await this.saveSettings();
+  }
+
+  /* data.json was replaced underneath the plugin: Obsidian calls this when
+     another tool wrote the file, and vault sync calls adoptIncomingSettings
+     itself after a download. Without it the settings in memory were the old
+     ones, and the next save wrote them back over what had just arrived.
+
+     Obsidian mobile also calls it for the plugin's OWN writes (86 calls in
+     7 s on the tablet, 2026-10-11), and memory may be ahead of the file while a
+     save is still under way. So the file is compared with what this device
+     last wrote, not with memory, and nothing is taken during a save: otherwise
+     a setting changed mid-save was rolled back, and every save answered itself
+     with another one. What was last written is also the base of the merge —
+     it is what the file said before somebody else replaced it. */
+  async onExternalSettingsChange() {
+    if (this._settingsWrites) return;
+    const generation = this._settingsGeneration || 0;
+    const base = this._lastWrittenSettings;
+    const incoming = await this.loadData();
+    // A save that started while the file was being read makes what was read
+    // stale: taking it would roll that save back.
+    if (this._settingsWrites || (this._settingsGeneration || 0) !== generation) return;
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return;
+    if (base && deviceSettings.sameJson(incoming, base)) return;
+    await this.adoptIncomingSettings(incoming, base);
+  }
+
+  /* Merge an incoming data.json into the settings (lib/devicesettings.js
+     mergeIncoming), apply it and save it. Returns `sendBack` — the merged file
+     holds something the incoming one did not (this device's bag, a setting
+     changed here), so the caller should send it back — and the `clashes`, the
+     settings both sides changed, where the incoming value won. */
+  async adoptIncomingSettings(incoming, base) {
+    const { merged, clashes } = deviceSettings.mergeIncoming(incoming, this.settings, this.deviceId(), base);
+    const sendBack = !deviceSettings.sameJson(merged, incoming);
+    const before = JSON.parse(JSON.stringify(this.settings));
+    await this._replaceSettingsInPlace(merged);
+    const changed = !deviceSettings.sameJson(before, this.settings);
+    // Saved when memory moved, or when the file on disk does not say what
+    // memory says yet (the incoming file replaced it, or never reached it).
+    if (changed || !deviceSettings.sameJson(this._lastWrittenSettings, this.settings)) await this.saveSettings();
+    if (changed) this.reapplySettings();
+    return { sendBack, clashes };
+  }
+
+  /* Settings pages, modals, views and dashboard cards keep pieces of
+     `plugin.settings` in variables. Swapping in a new object left them editing
+     a detached copy, and their next save wrote the new one without the edit.
+     So the merged values go INTO the existing objects and lists, all the way
+     down (devicesettings.assignInPlace).
+
+     loadSettings has no await when it is handed the data, so it has run to the
+     end by the time it returns its promise; `this.settings` is put back before
+     anything else can run, and nobody sees the intermediate object. The
+     migrations that touch this device (credentials of removed modules) are
+     left out: an incoming file is not this device's history. */
+  async _replaceSettingsInPlace(raw) {
+    const live = this.settings;
+    let loading;
+    this._adoptingSettings = true;
+    try { loading = this.loadSettings(raw); } finally { this._adoptingSettings = false; }
+    const fresh = this.settings;
+    this.settings = live;
+    await loading;                 // a failure surfaces here, with the live settings already back
+    deviceSettings.assignInPlace(live, fresh);
+  }
+
+  reapplySettings() {
+    const hooks = ['applyThemeSettings', 'applyExplorer', 'applyCallouts', 'applyNoteBgStrength', 'applyHider',
+      'applyHandFont', 'applyRibbon', 'applyPropertyHider', 'refreshBanner', 'refreshCalendarViews', 'refreshGalaxy'];
+    for (const hook of hooks) {
+      if (typeof this[hook] !== 'function') continue;
+      try { this[hook](); } catch (e) { console.warn('[Nexus] re-applying settings: ' + hook + ' failed:', e); }
+    }
+    try { this.app.workspace.getLeavesOfType('nx-homepage').forEach(l => { try { l.view.render(); } catch (e) {} }); }
+    catch (e) { console.warn('[Nexus] re-drawing the dashboard failed:', e); }
+    // The settings tab is redrawn only when nobody is typing in it: a redraw
+    // throws away the field with the caret in it.
+    const tab = this.settingTab;
+    try {
+      const shown = tab && tab.containerEl && tab.containerEl.isShown && tab.containerEl.isShown();
+      const typing = shown && document.activeElement && tab.containerEl.contains(document.activeElement);
+      if (shown && !typing) tab.display();
+    } catch (e) { console.warn('[Nexus] re-drawing the settings tab failed:', e); }
+    if (this.vaultSync) this.vaultSync.schedule();
   }
 
   /* ---- Sketch toolbar layout ------------------------------------------------
@@ -568,7 +654,16 @@ class NexusSuite extends Plugin {
     if (home.profiles) delete home.profiles[this.deviceId()];
     await this.saveSettings();   // hp() rebuilds the profile from the template on next access
   }
-  async saveSettings() { await this.saveData(this.settings); }
+  /* What was written is remembered, and a write in progress is counted, for
+     onExternalSettingsChange. */
+  async saveSettings() {
+    this._settingsWrites = (this._settingsWrites || 0) + 1;
+    this._settingsGeneration = (this._settingsGeneration || 0) + 1;
+    try {
+      this._lastWrittenSettings = JSON.parse(JSON.stringify(this.settings));
+      await this.saveData(this.settings);
+    } finally { this._settingsWrites--; }
+  }
 
   /* Run one feature's init in isolation: if it throws (often a platform quirk on
      mobile), log it and carry on so the REST of the plugin still loads. Without

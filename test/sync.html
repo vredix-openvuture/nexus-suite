@@ -47,8 +47,10 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   eq('decide · edited here and deleted there is a conflict',
      S.decide('a', f(3000, 20), null, base).action, 'conflict');
   // Both sides ended up with the same thing — nothing to argue about.
-  eq('decide · both edited to the same result is not a conflict',
-     S.decide('a', f(3000, 20), f(3000, 20), base).action, 'none');
+  /* With a record, two sides that both moved are never taken as equal unseen:
+     the bytes decide (the runner adopts them when they match). */
+  eq('decide · both edited to the same size and time is compared, not assumed equal',
+     S.decide('a', f(3000, 20), f(3000, 20), base).action, 'compare');
 
   // Clock skew between machines is not an edit.
   eq('decide · a second of clock skew is not a change',
@@ -442,6 +444,36 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   eq('plan · and counted as work', S.planSize(plan), 1);
 }
 
+// ── field test 2026-10-11: same-size edits a moment apart ──────────────────
+/* Laptop and tablet each appended one line of the same length to Welcome.md,
+   0.3 s apart. Both sides had a record, both changed, same size, times within
+   two seconds — and decide() adopted them as equal without looking. Laptop and
+   tablet then kept different text and every later run said "nothing to do". */
+{
+  const f = (mtime, size) => ({ mtime, size });
+  const base = { local: f(1000, 80), remote: f(1500, 80) };
+  eq('field · both changed, same size, 0.3 s apart → bytes are compared',
+     S.decide('Welcome.md', f(870331, 99), f(870646, 99), base).action, 'compare');
+  const plan = S.planSync({ 'Welcome.md': f(870331, 99) }, { 'Welcome.md': f(870646, 99) }, { 'Welcome.md': base });
+  eq('field · and the plan does not adopt it', [plan.adopt, plan.compare.map(v => v.path)], [[], ['Welcome.md']]);
+}
+
+// ── config files settle without a copy ─────────────────────────────────────
+/* Field test 2026-10-11: the tablet's first run made "core-plugins (conflict
+   Tablet …).json" and "data (conflict Tablet …).json", which then travelled to
+   every device. Nothing reads a conflict copy of a config file. */
+{
+  const f = (mtime, size) => ({ mtime, size });
+  const v = { path: '.obsidian/core-plugins.json' };
+  ok('config · paths under .obsidian are config', S.isConfigPath('.obsidian/app.json') && !S.isConfigPath('Notes/.obsidian.md'));
+  eq('config · a joining device takes the server\'s copy', S.configConflict(v, false, f(9000, 5), f(1000, 6)).act, 'download');
+  /* Not "newer wins": the server's time is the upload's, not the edit's, so a
+     comparison with a local edit time means nothing (reviewer, 2026-10-11). */
+  eq('config · with a record the server\'s copy wins, however old its time', S.configConflict(v, true, f(9000, 5), f(1000, 6)).act, 'download');
+  eq('config · changed here, deleted there: kept', S.configConflict(v, true, f(1000, 5), null).act, 'upload');
+  eq('config · deleted here, changed there: comes back', S.configConflict(v, true, null, f(1000, 5)).act, 'download');
+}
+
 // ── the runner, end to end against a fake server ───────────────────────────
 {
   const R = window.vaultSyncRunLib;
@@ -450,6 +482,10 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   function memoryVault(files) {
     const store = {};
     for (const [path, text] of Object.entries(files)) store[path] = { bytes: enc(text), mtime: 1000 };
+    // Every write is a later moment, as on a real disk: a same-size edit has
+    // to be visible by its time.
+    let clock = 2000;
+    const tick = () => (clock += 10000);
     const folderOf = (p) => (p.indexOf('/') >= 0 ? p.slice(0, p.lastIndexOf('/')) : '');
     return {
       _store: store,
@@ -467,9 +503,9 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
       },
       async stat(p) { return store[p] ? { mtime: store[p].mtime, size: store[p].bytes.byteLength } : null; },
       async readBinary(p) { if (!store[p]) throw new Error('no ' + p); return store[p].bytes; },
-      async writeBinary(p, bytes) { store[p] = { bytes, mtime: 2000 }; },
+      async writeBinary(p, bytes) { store[p] = { bytes, mtime: tick() }; },
       async read(p) { if (!store[p]) throw new Error('no ' + p); return new TextDecoder().decode(store[p].bytes); },
-      async write(p, text) { store[p] = { bytes: enc(text), mtime: 2000 }; },
+      async write(p, text) { store[p] = { bytes: enc(text), mtime: tick() }; },
       async exists(p) { return !!store[p] || Object.keys(store).some(k => k.indexOf(p + '/') === 0); },
       async mkdir() {},
       async remove(p) { delete store[p]; },
@@ -565,6 +601,227 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   })();
 
   await (async () => {
+    // The field bug end to end: a record exists, both sides append a line of the
+    // same length within the same second. It has to come out as a conflict.
+    const vault = memoryVault({ 'Welcome.md': 'base text' });
+    const server = fakeServer({ 'Welcome.md': 'base text' });
+    const vs = runnerFor(vault, server);
+    await vs.syncNow(false);
+    vault._store['Welcome.md'] = { bytes: enc('base text\nTABLET'), mtime: 870331 };
+    server._store['Welcome.md'] = { bytes: enc('base text\nLAPTOP'), mtime: 870646 };
+    const report = await vs.syncNow(false);
+    eq('field · same-size edits a moment apart are a conflict', report.conflicts, 1);
+    ok('field · this device\'s line survives in the copy', Object.keys(vault._store).some(p =>
+      /Welcome \(conflict/.test(p) && new TextDecoder().decode(vault._store[p].bytes).endsWith('TABLET')));
+    ok('field · and the server\'s line is the file', new TextDecoder().decode(vault._store['Welcome.md'].bytes).endsWith('LAPTOP'));
+  })();
+
+  await (async () => {
+    // A joining device: its fresh config differs from the vault's. No copies.
+    const vault = memoryVault({ '.obsidian/core-plugins.json': '{"fresh":1}', 'a.md': 'a' });
+    const server = fakeServer({ '.obsidian/core-plugins.json': '{"vault":true}', 'a.md': 'a' });
+    const vs = runnerFor(vault, server);
+    window.__notices = [];
+    const report = await vs.syncNow(false);
+    ok('config · no conflict copy is made', !Object.keys(vault._store).concat(Object.keys(server._store)).some(p => /\(conflict/.test(p)),
+       JSON.stringify(Object.keys(vault._store)));
+    eq('config · and none is announced', report.conflicts, 0);
+    eq('config · the joining device took the vault\'s config',
+       new TextDecoder().decode(vault._store['.obsidian/core-plugins.json'].bytes), '{"vault":true}');
+    const again = await vs.syncNow(false);
+    eq('config · the next run has nothing to do', [again.uploaded, again.downloaded, again.conflicts], [0, 0, 0]);
+  })();
+
+  /* data.json through the REAL plugin: adoptIncomingSettings → loadSettings
+     (defaults, migrations) → saveData, wired to the memory vault. */
+  const OWN = '.obsidian/plugins/nexus-suite/data.json';
+  async function realDevice(vault, server, deviceId, reloadOnly) {
+    const Suite = window.NexusSuite;
+    const app = { workspace: { onLayoutReady() {} },
+      vault: { adapter: vault, configDir: '.obsidian', getAbstractFileByPath: () => null, getName: () => 'Vault' } };
+    const plugin = new Suite(app, { id: 'nexus-suite', dir: '.obsidian/plugins/nexus-suite' });
+    plugin.loadData = async () => (vault._store[OWN] ? JSON.parse(await vault.read(OWN)) : null);
+    plugin.saveData = async (value) => { await vault.write(OWN, JSON.stringify(value)); };
+    plugin._deviceId = deviceId;
+    plugin.getCredential = () => ({ username: 'u', secret: 'p' });
+    await plugin.loadSettings();
+    if (!reloadOnly) {
+      plugin.settings.vaultSync.enabled = true;
+      plugin.settings.vaultSync.backup = false;
+      await plugin.setDeviceSetting('vaultSyncUrl', 'https://x/dav');
+    }
+    const vs = new R.NexusVaultSync(plugin);
+    vs.client = () => server;
+    return { plugin, vs };
+  }
+  const file = (store) => JSON.parse(new TextDecoder().decode(store[OWN].bytes));
+
+  await (async () => {
+    /* Field test 2026-10-11: the laptop's data.json replaced the tablet's on its
+       first run, and after a reload the tablet had no server URL. */
+    const server = fakeServer({});
+    const laptop = await realDevice(memoryVault({ 'a.md': 'a' }), server, 'dev-a');
+    await laptop.plugin.setDeviceSetting('vaultSyncDeviceName', 'Laptop');
+    laptop.plugin.settings.vaultSync.keepBackups = 7;
+    await laptop.plugin.saveSettings();
+    await laptop.vs.syncNow(false);
+
+    const tabletVault = memoryVault({});
+    const tablet = await realDevice(tabletVault, server, 'dev-b');
+    await tablet.plugin.setDeviceSetting('vaultSyncDeviceName', 'Tablet');
+    const report = await tablet.vs.syncNow(false);
+    const here = file(tabletVault._store), there = file(server._store);
+    eq('settings · no conflict copy of data.json', Object.keys(tabletVault._store).filter(p => /\(conflict/.test(p)), []);
+    eq('settings · the tablet kept its own bag on disk', here.devices['dev-b'].vaultSyncDeviceName, 'Tablet');
+    eq('settings · and gained the laptop\'s', here.devices['dev-a'].vaultSyncDeviceName, 'Laptop');
+    eq('settings · a joining device takes the shared settings', tablet.plugin.settings.vaultSync.keepBackups, 7);
+    ok('settings · the merged file went back to the server', !!(there.devices['dev-a'] && there.devices['dev-b']), JSON.stringify(Object.keys(there.devices)));
+    eq('settings · no conflict is announced', [report.conflicts, report.failed], [0, 0]);
+    const reloaded = await realDevice(tabletVault, server, 'dev-b', true);
+    eq('settings · after a reload the tablet still has its server', reloaded.plugin.deviceSetting('vaultSyncDeviceName', ''), 'Tablet');
+    const again = await tablet.vs.syncNow(false);
+    eq('settings · the next run has nothing to do', [again.uploaded, again.downloaded, again.conflicts], [0, 0, 0]);
+    const laptopAgain = await laptop.vs.syncNow(false);
+    eq('settings · the laptop takes the merged file and keeps its own bag',
+       [laptopAgain.downloaded, laptop.plugin.deviceSetting('vaultSyncDeviceName', ''), Object.keys(laptop.plugin.settings.devices).sort()],
+       [1, 'Laptop', ['dev-a', 'dev-b']]);
+    const settled = [await laptop.vs.syncNow(false), await tablet.vs.syncNow(false)];
+    eq('settings · and both are quiet afterwards', settled.map(r => r.uploaded + r.downloaded + r.conflicts), [0, 0]);
+
+    /* Reviewer finding: a shared setting changed on this device was thrown away
+       whenever the other device had also saved data.json. Three-way now. */
+    const keepVs = laptop.plugin.settings.vaultSync;           // a settings page holds this
+    tablet.plugin.settings.vaultSync.keepBackups = 5;           // changed here
+    await tablet.plugin.saveSettings();
+    laptop.plugin.settings.vaultSync.exclude = ['Archive/'];    // changed there, another key
+    await laptop.plugin.saveSettings();
+    await laptop.vs.syncNow(false);
+    const both = await tablet.vs.syncNow(false);
+    eq('three-way · this device\'s change survives the other\'s', tablet.plugin.settings.vaultSync.keepBackups, 5);
+    eq('three-way · and the other device\'s change arrives', tablet.plugin.settings.vaultSync.exclude, ['Archive/']);
+    eq('three-way · neither is a clash', both.settingsClashes, []);
+    await laptop.vs.syncNow(false);
+    eq('three-way · the laptop gets both', [laptop.plugin.settings.vaultSync.keepBackups, laptop.plugin.settings.vaultSync.exclude], [5, ['Archive/']]);
+    ok('in place · the module object a settings page holds is still the live one', keepVs === laptop.plugin.settings.vaultSync && keepVs.keepBackups === 5);
+
+    // Both change the same value: the server's wins and the run says so.
+    tablet.plugin.settings.vaultSync.keepBackups = 3; await tablet.plugin.saveSettings();
+    laptop.plugin.settings.vaultSync.keepBackups = 9; await laptop.plugin.saveSettings();
+    await laptop.vs.syncNow(false);
+    window.__notices = [];
+    const clash = await tablet.vs.syncNow(false);
+    eq('clash · the server\'s value wins', tablet.plugin.settings.vaultSync.keepBackups, 9);
+    eq('clash · and is reported by name', clash.settingsClashes, ['vaultSync.keepBackups']);
+    ok('clash · in a notice', (window.__notices || []).some(n => /vaultSync\.keepBackups/.test(n)), JSON.stringify(window.__notices));
+
+    // A per-device dashboard is the device's own, like its bag.
+    tablet.plugin.settings.homepage.profiles = { 'dev-b': { name: 'tablet board' } };
+    await tablet.plugin.saveSettings();
+    laptop.plugin.settings.homepage.profiles = { 'dev-a': { name: 'laptop board' }, 'dev-b': { name: 'stale' } };
+    await laptop.plugin.saveSettings();
+    await laptop.vs.syncNow(false);
+    await tablet.vs.syncNow(false);
+    eq('own entries · the tablet keeps its dashboard', tablet.plugin.settings.homepage.profiles['dev-b'].name, 'tablet board');
+    eq('own entries · and has the laptop\'s', tablet.plugin.settings.homepage.profiles['dev-a'].name, 'laptop board');
+  })();
+
+  await (async () => {
+    /* Reviewer finding (2a): the base was the local file at the END of a run,
+       so a setting changed during the run — never uploaded — became "agreed",
+       and the next merge took the other device's value without a word. The
+       base is now what crossed the wire. */
+    const server = fakeServer({});
+    const laptop = await realDevice(memoryVault({}), server, 'dev-a');
+    await laptop.vs.syncNow(false);
+    const tabletVault = memoryVault({});
+    const tablet = await realDevice(tabletVault, server, 'dev-b');
+    await tablet.vs.syncNow(false);
+    await laptop.vs.syncNow(false);
+    // A change on the tablet lands after the run's index, before its end.
+    const realReconcile = tablet.vs.reconcile.bind(tablet.vs);
+    tablet.vs.reconcile = async (...a) => {
+      tablet.plugin.settings.vaultSync.keepBackups = 11;
+      await tablet.plugin.saveSettings();
+      return realReconcile(...a);
+    };
+    laptop.plugin.settings.vaultSync.exclude = ['Other/']; await laptop.plugin.saveSettings();
+    await laptop.vs.syncNow(false);
+    await tablet.vs.syncNow(false);
+    tablet.vs.reconcile = realReconcile;
+    const state = JSON.parse(await tabletVault.read(tablet.vs.statePath));
+    ok('base · a change made during the run is not in the base', state.settingsBase.vaultSync.keepBackups !== 11, JSON.stringify(state.settingsBase.vaultSync));
+    laptop.plugin.settings.vaultSync.backup = true; laptop.plugin.settings.vaultSync.backup = false;
+    laptop.plugin.settings.vaultSync.exclude = ['Other/', 'More/']; await laptop.plugin.saveSettings();
+    await laptop.vs.syncNow(false);
+    const next = await tablet.vs.syncNow(false);
+    eq('base · so the next merge keeps it', tablet.plugin.settings.vaultSync.keepBackups, 11);
+    eq('base · without calling it a clash', next.settingsClashes, []);
+  })();
+
+  await (async () => {
+    // Reviewer finding (2b): with config sync off data.json is not carried,
+    // so no base may be recorded for it.
+    const vault = memoryVault({ 'a.md': 'a' });
+    const dev = await realDevice(vault, fakeServer({}), 'dev-e');
+    dev.plugin.settings.vaultSync.config = false;
+    await dev.vs.syncNow(false);
+    const state = JSON.parse(await vault.read(dev.vs.statePath));
+    eq('base · config sync off records no settings base', state.settingsBase, undefined);
+  })();
+
+  await (async () => {
+    // Reviewer finding: adopting a file from an older device ran the
+    // tasks-module cleanup, which deletes THIS device's credentials.
+    const dev = await realDevice(memoryVault({}), fakeServer({}), 'dev-f');
+    window.localStorage.setItem(dev.plugin.credKey('old-acct'), '{"secret":"x"}');
+    await dev.plugin.adoptIncomingSettings({ tasksCalendar: { accounts: [{ id: 'old-acct' }] } }, undefined);
+    ok('adopt · an old file does not delete this device\'s credentials', !!window.localStorage.getItem(dev.plugin.credKey('old-acct')));
+    window.localStorage.removeItem(dev.plugin.credKey('old-acct'));
+  })();
+
+  await (async () => {
+    // Reviewer finding (1): a save that starts while the file is being read
+    // makes the read stale; taking it rolled the save back.
+    const vault = memoryVault({});
+    const dev = await realDevice(vault, fakeServer({}), 'dev-g');
+    await dev.plugin.saveSettings();
+    const stale = JSON.parse(await vault.read(OWN));
+    stale.vaultSync.keepBackups = 77;                       // what the slow read returns
+    dev.plugin.loadData = async () => {
+      dev.plugin.settings.vaultSync.keepBackups = 12;       // the user's toggle, mid-read
+      await dev.plugin.saveSettings();
+      return stale;
+    };
+    await dev.plugin.onExternalSettingsChange();
+    eq('race · a save during the read is not rolled back', dev.plugin.settings.vaultSync.keepBackups, 12);
+  })();
+
+  await (async () => {
+    // Reviewer finding: a broken data.json on the server failed every run, for ever.
+    const server = fakeServer({ [OWN]: '[1, 2' });
+    const vault = memoryVault({});
+    const dev = await realDevice(vault, server, 'dev-c');
+    const report = await dev.vs.syncNow(false);
+    eq('broken · no failure', report.failed, 0);
+    ok('broken · the server now has this device\'s settings', !!(file(server._store).devices || {})['dev-c']);
+    const arrayServer = fakeServer({ [OWN]: '[]' });
+    const dev2 = await realDevice(memoryVault({}), arrayServer, 'dev-d');
+    await dev2.vs.syncNow(false);
+    ok('broken · an array is not a settings file either', !Array.isArray(file(arrayServer._store)));
+  })();
+
+  await (async () => {
+    // A config file on the compare path: same size, other bytes.
+    const vault = memoryVault({ '.obsidian/app.json': '{"a":1}' });
+    const server = fakeServer({ '.obsidian/app.json': '{"b":2}' });
+    const vs = runnerFor(vault, server);
+    const report = await vs.syncNow(false);
+    eq('config · same size, other bytes: no copy either', Object.keys(vault._store).filter(p => /\(conflict/.test(p)), []);
+    eq('config · and not announced', report.conflicts, 0);
+    eq('config · but counted as the download it was', report.downloaded, 1);
+  })();
+
+  await (async () => {
     const vault = memoryVault({ 'a.md': 'a', '.obsidian/plugins/nexus-suite/sync-state.json': '{"files":{}}' });
     const vs = runnerFor(vault, fakeServer({}));
     await vs.syncNow(false);
@@ -636,6 +893,35 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
      settings.devices['dev-b'].vaultSyncUrl, 'https://cloud.example/dav/Vault');
   eq('device · without disturbing the first', settings.devices['dev-a'].vaultSyncUrl, '');
 
+  // The three-way merge, on its own.
+  const baseFile = { look: { theme: 'a', size: 1 }, list: [1], devices: {} };
+  const mineFile = { look: { theme: 'b', size: 1 }, list: [1], devices: { me: { u: 1 } } };
+  const theirFile = { look: { theme: 'a', size: 2 }, list: [1, 2], devices: { you: { u: 2 } } };
+  const m = D.mergeIncoming(theirFile, mineFile, 'me', baseFile);
+  eq('merge · a key only I changed is mine, one only they changed is theirs', [m.merged.look, m.merged.list], [{ theme: 'b', size: 2 }, [1, 2]]);
+  eq('merge · both bags', Object.keys(m.merged.devices).sort(), ['me', 'you']);
+  eq('merge · no clash', m.clashes, []);
+  const c = D.mergeIncoming({ look: { theme: 'c' } }, { look: { theme: 'b' } }, 'me', { look: { theme: 'a' } });
+  eq('merge · both changed the same key: theirs, reported', [c.merged.look.theme, c.clashes], ['c', ['look.theme']]);
+  const j = D.mergeIncoming({ look: { theme: 'c' }, x: 1 }, { look: { theme: 'b' }, only: 'mine' }, 'me');
+  eq('merge · no base: theirs wins, my extra keys stay, the difference is reported', [j.merged.look.theme, j.merged.only, j.clashes], ['c', 'mine', ['look.theme']]);
+  const lists = D.mergeIncoming({ x: { exclude: ['a', 'c'] } }, { x: { exclude: ['a', 'b'] } }, 'me', { x: { exclude: ['a'] } });
+  eq('merge · a list both sides added to keeps both additions', [lists.merged.x.exclude, lists.clashes], [['a', 'c', 'b'], []]);
+  const removed = D.mergeIncoming({ x: { exclude: ['a', 'c'] } }, { x: { exclude: [] } }, 'me', { x: { exclude: ['a'] } });
+  eq('merge · and a removal here is kept too', removed.merged.x.exclude, ['c']);
+  // In place, all the way down: a card a modal holds stays the live card.
+  const held = { homepage: { widgets: [{ uid: 'w1', title: 'old' }], name: 'x' }, gone: 1 };
+  const card = held.homepage.widgets[0], list = held.homepage.widgets;
+  D.assignInPlace(held, { homepage: { widgets: [{ uid: 'w1', title: 'new' }], name: 'y' } });
+  ok('in place · the same card object, with the new title', held.homepage.widgets[0] === card && card.title === 'new' && held.homepage.widgets === list);
+  ok('in place · a key the new file lacks is gone', !('gone' in held));
+  const shared = ['a', 'b'];
+  const sharer = { k: shared };
+  D.assignInPlace(sharer, { k: shared });
+  eq('in place · a list shared by both sides (a default) is not emptied', shared, ['a', 'b']);
+  const own = D.mergeIncoming({ homepage: { profiles: { me: 'old', you: 'y' } } }, { homepage: { profiles: { me: 'new' } } }, 'me', { homepage: { profiles: { me: 'base' } } });
+  eq('merge · my dashboard is mine, theirs is theirs', own.merged.homepage.profiles, { me: 'new', you: 'y' });
+
   const fresh = { vaultSync: {} };
   D.migrateDeviceSettings(fresh, 'dev-new');
   eq('device · a fresh install migrates nothing but is marked done',
@@ -670,6 +956,49 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   eq('round trip · and its own interval', desktopAgain.deviceSetting('vaultSyncIntervalMin', 15), 5);
   eq('round trip · while the tablet keeps its own',
      desktopAgain.settings.devices['dev-tablet'].vaultSyncIntervalMin, 60);
+
+  /* An incoming data.json that never heard of this device (the server's copy,
+     uploaded by the laptop before the tablet joined) must not cost the tablet
+     its connection — not in memory, and not after a reload from disk. */
+  const tabletAlone = await loaded({ vaultSync: { url: '' } }, 'dev-tablet2');
+  await tabletAlone.setDeviceSetting('vaultSyncUrl', 'https://cloud.example/dav');
+  let saved = null;
+  tabletAlone.saveData = async (value) => { saved = JSON.parse(JSON.stringify(value)); };
+  const adopted = await tabletAlone.adoptIncomingSettings(asFile(desktopAgain));
+  ok('adopt · a file without this device\'s bag asks to be sent back', adopted.sendBack === true);
+  eq('adopt · the connection survives in memory', tabletAlone.deviceSetting('vaultSyncUrl', ''), 'https://cloud.example/dav');
+  eq('adopt · and in what was saved', saved.devices['dev-tablet2'].vaultSyncUrl, 'https://cloud.example/dav');
+  ok('adopt · the other devices\' bags came along', !!saved.devices['dev-desktop']);
+  ok('adopt · a file that already says what this device holds is not sent back',
+     (await tabletAlone.adoptIncomingSettings(JSON.parse(JSON.stringify(saved)))).sendBack === false);
+  /* Obsidian mobile calls onExternalSettingsChange for the plugin's own
+     writes. The plugin's own file must not trigger another save (86 calls in
+     7 s on the tablet), and nothing is taken while a save is under way. */
+  let saves = 0;
+  tabletAlone.saveData = async (value) => { saves++; saved = JSON.parse(JSON.stringify(value)); };
+  tabletAlone.loadData = async () => JSON.parse(JSON.stringify(saved));
+  await tabletAlone.saveSettings(); saves = 0;
+  await tabletAlone.onExternalSettingsChange();
+  await tabletAlone.onExternalSettingsChange();
+  eq('external · the plugin\'s own file does not trigger another save', saves, 0);
+  // Memory ahead of the file (a second change while the first save is out):
+  // the file is compared with what was WRITTEN, so it is still left alone.
+  tabletAlone.settings.vaultSync.keepBackups = 44;
+  await tabletAlone.onExternalSettingsChange();
+  eq('external · a change not yet saved is not rolled back', tabletAlone.settings.vaultSync.keepBackups, 44);
+  tabletAlone._settingsWrites = 1;
+  tabletAlone.loadData = async () => ({ shared: 'during a save' });
+  await tabletAlone.onExternalSettingsChange();
+  tabletAlone._settingsWrites = 0;
+  ok('external · nothing is taken while a save is under way', tabletAlone.settings.shared === undefined);
+  await tabletAlone.saveSettings(); saves = 0;
+  tabletAlone.loadData = async () => Object.assign(JSON.parse(JSON.stringify(saved)), { devices: { 'dev-desktop': { vaultSyncDeviceName: 'Desktop' } }, shared: 1 });
+  await tabletAlone.onExternalSettingsChange();
+  eq('external · a really different file is taken, keeping this device\'s bag',
+     [saves, tabletAlone.settings.shared, tabletAlone.deviceSetting('vaultSyncUrl', '')], [1, 1, 'https://cloud.example/dav']);
+  eq('external · and this device\'s unsaved-then-saved change survives it', tabletAlone.settings.vaultSync.keepBackups, 44);
+  const reloaded = await loaded(saved, 'dev-tablet2');
+  eq('adopt · and a reload from disk still has it', reloaded.deviceSetting('vaultSyncUrl', ''), 'https://cloud.example/dav');
 
   // The startup toggle became a three-way choice.
   const oldOn = await loaded({ homepage: { openOnStartup: true } }, 'dev-x');

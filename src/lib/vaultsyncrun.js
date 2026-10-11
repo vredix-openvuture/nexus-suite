@@ -31,6 +31,13 @@ class NexusVaultSync {
     this.lastReport = null;
   }
   get s() { return this.plugin.settings.vaultSync || {}; }
+  get configDir() { return (this.app.vault && this.app.vault.configDir) || '.obsidian'; }
+  /* Where this install keeps its settings — from the manifest, so a renamed
+     plugin folder or another config folder still gets the merge. */
+  get ownSettingsPath() {
+    const dir = this.plugin.manifest && this.plugin.manifest.dir;
+    return dir ? dir + '/data.json' : sync.OWN_SETTINGS;
+  }
 
   /* The connection and the schedule belong to the DEVICE, not to the vault.
      data.json is synced, so a URL or a device name kept in it is the other
@@ -143,11 +150,15 @@ class NexusVaultSync {
     if (!this.s.enabled) { if (loud) new Notice('Nexus: vault sync is off — Settings → Vault sync.'); return null; }
     this.running = true;
     this._remoteFolders = new Set();
+    this._settingsClashes = [];
+    this._agreedSettings = undefined;
+    this._report = null;
     const started = Date.now();
     try {
       const client = this.client();
       const skip = sync.makeSkip({ config: !!this.s.config, exclude: this.s.exclude || [] });
       const state = await this.readState();
+      this._state = state;
       const [local, remote] = await Promise.all([this.localIndex(skip), this.remoteIndex(client, skip)]);
       const plan = sync.planSync(local, remote, state.files, { skip });
       /* A wrong URL, or a folder renamed on the server, comes back as an empty
@@ -161,6 +172,8 @@ class NexusVaultSync {
       }
       const report = await this.apply(client, plan, local, remote, state);
       await this.reconcile(client, report, state, skip);
+      await this.recordSettingsBase(state, report, skip);
+      report.settingsClashes = this._settingsClashes;
       // Saved before the backup: the backup is one large upload and the likeliest
       // thing to fail, and losing the record of what was just synced turned the
       // next run into a conflict on every file.
@@ -173,7 +186,7 @@ class NexusVaultSync {
       const failedKey = report.errors.join('|');
       const newFailure = report.failed > 0 && failedKey !== this._lastFailedKey;
       this._lastFailedKey = failedKey;
-      if (loud || report.conflicts || newFailure || report.backupError) new Notice('Nexus: ' + this.describe(report));
+      if (loud || report.conflicts || newFailure || report.backupError || report.settingsClashes.length) new Notice('Nexus: ' + this.describe(report));
       return report;
     } catch (err) {
       const message = err && err.message ? err.message : 'unknown error';
@@ -198,13 +211,19 @@ class NexusVaultSync {
         : 'each conflict is kept beside it, e.g. "' + report.copies[0] + '".');
     }
     if (report.backupError) text += ' The daily backup failed: ' + report.backupError + '.';
+    if (report.settingsClashes && report.settingsClashes.length) {
+      text += ' Settings changed on this device and another one; the other device\'s are kept for: '
+        + report.settingsClashes.slice(0, 5).join(', ') + (report.settingsClashes.length > 5 ? ' …' : '') + '.';
+    }
     return text;
   }
 
   async apply(client, plan, local, remote, state) {
-    const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, errors: [], copies: [] };
+    const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, errors: [], copies: [], failedPaths: new Set() };
+    this._report = report;
     const fail = (path, err) => {
       report.failed++;
+      report.failedPaths.add(path);
       const why = (err && err.message ? err.message : 'unknown');
       // Every one of them goes to the console, not only the first five. A run
       // that fails on hundreds of files is exactly the run whose report is too
@@ -237,12 +256,17 @@ class NexusVaultSync {
     for (const item of plan.compare || []) {
       try {
         if (await this.sameBytes(client, item.path)) { state.files[item.path] = sync.agreement(local[item.path], remote[item.path]); continue; }
-        await this.settle(client, item, local, remote, state, report); report.conflicts++; settled.add(item.path);
+        if (await this.settle(client, item, local, remote, state, report) !== 'config') report.conflicts++;
+        settled.add(item.path);
       } catch (e) { fail(item.path, e); }
     }
     for (const item of plan.conflict) {
-      try { await this.settle(client, item, local, remote, state, report); report.conflicts++; settled.add(item.path); }
-      catch (e) { fail(item.path, e); }
+      try {
+        // A config file settled without a copy is not announced as a conflict:
+        // there is nothing for anybody to look at.
+        if (await this.settle(client, item, local, remote, state, report) !== 'config') report.conflicts++;
+        settled.add(item.path);
+      } catch (e) { fail(item.path, e); }
     }
     report.settled = settled;
     return report;
@@ -280,6 +304,11 @@ class NexusVaultSync {
     if (folder) await this.ensureRemoteFolder(client, folder);
     const buffer = await adapter.readBinary(path);
     await client.put(path, buffer);
+    // The settings file as it went up is what both sides now hold: the base of
+    // the next merge (recordSettingsBase).
+    if (path === this.ownSettingsPath) {
+      try { this._agreedSettings = JSON.parse(new TextDecoder().decode(buffer)); } catch (e) { this._agreedSettings = undefined; }
+    }
   }
 
   /* The same folder is not created once per file in it.
@@ -304,9 +333,57 @@ class NexusVaultSync {
   async download(client, path) {
     const res = await client.get(path);
     if (!res) throw new Error('the server no longer has it');
+    if (path === this.ownSettingsPath && typeof this.plugin.adoptIncomingSettings === 'function') {
+      await this.adoptSettings(client, path, res.arrayBuffer);
+      return;
+    }
     const folder = path.indexOf('/') >= 0 ? path.slice(0, path.lastIndexOf('/')) : '';
     if (folder) await this.ensureLocalFolder(folder);
     await this.app.vault.adapter.writeBinary(path, res.arrayBuffer);
+  }
+
+  /* The plugin's own data.json is merged, not written over (the plugin's
+     adoptIncomingSettings, lib/devicesettings.js mergeIncoming), against the
+     copy both sides last agreed on. When the merged file holds something the
+     server's did not — this device's bag, a setting changed here — it goes
+     straight back up. A server copy that is not a settings object at all is
+     replaced by this device's, rather than failing on every run for ever. */
+  async adoptSettings(client, path, bytes) {
+    let incoming = null;
+    try { incoming = JSON.parse(new TextDecoder().decode(bytes)); } catch (e) { incoming = null; }
+    if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
+      console.warn('[Nexus] sync: the server\'s "' + path + '" is not a settings file; this device\'s copy replaces it.');
+      await this.upload(client, path);
+      return;
+    }
+    const base = (this._state && this._state.settingsBase) || undefined;
+    const result = await this.plugin.adoptIncomingSettings(incoming, base);
+    if (result && result.clashes && result.clashes.length) this._settingsClashes.push(...result.clashes);
+    this._agreedSettings = incoming;
+    if (result && result.sendBack) {
+      await this.upload(client, path);          // sets _agreedSettings to what went up
+      if (this._report) this._report.uploaded++;
+    }
+  }
+
+  /* The settings file as both sides now agree on it — the base of the next
+     merge. Taken from the bytes that actually crossed this run, or, when the
+     file did not move, from the local copy only while it still matches the
+     record of the last agreement. Never from a file this run did not carry
+     (config sync off) or that failed: a base that holds a change the other
+     side never saw makes that change look agreed, and the next merge throws it
+     away. */
+  async recordSettingsBase(state, report, skip) {
+    const path = this.ownSettingsPath;
+    if ((skip && skip(path)) || (report.failedPaths && report.failedPaths.has(path))) return;
+    if (this._agreedSettings !== undefined) { state.settingsBase = this._agreedSettings; return; }
+    const record = sync.baseSide(state.files && state.files[path], 'local');
+    if (!record) return;
+    try {
+      const stat = await this.app.vault.adapter.stat(path);
+      if (!stat || stat.size !== record.size || Math.abs((stat.mtime || 0) - (record.mtime || 0)) > 2000) return;
+      if (!state.settingsBase) state.settingsBase = JSON.parse(await this.app.vault.adapter.read(path));
+    } catch (e) { /* no base is a safe base: differences are reported next time */ }
   }
 
   // One segment at a time: the mobile adapter refuses a missing parent.
@@ -330,6 +407,7 @@ class NexusVaultSync {
        side is then a guess (the server's time is the upload's, not the edit's),
        so no policy may discard anything: both are kept. */
     const known = !!(state.files && state.files[verdict.path]);
+    if (sync.isConfigPath(verdict.path, this.configDir)) return this.settleConfig(client, verdict, known, local, remote, report);
     const policy = known ? (this.s.conflict || 'keepBoth') : 'keepBoth';
     const outcome = sync.resolveConflict(verdict, policy, local[verdict.path], remote[verdict.path]);
     if (outcome.act === 'upload') { await this.upload(client, verdict.path); return; }
@@ -354,6 +432,24 @@ class NexusVaultSync {
     // One Notice for the whole run (see describe), not one per file: a run
     // with two hundred conflicts buried the screen under two hundred toasts.
     console.warn('[Nexus] sync conflict on "' + verdict.path + '" — this device\'s copy is at "' + copy + '".');
+  }
+
+  /* A config file is settled without a copy (vaultsync.configConflict says
+     why). The plugin's own settings always come down when the server has them:
+     the download merges, keeps this device's bag, and sends the result back if
+     the server's copy lacked it. Returns 'config' so the run does not announce
+     a conflict nobody has anything to look at; it counts as a transfer. */
+  async settleConfig(client, verdict, known, local, remote, report) {
+    const path = verdict.path;
+    let act = sync.configConflict(verdict, known, local[path], remote[path]).act;
+    if (path === this.ownSettingsPath && remote[path]) act = 'download';
+    if (act === 'upload') await this.upload(client, path);
+    else await this.download(client, path);
+    // Counted as the transfer it was, so a run that merged settings does not
+    // report that nothing happened.
+    if (report) report[act === 'upload' ? 'uploaded' : 'downloaded']++;
+    console.info('[Nexus] sync: config file "' + path + '" changed on both sides, took the ' + (act === 'upload' ? 'local' : 'server') + ' copy.');
+    return 'config';
   }
 
   /* ── Backups ───────────────────────────────────────────────────────────── */

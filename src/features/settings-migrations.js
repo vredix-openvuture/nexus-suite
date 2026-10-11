@@ -14,8 +14,12 @@ const { NexusConfirmModal } = require('../modals/misc.js');
 class SettingsMigrations {
 
   /* ---- Settings ---- */
-  async loadSettings() {
-    const data = await this.loadData();
+  /* `raw` is a data.json already in hand (adoptIncomingSettings); without it
+     the file is read. */
+  async loadSettings(raw) {
+    const data = raw !== undefined ? raw : await this.loadData();
+    // What is on disk now, for onExternalSettingsChange (see main.js).
+    if (raw === undefined && data) this._lastWrittenSettings = JSON.parse(JSON.stringify(data));
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     // ensure deep defaults per module
     for (const k of Object.keys(DEFAULT_SETTINGS))
@@ -146,7 +150,8 @@ class SettingsMigrations {
     }
     accountIds.delete('vaultsync');   // never the vault-sync credential, whatever an id says
     for (const id of accountIds) {
-      try { window.localStorage.removeItem(this.credKey(id)); } catch (e) { /* no storage here */ }
+      // Not for a file adopted from another device: its leftovers are not this device's.
+      if (!this._adoptingSettings) { try { window.localStorage.removeItem(this.credKey(id)); } catch (e) { /* no storage here */ } }
     }
     delete this.settings.tasksCalendar;
     // The calendar page was the other pinnable tab; only the dashboard is left.

@@ -73,9 +73,13 @@ function decide(path, local, remote, base) {
   if (!local && !remote) return { path, action: 'none' };            // both deleted it
   if (!local) return { path, action: 'conflict', reason: 'deleted here, changed on the server' };
   if (!remote) return { path, action: 'conflict', reason: 'changed here, deleted on the server' };
-  // They agree already. The record is taken now, otherwise the first edit on
-  // either side is judged against nothing and becomes a conflict.
-  if (local.size === remote.size && Math.abs((local.mtime || 0) - (remote.mtime || 0)) <= 2000) {
+  /* No record yet and the two look alike: taken as agreeing, and the record is
+     made now, otherwise the first edit on either side is judged against
+     nothing and becomes a conflict. Only WITHOUT a record — with one, both
+     sides really did change, and two edits of the same size a moment apart
+     (a ticked checkbox on each device) would be called equal unseen and stay
+     different for good. Those go to the byte comparison below. */
+  if (!base && local.size === remote.size && Math.abs((local.mtime || 0) - (remote.mtime || 0)) <= 2000) {
     return { path, action: 'none', adopt: true };
   }
   /* Same size, different times: most likely the same bytes. A server stamps
@@ -149,6 +153,32 @@ function resolveConflict(verdict, policy, local, remote) {
   }
   return { path, act: 'keepBoth' };
 }
+
+/* A conflict on a file in the config folder.
+
+   A conflict copy of a config file is junk: nothing reads
+   "core-plugins (conflict Tablet …).json", and the copy then travels to every
+   device. The first run of a new device produced one for each config file the
+   fresh install had already written. So a config file is settled without one:
+   the server's copy wins — the same side that keeps the name under Keep both,
+   and on a joining device the configuration being joined. Which side is
+   "newer" cannot be told: the server's time is the upload's, not the edit's.
+   A file deleted on one side and changed on the other is kept. The plugin's
+   own data.json never comes this way: it is merged (vaultsyncrun). */
+function isConfigPath(path, configDir) {
+  return String(path || '').indexOf((configDir || '.obsidian') + '/') === 0;
+}
+function configConflict(verdict, known, local, remote) {
+  const path = verdict.path;
+  if (!remote) return { path, act: 'upload' };
+  return { path, act: 'download' };
+}
+
+/* The plugin's own settings, where the install does not say otherwise
+   (the runner takes the real folder from the manifest). Never settled as a
+   plain file: it carries one bag per device, so it is merged
+   (plugin.adoptIncomingSettings). */
+const OWN_SETTINGS = '.obsidian/plugins/nexus-suite/data.json';
 
 /* ── What is not synced ──────────────────────────────────────────────────────
    Two lists, and the difference between them is the point of D3.
@@ -278,5 +308,6 @@ module.exports = {
   DELETE_FLOOR, DELETE_SHARE, safetyCheck, agreement, baseSide,
   changedSince, decide, planSync, planSize,
   conflictCopyName, resolveConflict, makeSkip,
+  isConfigPath, configConflict, OWN_SETTINGS,
   backupName, backupsToDelete, needsBackup,
 };
