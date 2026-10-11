@@ -27,7 +27,13 @@ class NexusSettingsTab extends PluginSettingTab {
     c.addClass('nx-settings-root');
     c.createEl('h2', { text: 'Nexus Suite' });
 
-    const wrap = c.createDiv('nx-settings');
+    /* The shell is a size container: the stylesheet swaps the rail for the
+       picker by the width THIS tab gets, not by the window's. Inside
+       Obsidian's dialog the two differ by Obsidian's own sidebar, which is why
+       a window-width query never fired in a narrow desktop window. */
+    const shell = c.createDiv('nx-settings-shell');
+    const pick = shell.createDiv('nx-settings-pick');
+    const wrap = shell.createDiv('nx-settings');
     const nav = wrap.createDiv('nx-settings-nav');
     const body = wrap.createDiv('nx-settings-body');
 
@@ -82,12 +88,6 @@ class NexusSettingsTab extends PluginSettingTab {
 
     const renderBody = () => {
       body.empty();
-      /* The only way back to the rail in the narrow layout, so it is built with
-         the panel rather than once — renderBody() empties this container. */
-      const back = body.createDiv({ cls: 'nx-settings-back' });
-      setIcon(back.createDiv('nx-settings-back-ic'), 'chevron-left');
-      back.createSpan({ text: 'All settings' });
-      back.onclick = () => wrap.removeClass('is-panel');
       const t = tabs.find(x => x.id === this.active);
       const m = meta(t.id);
       const head = body.createDiv('nx-settings-head');
@@ -104,7 +104,9 @@ class NexusSettingsTab extends PluginSettingTab {
          can already see, above it they are a wall. */
       nxCollapseSections(body, t.id, 4);
       nav.querySelectorAll('.nx-settings-tab').forEach(el => el.toggleClass('is-active', el.getAttribute('data-id') === this.active));
+      syncPicker();
     };
+    const go = (id) => { this.active = id; renderBody(); body.scrollTop = 0; };
     groups.forEach(g => {
       nav.createDiv({ cls: 'nx-settings-navgroup', text: g.title });
       g.tabs.forEach(t => {
@@ -114,38 +116,43 @@ class NexusSettingsTab extends PluginSettingTab {
         btn.setAttribute('aria-label', m.name + (m.sub ? ' — ' + m.sub : ''));
         setIcon(btn.createDiv('nx-settings-tab-icon'), t.icon);
         btn.createDiv({ cls: 'nx-settings-tab-label', text: m.name });
-        btn.onclick = () => { this.active = t.id; renderBody(); openPanel(); };
+        btn.onclick = () => go(t.id);
       });
     });
 
-    /* Narrow: the rail and the panel are one drill-down column instead of two.
-       The stylesheet has always had this layout; nothing ever set the classes,
-       so on a phone the tab was two columns squeezed into 430px — the state the
-       user reviewed it in. 860px is where 188px of rail starts costing the
-       panel more than it gives.
-
-       The listener is torn down in hide(), because a settings tab is rebuilt
-       every time it is opened and each build would otherwise leave one behind. */
-    const narrow = window.matchMedia('(max-width: 620px)');
-    const openPanel = () => { if (narrow.matches) wrap.addClass('is-panel'); };
-    const applyNarrow = () => {
-      wrap.toggleClass('is-narrow', narrow.matches);
-      // Coming back to a wide window must not leave the panel state behind,
-      // or the rail stays hidden with nothing to bring it back.
-      if (!narrow.matches) wrap.removeClass('is-panel');
+    /* Narrow: one dropdown at the top stands in for the rail, so the page
+       keeps the full width. A native <select> with the nav's groups as
+       optgroups — on a phone it opens the system picker, which is easier to hit
+       than any list drawn in here. ‹ › step through the pages in nav order. */
+    const pickIcon = pick.createDiv('nx-settings-pick-ic');
+    pickIcon.setAttribute('aria-hidden', 'true');
+    const select = pick.createEl('select', { cls: 'dropdown nx-settings-pick-select' });
+    select.setAttribute('aria-label', 'Settings page');
+    groups.forEach(g => {
+      const og = select.createEl('optgroup');
+      og.label = g.title;
+      g.tabs.forEach(t => { const o = og.createEl('option', { text: meta(t.id).name }); o.value = t.id; });
+    });
+    select.onchange = () => go(select.value);
+    const step = (dir, icon, label) => {
+      const b = pick.createEl('button', { cls: 'clickable-icon nx-settings-pick-step' });
+      b.setAttribute('aria-label', label);
+      setIcon(b, icon);
+      b.onclick = () => {
+        const i = tabs.findIndex(t => t.id === this.active);
+        go(tabs[(i + dir + tabs.length) % tabs.length].id);
+      };
     };
-    this._narrowQuery = narrow;
-    this._onNarrow = applyNarrow;
-    narrow.addEventListener('change', applyNarrow);
-    applyNarrow();
+    step(-1, 'chevron-left', 'Previous page');
+    step(1, 'chevron-right', 'Next page');
+    const syncPicker = () => {
+      select.value = this.active;
+      const t = tabs.find(x => x.id === this.active);
+      pickIcon.empty();
+      setIcon(pickIcon, t.icon);
+    };
 
     renderBody();
-  }
-
-  hide() {
-    if (this._narrowQuery && this._onNarrow) this._narrowQuery.removeEventListener('change', this._onNarrow);
-    this._narrowQuery = null;
-    this._onNarrow = null;
   }
 }
 

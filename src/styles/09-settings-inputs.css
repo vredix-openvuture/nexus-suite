@@ -6,7 +6,7 @@
    own their overflow. */
 .nx-settings {
   display: flex; gap: var(--nx-sp-4); align-items: stretch;
-  height: min(72vh, 780px); min-height: 320px;
+  flex: 1; min-height: 0;
 }
 .nx-settings-nav {
   flex: 0 0 188px; display: flex; flex-direction: column; gap: 2px;
@@ -84,79 +84,96 @@
 .nx-settings-body .nx-set-sub { padding-top: 4px; padding-bottom: 14px; border-top: none; }
 .nx-settings-body .nx-set-sub .setting-item-name { font-size: .85em; color: var(--text-muted); padding-left: 14px; }
 
-/* Back out of a module — the narrow layout's only exit, hidden everywhere else. */
-.nx-settings-back { display: none; }
-.nx-settings-back-ic { display: flex; }
-.nx-settings-back-ic .svg-icon { width: 16px; height: 16px; }
+/* ── Width is measured on the tab, not on the window ──
+   Inside Obsidian's dialog the tab is the window minus Obsidian's own sidebar,
+   so a viewport query let a ~680px window squeeze the page to ~250px. The
+   shell and the page are size containers; every narrow rule below asks them. */
+.nx-settings-shell {
+  container: nxshell / inline-size;
+  /* A column, so the picker takes what it needs and the rail + page share the
+     rest — no picker height to subtract, however tall a mobile dropdown is. */
+  display: flex; flex-direction: column;
+  height: min(72vh, 780px); min-height: 320px;
+}
+.nx-settings-body { container: nxbody / inline-size; }
 
-/* ── Mid-width: a window/panel narrow enough that 188px of rail hurts, but
-      still wide enough for two columns. Only the rail gives way. ── */
-@media (max-width: 860px) {
+/* A server address has no spaces to break at; without this one long WebDAV
+   URL widens the whole page and puts a sideways scrollbar under it. */
+.nx-settings-body .nx-row-sub { overflow-wrap: anywhere; }
+
+/* Desktop and tablet: use the whole dialog. Obsidian centres every settings page in a
+   700px column and our shell had a fixed height, so a big settings window
+   stopped growing past 700 x 780. Two panes want the room; past ~1100px the
+   lines get too long, so that is where the centring takes over again. On a
+   phone the tab scrolls as a page and has no height to fill — it keeps the
+   fixed one. */
+body:not(.is-phone) .modal.mod-settings .vertical-tab-content.nx-settings-root {
+  display: flex; flex-direction: column;
+  padding-inline: max(var(--size-4-8, 32px), calc((100% - 1100px) / 2));
+  /* Obsidian leaves 64px under a page that scrolls; ours scrolls inside its
+     panes, so that strip is only lost height. The keyboard still pushes it. */
+  padding-bottom: max(var(--keyboard-height, 0px), var(--size-4-4, 16px));
+}
+body:not(.is-phone) .nx-settings-root > .nx-settings-shell { flex: 1 1 auto; height: auto; }
+
+/* The narrow layout's page picker — hidden while the rail fits. */
+.nx-settings-pick { display: none; }
+
+/* ── Mid-width: the rail gives way first, the page keeps two columns. ── */
+@container nxshell (max-width: 820px) {
   .nx-settings { gap: 14px; }
   .nx-settings-nav { flex: 0 0 154px; }
   .nx-settings-tab { padding: 8px 9px; gap: 8px; }
   .nx-settings-tab-label { font-size: .88em; }
 }
 
-/* ── Narrow (phone, or a settings window squeezed hard): rail + panel become
-      ONE drill-down column. Two columns here would wrap every setting row into
-      rubble — which is exactly what made the tab unusable on mobile.
-      `is-narrow` / `is-panel` are set from settings.js via matchMedia. ── */
-.nx-settings.is-narrow { display: block; }
-.nx-settings.is-narrow .nx-settings-nav {
-  position: static; flex: none; width: auto; gap: 1px;
+/* ── Narrow: a dropdown at the top replaces the rail, the page gets the full
+      width. Two columns here would wrap every setting row into rubble. ── */
+@container nxshell (max-width: 640px) {
+  .nx-settings-nav { display: none; }
+  .nx-settings-pick {
+    display: flex; align-items: center; gap: var(--nx-sp-2);
+    margin-bottom: var(--nx-sp-3);
+  }
+  .nx-settings-pick-ic { display: flex; color: var(--interactive-accent); }
+  .nx-settings-pick-ic .svg-icon { width: 18px; height: 18px; }
+  .nx-settings-pick-select { flex: 1; min-width: 0; }
 }
-.nx-settings.is-narrow .nx-settings-body { display: none; }
-.nx-settings.is-narrow.is-panel .nx-settings-nav { display: none; }
-.nx-settings.is-narrow.is-panel .nx-settings-body { display: block; }
-/* Rows, not a rail: full width, thumb-sized, with a chevron that says "opens". */
-.nx-settings.is-narrow .nx-settings-tab {
-  padding: 12px 12px; gap: 12px;
-  border-bottom: var(--nx-hairline);
-  border-radius: 0;
-}
-.nx-settings.is-narrow .nx-settings-tab.is-active { background: transparent; }
-.nx-settings.is-narrow .nx-settings-tab-label { font-size: 1em; }
-.nx-settings.is-narrow .nx-settings-tab::after {
-  content: ''; margin-left: auto; flex: 0 0 auto;
-  width: 7px; height: 7px; opacity: .6;
-  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;  /* a drawn chevron, not a frame */
-  transform: rotate(-45deg);
-}
-.nx-settings.is-narrow .nx-settings-navgroup { margin-top: 18px; padding-bottom: 4px; }
-.nx-settings.is-narrow .nx-settings-back {
-  display: inline-flex; align-items: center; gap: 3px;
-  margin: 0 0 12px; padding: 7px 14px 7px 9px;
-  border-radius: var(--nx-r-tile); cursor: pointer;
-  font-size: .88em; color: var(--text-muted);
-  background: var(--background-modifier-hover);
-}
-.nx-settings.is-narrow .nx-settings-back:active { color: var(--text-normal); }
 
-/* Very narrow: a name on the left and a control on the right don't both fit —
-   let the row stack instead of squeezing the control to nothing. Obsidian only
-   does this for its own phone layout, not for a narrow desktop window. */
-@media (max-width: 480px) {
-  .nx-settings-root .setting-item {
+/* An older Android WebView has no container queries: fall back to the window
+   width there, which is close enough on a phone, where the tab is the window. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 640px) {
+    .nx-settings-nav { display: none; }
+    .nx-settings-pick { display: flex; align-items: center; gap: var(--nx-sp-2); margin-bottom: var(--nx-sp-3); }
+    .nx-settings-pick-ic { display: flex; color: var(--interactive-accent); }
+    .nx-settings-pick-select { flex: 1; min-width: 0; }
+  }
+}
+
+/* Very narrow page: a name on the left and a control on the right don't both
+   fit — the row stacks instead of squeezing the control to nothing. Obsidian
+   only does this for its own phone layout, not for a narrow desktop window. */
+@container nxbody (max-width: 460px) {
+  .nx-settings-body .setting-item {
     flex-direction: column; align-items: stretch; gap: 8px;
   }
-  .nx-settings-root .setting-item-info { margin-right: 0; }
-  .nx-settings-root .setting-item-control {
+  .nx-settings-body .setting-item-info { margin-right: 0; }
+  .nx-settings-body .setting-item-control {
     justify-content: flex-start; flex-wrap: wrap; width: 100%;
   }
-  .nx-settings-root .setting-item-control input[type="text"],
-  .nx-settings-root .setting-item-control input[type="number"],
-  .nx-settings-root .setting-item-control select,
-  .nx-settings-root .setting-item-control textarea { max-width: 100%; }
+  .nx-settings-body .setting-item-control input[type="text"],
+  .nx-settings-body .setting-item-control input[type="number"],
+  .nx-settings-body .setting-item-control select,
+  .nx-settings-body .setting-item-control textarea { max-width: 100%; }
   /* A toggle belongs beside its name, not on a line of its own. */
-  .nx-settings-root .setting-item:has(.checkbox-container) {
+  .nx-settings-body .setting-item:has(.checkbox-container) {
     flex-direction: row; align-items: center;
   }
-  .nx-settings-root .setting-item:has(.checkbox-container) .setting-item-control {
+  .nx-settings-body .setting-item:has(.checkbox-container) .setting-item-control {
     width: auto; justify-content: flex-end;
   }
 }
-
 
 /* ── Multi-line input (Folders/Tags/Properties: one line per entry) ── */
 .nx-multirow-head { border-top: none !important; padding-bottom: 4px; }

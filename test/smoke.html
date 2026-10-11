@@ -84,6 +84,89 @@ function makePlugin() {
   }
 }
 
+// ── the narrow layout: a page picker instead of the rail ───────────────────
+/* The switch is measured on the tab, not on the window: the same 1000px
+   window shows the rail in a wide tab and the picker in a 420px one — the
+   width left in a ~680px window once Obsidian's own sidebar is drawn. */
+{
+  const css = document.createElement('link');
+  css.rel = 'stylesheet'; css.href = 'plugin/styles.css';
+  await new Promise(res => { css.onload = css.onerror = res; document.head.appendChild(css); });
+  const p = makePlugin();
+  const SettingsTab = window.NexusSettingsTab;
+  const mount = (width, active) => {
+    const host = document.body.createDiv();
+    host.style.width = width + 'px';
+    const tab = new SettingsTab(p.app, p);
+    tab.active = active;
+    host.appendChild(tab.containerEl);
+    tab.display();
+    return { host, tab, q: (sel) => tab.containerEl.querySelector(sel) };
+  };
+  const shown = (el) => !!el && getComputedStyle(el).display !== 'none';
+
+  const wide = mount(1000, 'vaultSync');
+  ok('settings narrow · a wide tab shows the rail', shown(wide.q('.nx-settings-nav')));
+  ok('settings narrow · and no picker', !shown(wide.q('.nx-settings-pick')));
+
+  const slim = mount(420, 'vaultSync');
+  ok('settings narrow · a 420px tab hides the rail', !shown(slim.q('.nx-settings-nav')));
+  ok('settings narrow · and shows the picker', shown(slim.q('.nx-settings-pick')));
+  const select = slim.q('.nx-settings-pick-select');
+  const navIds = Array.from(slim.tab.containerEl.querySelectorAll('.nx-settings-tab[data-id]')).map(el => el.getAttribute('data-id'));
+  const optIds = Array.from(select.querySelectorAll('option')).map(o => o.value);
+  ok('settings narrow · the picker offers every page, in nav order', JSON.stringify(optIds) === JSON.stringify(navIds), optIds.join(','));
+  ok('settings narrow · grouped like the nav', select.querySelectorAll('optgroup').length === slim.tab.containerEl.querySelectorAll('.nx-settings-navgroup').length);
+  ok('settings narrow · shows the open page', select.value === 'vaultSync', select.value);
+  const body = slim.q('.nx-settings-body');
+  ok('settings narrow · the page gets the full width', body.getBoundingClientRect().width > 380, body.getBoundingClientRect().width);
+  const fieldRow = (root) => Array.from(root.querySelectorAll('.setting-item'))
+    .find(r => !r.querySelector('.checkbox-container') && r.querySelector('.setting-item-control input, .setting-item-control select, .setting-item-control textarea'));
+  const row = fieldRow(body);
+  ok('settings narrow · a row with a field stacks', !!row && getComputedStyle(row).flexDirection === 'column', row && getComputedStyle(row).flexDirection);
+  const wideRow = fieldRow(wide.q('.nx-settings-body'));
+  ok('settings narrow · but not in a wide tab', !!wideRow && getComputedStyle(wideRow).flexDirection !== 'column');
+
+  select.value = 'banner'; select.dispatchEvent(new Event('change'));
+  ok('settings narrow · picking a page opens it', slim.tab.active === 'banner' && /Banner/i.test(slim.q('.nx-settings-head').textContent), slim.tab.active);
+  ok('settings narrow · the rail follows', slim.q('.nx-settings-tab.is-active').getAttribute('data-id') === 'banner');
+  const [prev, next] = slim.tab.containerEl.querySelectorAll('.nx-settings-pick-step');
+  const i = navIds.indexOf('banner');
+  next.click();
+  ok('settings narrow · › steps to the next page', slim.tab.active === navIds[i + 1] && select.value === navIds[i + 1], slim.tab.active);
+  slim.tab.active = navIds[0]; slim.tab.display();
+  slim.tab.containerEl.querySelector('.nx-settings-pick-step').click();
+  ok('settings narrow · ‹ on the first page wraps to the last', slim.tab.active === navIds[navIds.length - 1], slim.tab.active);
+  // Between the two thresholds: the picker is up, but the rows still have room.
+  const mid = mount(560, 'vaultSync');
+  ok('settings narrow · a 560px tab uses the picker', shown(mid.q('.nx-settings-pick')) && !shown(mid.q('.nx-settings-nav')));
+  const midRow = fieldRow(mid.q('.nx-settings-body'));
+  ok('settings narrow · and keeps rows side by side', !!midRow && getComputedStyle(midRow).flexDirection !== 'column');
+  // The rail + page fill the shell under the picker instead of overflowing it.
+  const shellBox = mid.q('.nx-settings-shell').getBoundingClientRect(), pageBox = mid.q('.nx-settings').getBoundingClientRect();
+  ok('settings narrow · the page ends inside the shell', pageBox.bottom <= shellBox.bottom + 1, pageBox.bottom + ' > ' + shellBox.bottom);
+  wide.host.remove(); slim.host.remove(); mid.host.remove();
+
+  // Desktop dialog: the page uses the dialog's height and grows past
+  // Obsidian's 700px reading column, up to 1100px.
+  {
+    const modal = document.body.createDiv();
+    modal.className = 'modal mod-settings';
+    modal.style.cssText = 'width:1500px;height:1000px;display:flex';
+    const tab = new SettingsTab(p.app, p);
+    tab.active = 'vaultSync';
+    tab.containerEl.classList.add('vertical-tab-content');
+    tab.containerEl.style.cssText = 'flex:1;height:100%;overflow-y:auto;box-sizing:border-box';
+    modal.appendChild(tab.containerEl);
+    tab.display();
+    const shell = tab.containerEl.querySelector('.nx-settings-shell').getBoundingClientRect();
+    ok('settings dialog · the page fills the dialog height', shell.height > 900, shell.height);
+    ok('settings dialog · and is 1100px wide, not 700', Math.round(shell.width) === 1100, shell.width);
+    ok('settings dialog · nothing spills over', tab.containerEl.scrollHeight <= tab.containerEl.clientHeight + 1, tab.containerEl.scrollHeight + '/' + tab.containerEl.clientHeight);
+    modal.remove();
+  }
+}
+
 // ── the add-a-server dialog ────────────────────────────────────────────────
 {
   const p = makePlugin();
