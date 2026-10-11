@@ -662,7 +662,7 @@ with conflicts. Their working files (`.syncthing.*.tmp`, `.sync_*.db`,
 | **Conflicts** | Keep both by default: the server version keeps the file name, yours is saved beside it with the device name and time in it. Newer-wins, this-device-wins and server-wins are offered and are described as what they are, which is a choice to discard something. A file whose two sides have the **same size** but different times is downloaded and compared byte for byte first — the server stamps the time of the upload, not of the edit, so on the first run of a second device every file differs in time. Only real differences become conflicts, and a run reports them in one notice, not one per file. A path with **no record yet** (a device's first run) is always kept twice, whatever the rule: without a record, "newer" would compare the server's upload time with an edit time. Same size on both sides is compared even when the times are a moment apart. Config files (`.obsidian/`) get no copy: the server's wins, the other side's is discarded (the server's time cannot say which edit is newer); the plugin's own `data.json` is merged. |
 | **Deletions** | Go through Obsidian's trash, not `unlink`. A sync that deletes the wrong file has to be recoverable. |
 | **Settings** | With *Carry the settings too* on, `.obsidian` travels — **except** `workspace.json`, `workspace-mobile.json`, `graph.json` and the sync's own state. Those describe this machine; carrying them would rearrange panes you deliberately arranged. |
-| **Backups** | One zip a day into `_backups`, taken after the first sync of the day, oldest removed past the number you keep. The run's record is saved **before** the backup, and a failed backup (a proxy upload limit answers 413) is reported without failing the sync; the next run tries the backup again. The ZIP writer is in the plugin (`lib/zip.js`) for the same reason the PDF writer is: it has to stay one bundled file. |
+| **Backups** | Once a day the **server** copies the vault folder into `<vault folder>-backup/<date>/` beside it (WebDAV `COPY`: nothing passes through the device, so a phone backs up a 1 GB vault too). The first device of the day makes it; the others find it there. The oldest snapshots go past the number you keep. The run's record is saved **before** the backup, and a failed backup (a full quota answers 507) is reported without failing the sync; the next run tries again. Zips from older versions in `_backups` inside the vault folder are moved beside it on the first run. |
 | **Folders** | Created a segment at a time on both sides. `adapter.mkdir` is not the same call on desktop and mobile — asked for `Tasks/Items` where `Tasks` is missing, one makes both and the other refuses — so the device *receiving* a vault has to build the path itself. On the server side the folder is created once per run, not once per file in it. |
 | **When it goes wrong** | Settings → Vault sync → **The last run** says what the run did, names the first five failures in full, and has a *Sync* button that reports right there. Every failure, not only those five, goes to the console as `[Nexus] sync failed on "<path>": <reason>`. |
 
@@ -784,7 +784,7 @@ PATH. Twenty-one pages, ~1650 checks: the toolbar and its options row, selection
 and transforms, the canvas and the spacing tool, objects and the ruler, pen
 gestures, export (the PDF is checked byte by byte), sketch search and the OCR
 command line, the kanban board writing itself back, the planner, the sync
-decision table with the ZIP writer, Chatter, the capture hub, the galaxy, book
+decision table and the server-side backups, Chatter, the capture hub, the galaxy, book
 capture — and `smoke.html`, which renders every settings page, the add-a-server
 dialog and the dashboard, so a split file cannot lose a method that only one
 page calls.
@@ -798,8 +798,7 @@ leaves the frontmatter pointing at nowhere cannot show up in a pure test.
 
 Some of it is verified outside the harness as well, because a structural check is
 not proof a file opens: the exported PDF passes `qpdf --check` and renders with
-`pdftoppm`, and a generated backup archive passes `unzip -t` and reads correctly
-in Python's `zipfile`.
+`pdftoppm`.
 
 While `npm run dev` runs, edit anything under `src/`, then reload the plugin in
 Obsidian (disable/enable, or `Cmd/Ctrl-R`). Dev builds emit an external
@@ -847,7 +846,7 @@ src/
     capture.js, inkpages.js, inkactions.js             (the capture hub's pure layer and writes)
     kanban.js, kanbanblock.js, kanbanedit.js, board.js, graph.js, blockedit.js
     planner.js, plannermigrate.js, daytext.js
-    vaultsync.js (decisions), vaultsyncrun.js (performing them), webdav.js, zip.js, secrets.js
+    vaultsync.js (decisions), vaultsyncrun.js (performing them), webdav.js, secrets.js
     bookcapture.js, booktemplate.js, booksources.js, bookscan.js, ean13.js
     devicesettings.js, foldernotes.js, icons.js, tagtools.js, orphans.js, scratch.js,
     quicknote.js, extcommand.js, force3d.js

@@ -2,6 +2,26 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## Unreleased
+
+### Changed
+
+- **Backups are made by the server, beside the vault.** Once a day the server
+  copies the vault folder into `<vault folder>-backup/<date>/` beside it —
+  e.g. `Obsidian/nexus-backup/2026-10-11/` next to `Obsidian/nexus/`. A copy
+  that is cut off stays a `.partial` and never counts as a backup.
+  Nothing passes through the device, so a phone or tablet backs up a large vault
+  too; the old daily zip was built in memory and a tablet failed on every run
+  ("Invalid array length"). Only the first device of the day makes the snapshot.
+  Zips from older versions move out of `_backups` into the new folder.
+
+### Fixed
+
+- **A device joining a vault no longer reports "clashes".** Its first sync
+  listed every setting where its defaults differed from the vault's as changed
+  on both sides. The vault's values were already taken; now nothing is
+  announced until the devices have a common earlier state.
+
 ## 0.33.0 — 2026-10-11
 
 ### Added

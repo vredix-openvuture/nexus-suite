@@ -16,7 +16,6 @@ function eq(n, g, w) { const a = JSON.stringify(g), b = JSON.stringify(w); ok(n,
 try {
 const S = window.vaultSyncLib;
 const W = window.webdavLib;
-const Z = window.zipLib;
 
 const f = (mtime, size) => ({ mtime, size });
 /* The base remembers what EACH side looked like — see baseSide(). */
@@ -199,19 +198,29 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
 
 // ── backups ────────────────────────────────────────────────────────────────
 {
-  eq('backup · the name sorts by date', S.backupName('My Vault', '2026-08-31T12:00'), 'My Vault 2026-08-31.zip');
-  eq('backup · an awkward vault name is cleaned', S.backupName('a/b:c', '2026-01-02'), 'a b c 2026-01-02.zip');
-  eq('backup · and an empty one still gets a name', S.backupName('', '2026-01-02'), 'vault 2026-01-02.zip');
+  eq('backup · the folder sits beside the vault folder',
+     S.backupFolderUrl('https://cloud.example/remote.php/dav/files/A%20B/Obsidian/nexus/'),
+     'https://cloud.example/remote.php/dav/files/A%20B/Obsidian/nexus-backup');
+  eq('backup · a vault at the very top has nowhere beside it', S.backupFolderUrl('https://cloud.example'), '');
+  eq('backup · a vault at the top of the WebDAV space has none either',
+     [S.backupFolderUrl('https://c.example/remote.php/dav/files/A%20B'), S.backupFolderUrl('https://c.example/remote.php/webdav/')], ['', '']);
+  eq('backup · a snapshot is named by its day', S.backupName('2026-08-31T12:00'), '2026-08-31');
+  eq('backup · one made by hand carries the time', S.backupName('2026-08-31', '1405'), '2026-08-31 1405');
+  eq('backup · only names this code writes carry a date',
+     [S.backupDate('2026-08-31'), S.backupDate('2026-08-31 1405'), S.backupDate('nexus 2026-08-30.zip'),
+      S.backupDate('notes 2026-08-30.md'), S.backupDate('2026-08-31.partial-dev-a'), S.backupDate('notes.txt')],
+     ['2026-08-31', '2026-08-31', '2026-08-30', '', '', '']);
 
   ok('backup · the first one is always needed', S.needsBackup('', '2026-08-31'));
   ok('backup · a second one the same day is not', !S.needsBackup('2026-08-31', '2026-08-31'));
   ok('backup · the next day it is', S.needsBackup('2026-08-31', '2026-09-01'));
 
-  const names = ['v 2026-08-28.zip', 'v 2026-08-29.zip', 'v 2026-08-30.zip', 'v 2026-08-31.zip'];
+  const names = ['2026-08-31', 'v 2026-08-28.zip', '2026-08-30', 'v 2026-08-29.zip', 'readme.txt'];
   eq('rotate · under the limit, nothing goes', S.backupsToDelete(names, 4), []);
-  eq('rotate · over it, the oldest go first', S.backupsToDelete(names, 2),
+  eq('rotate · over it, the oldest go first, zips and folders alike', S.backupsToDelete(names, 2),
      ['v 2026-08-28.zip', 'v 2026-08-29.zip']);
-  eq('rotate · keeping one keeps the newest', S.backupsToDelete(names, 1).length, 3);
+  eq('rotate · keeping one keeps the newest', S.backupsToDelete(names, 1), ['v 2026-08-28.zip', 'v 2026-08-29.zip', '2026-08-30']);
+  ok('rotate · a file without a date is never touched', S.backupsToDelete(names, 1).indexOf('readme.txt') < 0);
 }
 
 // ── URLs and PROPFIND ──────────────────────────────────────────────────────
@@ -248,43 +257,6 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   ok('propfind · its date is parsed', list[1].mtime > 0);
   eq('propfind · the etag loses its quotes', list[1].etag, 'abc');
   eq('propfind · rubbish gives nothing rather than throwing', W.parseListing('not xml at all', 'x'), []);
-}
-
-// ── the archive ────────────────────────────────────────────────────────────
-{
-  // Known vector: the CRC-32 of "123456789" is 0xCBF43926.
-  eq('zip · crc32 of the standard check string',
-     Z.crc32(new TextEncoder().encode('123456789')), 0xCBF43926);
-  eq('zip · of nothing', Z.crc32(new Uint8Array(0)), 0);
-
-  const stamp = Z.dosDateTime(new Date(2026, 7, 31, 14, 30, 20));
-  eq('zip · the DOS date', stamp.date, ((2026 - 1980) << 9) | (8 << 5) | 31);
-  eq('zip · and the time, in two-second steps', stamp.time, (14 << 11) | (30 << 5) | 10);
-  ok('zip · anything before 1980 is clamped rather than wrapping',
-     Z.dosDateTime(new Date(1970, 0, 1)).date >= (0 << 9));
-
-  const archive = await Z.zipArchive([
-    { name: 'a.md', data: '# hello', date: new Date(2026, 7, 31) },
-    { name: 'sub/b.txt', data: 'x'.repeat(500), date: new Date(2026, 7, 31) },
-  ]);
-  const text = Array.from(archive).map(b => String.fromCharCode(b)).join('');
-  ok('zip · starts with a local file header', text.indexOf('PK\x03\x04') === 0);
-  ok('zip · has a central directory', text.indexOf('PK\x01\x02') > 0);
-  ok('zip · and an end record', text.indexOf('PK\x05\x06') > 0);
-  ok('zip · both names are in it', text.indexOf('a.md') > 0 && text.indexOf('sub/b.txt') > 0);
-
-  // The end record has to describe the directory exactly, or nothing opens it.
-  const eocd = text.lastIndexOf('PK\x05\x06');
-  const u16 = (at) => archive[at] | (archive[at + 1] << 8);
-  const u32 = (at) => (archive[at] | (archive[at + 1] << 8) | (archive[at + 2] << 16) | (archive[at + 3] << 24)) >>> 0;
-  eq('zip · the end record counts both entries', u16(eocd + 10), 2);
-  const centralAt = u32(eocd + 16);
-  const centralSize = u32(eocd + 12);
-  ok('zip · and points at the directory', text.slice(centralAt, centralAt + 4) === 'PK\x01\x02');
-  eq('zip · whose size reaches exactly the end record', centralAt + centralSize, eocd);
-
-  const empty = await Z.zipArchive([]);
-  eq('zip · an empty archive is still a valid one', empty.length, 22);
 }
 
 // ── the runner: one MKCOL chain per folder, not per file ───────────────────
@@ -527,8 +499,39 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
         if (o.refuseZip && /\.zip$/.test(p)) throw new Error('uploading "' + p + '" failed with 413');
         store[p] = { bytes: typeof bytes === 'string' ? enc(bytes) : bytes, mtime: (clock += 60000) };
       },
-      async ensureFolder() {}, async list() { return []; }, async remove(p) { delete store[p]; },
+      async ensureFolder() {}, async remove(p) { delete store[p]; },
+      // The backup side: a server-side copy beside the vault, and the old _backups.
+      baseUrl: 'https://cloud.example/dav/Obsidian/nexus', username: 'u', password: 'p',
+      copies: [], moves: [], old: o.old || [],
+      async list(p) { return p === '_backups' ? this.old.map(n => ({ path: '_backups/' + n, folder: false })) : []; },
+      async copy(p, dest) {
+        if (o.refuseCopy) throw new Error('copy of "/" failed with 507');
+        const name = decodeURIComponent(dest.split('/').pop());
+        if (this.store && this.store.names.indexOf(name) >= 0) return false;
+        this.copies.push(dest); if (this.store) this.store.names.push(name); return true;
+      },
+      async move(p, dest) {
+        const name = decodeURIComponent(dest.split('/').pop());
+        if (this.store && this.store.names.indexOf(name) >= 0) return false;
+        this.moves.push([p, dest]); this.old = this.old.filter(n => '_backups/' + n !== p);
+        if (this.store) this.store.names.push(name); return true;
+      },
     };
+  }
+  // The client rooted at "<vault>-backup": what is in it, and what got deleted.
+  function fakeBackupStore(names, server) {
+    const store = { names: names.slice(), removed: [], renamed: [],
+      async request(m) { return { status: 201 }; },
+      async has(n) { return this.names.indexOf(n) >= 0; },
+      async list() { return this.names.map(n => ({ path: n, folder: true })); },
+      async remove(n) { this.removed.push(n); this.names = this.names.filter(x => x !== n); },
+      async move(n, dest) {
+        const to = decodeURIComponent(dest.split('/').pop());
+        if (this.names.indexOf(to) >= 0) return false;
+        this.names = this.names.map(x => (x === n ? to : x)); this.renamed.push([n, to]); return true;
+      } };
+    if (server) server.store = store;
+    return store;
   }
   function runnerFor(vault, server, settings) {
     const plugin = {
@@ -566,21 +569,88 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   })();
 
   await (async () => {
-    // The backup is one big PUT; a proxy limit (413) used to throw away the
-    // record of the whole run, and the next run conflicted on every file.
+    // A server that refuses the copy (507, quota) must not cost the run.
     const vault = memoryVault({ 'a.md': 'aaa', 'b.md': 'bbb' });
-    const server = fakeServer({}, { refuseZip: true });
+    const server = fakeServer({}, { refuseCopy: true });
     const vs = runnerFor(vault, server, { backup: true });
+    vs.backupStore = () => fakeBackupStore([], server);
     window.__notices = [];
     const report = await vs.syncNow(false);
     ok('backup · a failed backup does not fail the sync', !report.error && report.uploaded === 2, JSON.stringify(report));
-    ok('backup · it is reported', /413/.test(report.backupError || ''), report.backupError);
+    ok('backup · it is reported', /507/.test(report.backupError || ''), report.backupError);
     ok('backup · and said out loud', (window.__notices || []).some(n => /backup failed/.test(n)), JSON.stringify(window.__notices));
     const state = JSON.parse(await vault.read(vs.statePath));
     ok('backup · the run\'s record was still saved', !!state.files['a.md'] && !!state.files['b.md']);
     ok('backup · and the day is not marked as backed up', !state.lastBackup, state.lastBackup);
     const next = await vs.syncNow(false);
     eq('backup · the next run has nothing to argue about', [next.uploaded, next.downloaded, next.conflicts], [0, 0, 0]);
+  })();
+
+  await (async () => {
+    /* Field test 2026-10-11: the tablet built a 1 GB zip in memory and failed
+       ("Invalid array length") on every run. The server copies the vault now. */
+    const today = window.obsidianStub.moment().format('YYYY-MM-DD');
+    const root = 'https://cloud.example/dav/Obsidian/nexus-backup';
+    const vault = memoryVault({ 'a.md': 'aaa' });
+    const server = fakeServer({}, { old: ['nexus 2025-12-30.zip'] });
+    const store = fakeBackupStore(['2025-12-31', '2026-01-01', 'notes 2025-01-01.md', '2025-12-20.partial-dev-x'], server);
+    const vs = runnerFor(vault, server, { backup: true, keepBackups: 2 });
+    vs.backupStore = (client, at) => { store.root = at; return store; };
+    const report = await vs.syncNow(false);
+    ok('backup · no error', !report.backupError, report.backupError);
+    eq('backup · the folder sits beside the vault', store.root, root);
+    eq('backup · the server copies into a .partial first', server.copies, [root + '/' + today + '.partial-dev-b']);
+    eq('backup · which becomes the day\'s snapshot once complete', store.renamed, [[today + '.partial-dev-b', today]]);
+    eq('backup · an old zip from _backups moves beside it', server.moves, [['_backups/nexus 2025-12-30.zip', root + '/nexus%202025-12-30.zip']]);
+    ok('backup · an unfinished copy from an earlier day is cleared', store.removed.indexOf('2025-12-20.partial-dev-x') >= 0, JSON.stringify(store.removed));
+    eq('backup · the rotation keeps the newest, zip or folder', store.names.filter(n => window.vaultSyncLib.backupDate(n)).sort(), ['2026-01-01', today].sort());
+    ok('backup · and never touches a file of yours that holds a date', store.names.indexOf('notes 2025-01-01.md') >= 0);
+    const state = JSON.parse(await vault.read(vs.statePath));
+    eq('backup · the day is marked', state.lastBackup, today);
+    await vs.syncNow(false);
+    eq('backup · once a day: the next run copies nothing', server.copies.length, 1);
+
+    // Another device made today's snapshot: this one finds it and copies nothing.
+    const late = fakeServer({});
+    const lateStore = fakeBackupStore([today], late);
+    const vs2 = runnerFor(memoryVault({ 'a.md': 'aaa' }), late, { backup: true });
+    vs2.backupStore = () => lateStore;
+    const r2 = await vs2.syncNow(false);
+    ok('backup · a snapshot another device made counts as done', !r2.backupError && late.copies.length === 0, r2.backupError);
+
+    // Another device's copy of today is still running: not touched, and if it
+    // finishes first, this device's partial is dropped rather than renamed over it.
+    const race = fakeServer({});
+    const raceStore = fakeBackupStore([today + '.partial-dev-x'], race);
+    const vs3 = runnerFor(memoryVault({ 'a.md': 'aaa' }), race, { backup: true });
+    vs3.backupStore = () => raceStore;
+    const realMove = raceStore.move.bind(raceStore);
+    raceStore.move = async (n, dest) => { raceStore.names.push(today); return realMove(n, dest); };   // dev-x finished meanwhile
+    const r3 = await vs3.syncNow(false);
+    ok('backup · another device\'s running copy is left alone', !raceStore.removed.includes(today + '.partial-dev-x'), JSON.stringify(raceStore.removed));
+    ok('backup · losing the race drops this device\'s partial', raceStore.removed.includes(today + '.partial-dev-b') && !r3.backupError, JSON.stringify(raceStore.removed));
+  })();
+
+  await (async () => {
+    // Reviewer: a subfolder or a name already taken must not be deleted with _backups.
+    const server = fakeServer({}, { old: ['v 2025-12-01.zip'] });
+    server.list = async (p) => (p === '_backups' ? [{ path: '_backups/v 2025-12-01.zip', folder: false }, { path: '_backups/keep', folder: true }] : []);
+    let removedOld = false; const realRemove = server.remove; server.remove = async (p) => { if (p === '_backups') removedOld = true; return realRemove(p); };
+    const vs = runnerFor(memoryVault({ 'a.md': 'aaa' }), server, { backup: true });
+    vs.backupStore = () => fakeBackupStore([], server);
+    const report = await vs.syncNow(false);
+    ok('backup · _backups with a subfolder is not deleted', !removedOld);
+    ok('backup · and no snapshot is copied while it is not empty', server.copies.length === 0 && /could not all be moved/.test(report.backupError || ''), report.backupError);
+
+    // A manual backup the same day gets its own name instead of nothing.
+    const s2 = fakeServer({});
+    const st2 = fakeBackupStore([window.obsidianStub.moment().format('YYYY-MM-DD')], s2);
+    const vs2 = runnerFor(memoryVault({ 'a.md': 'aaa' }), s2, { backup: true });
+    vs2.backupStore = () => st2;
+    window.__notices = [];
+    await vs2.backupNow(true);
+    ok('backup now · makes a snapshot even after the daily one', st2.names.some(n => / \d{4}$/.test(n)), JSON.stringify(st2.names));
+    ok('backup now · and says where', (window.__notices || []).some(n => /nexus-backup\//.test(n)), JSON.stringify(window.__notices));
   })();
 
   await (async () => {
@@ -677,6 +747,9 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     eq('settings · a joining device takes the shared settings', tablet.plugin.settings.vaultSync.keepBackups, 7);
     ok('settings · the merged file went back to the server', !!(there.devices['dev-a'] && there.devices['dev-b']), JSON.stringify(Object.keys(there.devices)));
     eq('settings · no conflict is announced', [report.conflicts, report.failed], [0, 0]);
+    // Field test 2026-10-11: a joining tablet listed 21 "clashes" — its own
+    // defaults against the vault's settings. Nothing to agree on yet, nothing to announce.
+    eq('settings · joining names no clashes', report.settingsClashes, []);
     const reloaded = await realDevice(tabletVault, server, 'dev-b', true);
     eq('settings · after a reload the tablet still has its server', reloaded.plugin.deviceSetting('vaultSyncDeviceName', ''), 'Tablet');
     const again = await tablet.vs.syncNow(false);

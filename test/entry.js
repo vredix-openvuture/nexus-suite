@@ -42,7 +42,6 @@ window.plannerLib = require('../src/lib/planner.js');
 window.NexusPlanner = require('../src/views/plannerblock.js').NexusPlanner;
 window.vaultSyncLib = require('../src/lib/vaultsync.js');
 window.webdavLib = require('../src/lib/webdav.js');
-window.zipLib = require('../src/lib/zip.js');
 window.quicknoteLib = require('../src/lib/quicknote.js');
 window.extcommandLib = require('../src/lib/extcommand.js');
 window.kanbanCardLib = require('../src/modals/kanbancard.js');

@@ -178,6 +178,29 @@ class WebDavClient {
     return true;
   }
 
+  /* Server-side copy and move. The destination is a full URL, because a
+     backup lands BESIDE the vault folder, outside this client's base. The
+     server does the work; nothing is downloaded. Overwrite: F never replaces
+     what is there — 412 then means "already there", answered as false. */
+  async copy(path, destUrl) { return this.transfer('COPY', path, destUrl, { Depth: 'infinity' }); }
+  async move(path, destUrl) { return this.transfer('MOVE', path, destUrl, {}); }
+  async transfer(method, path, destUrl, extra) {
+    const res = await this.request(method, path, {
+      headers: Object.assign({ Destination: destUrl, Overwrite: 'F' }, extra),
+    });
+    if (res.status === 412) return false;
+    if (res.status < 200 || res.status >= 300) throw new Error(method.toLowerCase() + ' of "' + (path || '/') + '" failed with ' + res.status);
+    return true;
+  }
+  /* Is there anything at this path? PROPFIND rather than HEAD: not every
+     server answers HEAD on a folder. */
+  async has(path) {
+    const res = await this.request('PROPFIND', path, { headers: { Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' }, body: PROPFIND_BODY });
+    if (res.status === 404) return false;
+    if (res.status === 207 || res.status === 200) return true;
+    throw new Error('checking "' + (path || '/') + '" failed with ' + res.status);
+  }
+
   /* Create a collection and every parent it needs. A server that already has it
      answers 405, which is success for this purpose. */
   async ensureFolder(path) {

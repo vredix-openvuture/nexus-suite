@@ -246,16 +246,38 @@ function makeSkip(options) {
 }
 
 /* ── Backups ────────────────────────────────────────────────────────────────
-   One archive a day, and only so many kept. Named so that sorting the names
-   sorts them by age, which is what makes the rotation a one-liner. */
-function backupName(vaultName, isoDate) {
-  const safe = String(vaultName || 'vault').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'vault';
-  return safe + ' ' + String(isoDate).slice(0, 10) + '.zip';
+   One snapshot a day, made by the SERVER: a WebDAV COPY of the vault folder
+   into a sibling folder "<vault folder>-backup", one subfolder per day. No
+   byte passes through the device, so a phone backs up a 1 GB vault as easily
+   as a desktop — the old zip was built in memory and a tablet could not hold
+   it. Older snapshots from before this are zips; both kinds carry the date in
+   their name, which is what the rotation sorts by. */
+function backupFolderUrl(baseUrl) {
+  const root = String(baseUrl || '').replace(/\/+$/, '');
+  // The top of the user's WebDAV space has no sibling the user may write to.
+  if (/\/remote\.php\/(webdav|dav\/files\/[^/]+)$/i.test(root)) return '';
+  const cut = root.lastIndexOf('/');
+  if (cut < root.indexOf('//') + 2) return '';
+  return root.slice(cut + 1) ? root + '-backup' : '';
+}
+/* The daily snapshot is the bare date; one made by hand that day carries the
+   time as well, so "Back up now" never collides with the daily one. */
+function backupName(isoDate, time) {
+  return String(isoDate).slice(0, 10) + (time ? ' ' + time : '');
+}
+/* Only names this code writes count as backups: a snapshot folder, or a zip
+   from before 2026-10. A file of the user's that happens to hold a date — or a
+   copy still in progress (".partial-…") — is never rotated away. */
+function backupDate(name) {
+  const n = String(name || '');
+  const m = /^(\d{4}-\d{2}-\d{2})( \d{4})?$/.exec(n) || /^.+ (\d{4}-\d{2}-\d{2})\.zip$/.exec(n);
+  return m ? m[1] : '';
 }
 function backupsToDelete(names, keep) {
   const limit = Math.max(1, keep || 30);
-  const sorted = names.slice().sort();          // names sort by date
-  return sorted.length <= limit ? [] : sorted.slice(0, sorted.length - limit);
+  const key = (n) => backupDate(n) + ' ' + n;
+  const dated = names.filter(n => backupDate(n)).sort((a, b) => key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
+  return dated.length <= limit ? [] : dated.slice(0, dated.length - limit);
 }
 function needsBackup(lastIso, nowIso) {
   if (!lastIso) return true;
@@ -309,5 +331,5 @@ module.exports = {
   changedSince, decide, planSync, planSize,
   conflictCopyName, resolveConflict, makeSkip,
   isConfigPath, configConflict, OWN_SETTINGS,
-  backupName, backupsToDelete, needsBackup,
+  backupFolderUrl, backupName, backupDate, backupsToDelete, needsBackup,
 };

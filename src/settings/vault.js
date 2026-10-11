@@ -163,10 +163,10 @@ class VaultPages {
 
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Backups' });
     e.createEl('p', { cls: 'setting-item-description',
-      text: 'One zip a day into _backups on the server, taken after the first sync of the day. The oldest are removed once there are more than you want to keep.' });
+      text: 'Once a day the server copies the vault into a folder beside it ("<vault folder>-backup"), one folder per day — nothing is downloaded for it, so it works on a phone too. The oldest are removed once there are more than you want to keep.' });
     new Setting(e).setName('Daily backup')
       .addToggle(t => t.setValue(s.backup !== false).onChange(async v => { s.backup = v; await this.save(); }));
-    new Setting(e).setName('Keep').setDesc('How many archives stay on the server.')
+    new Setting(e).setName('Keep').setDesc('How many daily snapshots stay on the server.')
       .addText(t => t.setPlaceholder('30').setValue(String(s.keepBackups == null ? 30 : s.keepBackups))
         .onChange(async v => { const n = parseInt(v, 10); s.keepBackups = isFinite(n) && n > 0 ? n : 30; await this.save(); }));
     new Setting(e).setName('Back up now').setDesc('Does not wait for the daily one.')

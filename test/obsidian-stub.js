@@ -158,7 +158,7 @@ function calendarDay(y, m, d) {
 function moment(value) {
   if (value == null) {
     return {
-      format: (f) => (f && f.indexOf('T') < 0 ? FIXED.slice(0, 10) : FIXED),
+      format: (f) => (f === 'HHmm' ? FIXED.slice(11).replace(':', '') : f && f.indexOf('T') < 0 ? FIXED.slice(0, 10) : FIXED),
       isValid: () => true,
       add() { return this; },
       subtract() { return this; },

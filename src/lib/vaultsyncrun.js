@@ -13,10 +13,11 @@
 
 const { Notice, TFile, TFolder, moment } = require('obsidian');
 const sync = require('./vaultsync.js');
-const zip = require('./zip.js');
-const { WebDavClient } = require('./webdav.js');
+const { WebDavClient, joinUrl } = require('./webdav.js');
 const { ensureFolder } = require('./vaultpaths.js');
 
+/* Where backups lived until 2026-10: zips INSIDE the vault folder on the
+   server. Still skipped by the sync, and moved out on the first backup run. */
 const BACKUP_FOLDER = '_backups';
 // Written by the removed "Shared vault" presence notes. Still skipped, so a
 // server that has the folder never pulls it into the vault.
@@ -181,7 +182,7 @@ class NexusVaultSync {
       report.seconds = Math.round((Date.now() - started) / 100) / 10;
       this.lastReport = report;
       await this.dropLegacyState();
-      if (this.s.backup) await this.tryBackup(client, state, skip, report);
+      if (this.s.backup) await this.tryBackup(client, state, report);
       // A file that fails on every run is announced once, not every minute.
       const failedKey = report.errors.join('|');
       const newFailure = report.failed > 0 && failedKey !== this._lastFailedKey;
@@ -358,7 +359,10 @@ class NexusVaultSync {
     }
     const base = (this._state && this._state.settingsBase) || undefined;
     const result = await this.plugin.adoptIncomingSettings(incoming, base);
-    if (result && result.clashes && result.clashes.length) this._settingsClashes.push(...result.clashes);
+    /* Without an agreed copy there is nothing both sides changed FROM — on a
+       device's first run every difference from its defaults would be listed
+       as a clash. The server's values still win; they are just not announced. */
+    if (base && result && result.clashes && result.clashes.length) this._settingsClashes.push(...result.clashes);
     this._agreedSettings = incoming;
     if (result && result.sendBack) {
       await this.upload(client, path);          // sets _agreedSettings to what went up
@@ -456,58 +460,120 @@ class NexusVaultSync {
   /* A failed backup is reported, never fatal: the files are already synced and
      their record saved. The day is not marked as backed up, so the next run
      tries again. */
-  async tryBackup(client, state, skip, report) {
+  async tryBackup(client, state, report) {
     try {
-      await this.maybeBackup(client, state, skip);
+      await this.maybeBackup(client, state);
       await this.writeState(state);
     } catch (err) {
       report.backupError = err && err.message ? err.message : 'unknown error';
       console.error('[Nexus] daily backup failed:', err);
     }
   }
-  async maybeBackup(client, state, skip) {
+  async maybeBackup(client, state) {
     const today = moment().format('YYYY-MM-DD');
     if (!sync.needsBackup(state.lastBackup, today)) return;
-    await this.backup(client, skip);
+    await this.backup(client, false);
     state.lastBackup = today;
   }
   async backupNow(loud) {
     if (!this.s.enabled) { new Notice('Nexus: vault sync is off — Settings → Vault sync.'); return; }
     try {
       const client = this.client();
-      const skip = sync.makeSkip({ config: !!this.s.config, exclude: this.s.exclude || [] });
-      const name = await this.backup(client, skip);
+      const name = await this.backup(client, true);
       const state = await this.readState();
       state.lastBackup = moment().format('YYYY-MM-DD');
       await this.writeState(state);
-      if (loud) new Notice('Nexus: backed up as ' + name + '.');
+      if (loud) new Notice('Nexus: backed up to ' + name + '.');
     } catch (err) {
       new Notice('Nexus: the backup failed — ' + (err && err.message ? err.message : 'unknown error'));
     }
   }
-  async backup(client, skip) {
-    const adapter = this.app.vault.adapter;
-    const index = await this.localIndex(skip);
-    const entries = [];
-    for (const path of Object.keys(index)) {
-      try { entries.push({ name: path, data: new Uint8Array(await adapter.readBinary(path)), date: new Date(index[path].mtime) }); }
-      catch (e) { /* a file that cannot be read is left out rather than failing the archive */ }
+  /* The server copies the vault folder into "<folder>-backup/<date>". Every
+     device asks after its first sync of the day; the first one makes it, the
+     others find it there — one snapshot a day, not one per device.
+
+     The copy goes to "<date>.partial-<device>" and only becomes "<date>" once
+     it finished. A copy cut off by a proxy timeout or a full quota stays a
+     .partial and is cleaned up later; a folder named by its date alone is
+     always complete. A manual backup carries the time, so it never collides
+     with the daily one. */
+  async backup(client, manual) {
+    const root = sync.backupFolderUrl(client.baseUrl);
+    if (!root) throw new Error('the vault folder is the top of the WebDAV space, so there is no folder beside it for backups — sync the vault into a subfolder');
+    const store = this.backupStore(client, root);
+    const made = await store.request('MKCOL', '');
+    if (!(made.status >= 200 && made.status < 300) && made.status !== 405 && made.status !== 301) {
+      throw new Error('creating the backup folder ' + root + ' failed with ' + made.status);
     }
-    const archive = await zip.zipArchive(entries);
-    const name = sync.backupName(this.app.vault.getName(), moment().format('YYYY-MM-DD'));
-    await client.ensureFolder(BACKUP_FOLDER);
-    await client.put(BACKUP_FOLDER + '/' + name, archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength), 'application/zip');
-    await this.rotate(client);
-    return name;
+    if (!(await this.moveOldBackups(client, root))) {
+      // Copying now would put the leftover zips into every snapshot.
+      throw new Error('old backups in "' + BACKUP_FOLDER + '" could not all be moved to the backup folder; they were left where they are');
+    }
+    const now = moment();
+    const today = now.format('YYYY-MM-DD');
+    const name = sync.backupName(today, manual ? now.format('HHmm') : '');
+    const label = decodeURIComponent(client.baseUrl.split('/').pop()) + '-backup/' + name;
+    await this.dropStalePartials(store, today);
+    if (!manual && await store.has(name)) return label;
+    const partial = name + '.partial-' + this.plugin.deviceId();
+    if (!(await client.copy('', joinUrl(root, partial)))) {
+      // This device's own leftover from a run that died: replace it.
+      await store.remove(partial);
+      await client.copy('', joinUrl(root, partial));
+    }
+    if (!(await store.move(partial, joinUrl(root, name)))) await store.remove(partial);   // another device finished first
+    await this.rotate(store);
+    return label;
   }
-  async rotate(client) {
+  // A client rooted at the backup folder, so its listing reads as names.
+  backupStore(client, root) {
+    return new WebDavClient({ baseUrl: root, username: client.username, password: client.password });
+  }
+  /* A partial copy from an earlier day, or this device's from today, is a
+     backup that never finished. Another device's from today may still be
+     running and is left alone. */
+  async dropStalePartials(store, today) {
+    let listing;
+    try { listing = await store.list(''); }
+    catch (e) { return; }
+    const mine = '.partial-' + this.plugin.deviceId();
+    for (const entry of listing) {
+      const n = entry.path.split('/').pop();
+      const at = n.indexOf('.partial-');
+      if (at < 0) continue;
+      if (n.slice(0, 10) < today || n.slice(at) === mine) {
+        try { await store.remove(n); } catch (e) { /* tried again next time */ }
+      }
+    }
+  }
+  /* The zips from before 2026-10 move to the new place once, so the rotation
+     sees them and the vault folder holds only the vault. "_backups" is only
+     removed once everything in it moved: a subfolder, or a zip whose name is
+     already taken beside, stays where it is. */
+  async moveOldBackups(client, root) {
+    let old;
+    try { old = await client.list(BACKUP_FOLDER); }
+    catch (e) { console.warn('[Nexus] could not look into the old "' + BACKUP_FOLDER + '":', e); return false; }
+    let allMoved = true;
+    for (const entry of old) {
+      if (entry.folder) { allMoved = false; continue; }
+      const name = entry.path.split('/').pop();
+      try { if (!(await client.move(entry.path, joinUrl(root, name)))) allMoved = false; }
+      catch (e) { console.warn('[Nexus] could not move the old backup "' + name + '":', e); allMoved = false; }
+    }
+    if (old.length && allMoved) {
+      try { await client.remove(BACKUP_FOLDER); } catch (e) { /* an empty folder left behind costs nothing */ }
+    }
+    return allMoved;
+  }
+  async rotate(store) {
     const keep = Math.max(1, parseInt(this.s.keepBackups, 10) || 30);
     let listing;
-    try { listing = await client.list(BACKUP_FOLDER); }
+    try { listing = await store.list(''); }
     catch (e) { return; }
-    const names = listing.filter(e => !e.folder && /\.zip$/i.test(e.path)).map(e => e.path.split('/').pop());
+    const names = listing.map(e => e.path.split('/').pop()).filter(n => sync.backupDate(n));
     for (const name of sync.backupsToDelete(names, keep)) {
-      try { await client.remove(BACKUP_FOLDER + '/' + name); }
+      try { await store.remove(name); }
       catch (e) { /* a backup that will not delete is not worth failing the run over */ }
     }
   }
