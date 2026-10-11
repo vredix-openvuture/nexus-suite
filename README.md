@@ -659,7 +659,7 @@ with conflicts. Their working files (`.syncthing.*.tmp`, `.sync_*.db`,
 | **Credentials** | localStorage, per device. Never in `data.json` — that is a file in the vault, and the vault is what gets uploaded. |
 | **Connections** | A connection is an **entry in a list**, not a row of text fields: you declare it once in a modal and afterwards only *Test* or *Remove* it. Half-editing one — a new URL against the old password — produces something whose first news of being wrong is a failed sync. To change one, remove it and add it again; removing it takes its stored credential with it. |
 | **Per device** | The server, its user name, this device's name and the schedule (*Sync on start*, *Every*) belong to **this machine** and are stored under its own key in `data.json`, so a sync carries them nowhere. Every device connects itself. Shared policy is not per device: the exclude list, *Carry the settings too*, the conflict rule and the backup count are one answer for the whole vault. |
-| **Conflicts** | Keep both by default: the server version keeps the file name, yours is saved beside it with the device name and time in it. Newer-wins, this-device-wins and server-wins are offered and are described as what they are, which is a choice to discard something. A file whose two sides have the **same size** but different times is downloaded and compared byte for byte first — the server stamps the time of the upload, not of the edit, so on the first run of a second device every file differs in time. Only real differences become conflicts, and a run reports them in one notice, not one per file. A path with **no record yet** (a device's first run) is always kept twice, whatever the rule: without a record, "newer" would compare the server's upload time with an edit time. |
+| **Conflicts** | Keep both by default: the server version keeps the file name, yours is saved beside it with the device name and time in it. Newer-wins, this-device-wins and server-wins are offered and are described as what they are, which is a choice to discard something. A file whose two sides have the **same size** but different times is downloaded and compared byte for byte first — the server stamps the time of the upload, not of the edit, so on the first run of a second device every file differs in time. Only real differences become conflicts, and a run reports them in one notice, not one per file. A path with **no record yet** (a device's first run) is always kept twice, whatever the rule: without a record, "newer" would compare the server's upload time with an edit time. Same size on both sides is compared even when the times are a moment apart. Config files (`.obsidian/`) get no copy: the server's wins, the other side's is discarded (the server's time cannot say which edit is newer); the plugin's own `data.json` is merged. |
 | **Deletions** | Go through Obsidian's trash, not `unlink`. A sync that deletes the wrong file has to be recoverable. |
 | **Settings** | With *Carry the settings too* on, `.obsidian` travels — **except** `workspace.json`, `workspace-mobile.json`, `graph.json` and the sync's own state. Those describe this machine; carrying them would rearrange panes you deliberately arranged. |
 | **Backups** | One zip a day into `_backups`, taken after the first sync of the day, oldest removed past the number you keep. The run's record is saved **before** the backup, and a failed backup (a proxy upload limit answers 413) is reported without failing the sync; the next run tries the backup again. The ZIP writer is in the plugin (`lib/zip.js`) for the same reason the PDF writer is: it has to stay one bundled file. |
@@ -822,7 +822,7 @@ if a name is defined twice) — so every `this.x()` works without forwarding stu
 src/
   main.js            the plugin class: onload/onunload, per-device settings; mixes in features/
   constants.js       data tables: view ids, DEFAULT_SETTINGS, palettes, toolbar items, typography rules
-  settings.js        the settings tab shell (nav, header, folding); mixes in settings/
+  settings.js        the settings tab shell (nav or narrow page picker, header, folding); mixes in settings/
   features/          the plugin's jobs, one file each (mixed into the plugin class)
     settings-migrations.js  loadSettings + one-off migrations
     banner.js, banner-library.js, note-decor.js, property-hider.js, callouts.js,
@@ -886,7 +886,18 @@ vault — the sync server it talks to and the schedule it keeps — lives in `da
 `plugin.setDeviceSetting()`). In the file, so it is synced and backed up; keyed,
 so no device can overwrite another's entry. That is the same arrangement
 `homepage.profiles` uses, and it is why the vault sync can keep carrying
-`data.json` without flattening the other device.
+`data.json` without flattening the other device. Keyed is not enough on its
+own: the file travels whole, so an incoming copy is merged three ways
+(`devicesettings.mergeIncoming`, via `plugin.adoptIncomingSettings`) against
+the copy both sides last agreed on — for the vault sync `settingsBase` in the
+device's sync state, taken from the bytes that crossed the wire; for
+`onExternalSettingsChange` the file this device last wrote. Lists of plain
+values merge additions and removals; anything else both sides changed takes the
+server's value and is reported. Without a base every difference is reported.
+This device's bag and its `homepage.profiles` / `profileNames` entries are
+always its own; bags are never removed by a merge. Merged values are copied into
+the existing objects and lists (`devicesettings.assignInPlace`), and the views
+that draw from settings are drawn again (`reapplySettings`).
 
 Every module is CommonJS (`require` / `module.exports`); esbuild resolves the
 local graph. The dependency graph is a DAG (nothing requires `main`), so there

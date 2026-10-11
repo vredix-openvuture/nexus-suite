@@ -12,6 +12,17 @@ Grouped by what changed for you, not by commit. Newest first.
 
 ### Changed
 
+- **A narrow settings window shows a page picker instead of the side menu.**
+  Once the plugin's part of the settings dialog is narrower than about 640 px,
+  a dropdown at the top (with ‹ › to step through the pages) replaces the menu;
+  on a very narrow page, setting rows put their control under the name. The switch is measured on
+  the tab itself, not on the window: a ~680 px settings window used to leave
+  the page ~250 px and cut it off, because Obsidian's own sidebar takes the
+  rest. This also replaces the phone's list-then-page layout. A long server
+  address no longer widens the Vault sync page.
+- **The plugin's settings use the whole settings window on desktop and tablet.** They
+  used to stop at Obsidian's 700 px reading column and a fixed height of
+  780 px; now they fill the height and grow up to 1100 px wide.
 - **A second file of the same name is now `Name (2)`** wherever the plugin
   creates one — banner imports, scans, kanban card and board notes, sketch
   notes, exports, a renamed ink sidecar. They used to be `Name-1` or `Name 2`
@@ -28,13 +39,42 @@ Grouped by what changed for you, not by commit. Newest first.
 
 ### Fixed
 
-- **Book capture writes catalogue text inert.** Open Library is a public wiki,
-  and plugins such as Templater (on file creation) and Dataview (inline JS) run
-  code they find in a new note. `<%`, `%>` and backticks in a fetched title,
-  author, subject or description are broken up before the note is written;
-  your own template is left as it is.
-- **The add-a-server dialog lost its footer layout in 0.29** — its CSS went with
-  the calendar page. Save sits at the right under the fields again.
+- **A device lost its own sync server after its first sync** (found in a live
+  test, laptop + tablet against Nextcloud). The other device's `data.json`
+  replaced its own, so after the next restart the URL was gone while sync still
+  showed as on. An incoming `data.json` is now merged three ways against the
+  copy both devices last agreed on: a setting only one side changed is taken
+  from that side, so a change made here and another made there both survive; a
+  list of plain values (the exclude list) keeps both sides' additions and
+  removals. What belongs to one device stays with it — its connection, and its
+  own dashboard and name when the dashboard is per device. A setting both
+  changed differently takes the other device's value, and the run's notice
+  names it. The first run after this update (or a device joining) has no agreed
+  copy yet: every setting that differs then takes the server's value, and the
+  notice names those too. The merged file goes back to the server when it holds
+  something the server's copy did not.
+- **Two same-size edits a moment apart were never compared.** Both sides had
+  changed, the sizes matched and the times were under two seconds apart, so the
+  sync took them as equal; the devices then kept different text and every run
+  said "nothing to do". With a record, a same-size change on both sides is now
+  always compared byte for byte.
+- **No conflict copies of config files.** A device joining used to get
+  `core-plugins (conflict …).json` and `data (conflict …).json`, which then
+  travelled everywhere. A config file changed on both sides now takes the
+  server's copy; the other side's is discarded (logged to the console). Which
+  side is newer cannot be told — the server's time is the upload's.
+- **Settings changed on another device are taken in memory**, not only on disk
+  (`onExternalSettingsChange`). The values are written into the objects and
+  lists already in memory, so an open settings page, modal or dashboard card
+  keeps editing the live settings, and the settings tab, dashboard, theme,
+  explorer, callouts and banner are drawn again (the settings tab not while you
+  type in it). Before, the next save wrote the old values back. The plugin's own
+  writes are recognised by what was last written, and a file read while a save
+  was under way is dropped — Obsidian mobile reports the plugin's own writes
+  too, 86 times in seven seconds on the tablet, and answering each with a save
+  made the sync upload `data.json` on every run.
+- **A broken `data.json` on the server** (not JSON, or not a settings object)
+  is replaced by this device's copy instead of failing every run.
 
 ### Removed
 
