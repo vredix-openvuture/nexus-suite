@@ -533,6 +533,14 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     if (server) server.store = store;
     return store;
   }
+  // Records what the progress notice would show, without a notice.
+  function silentProgress() {
+    const p = { planned: null, steps: { pull: 0, push: 0 }, closed: 0,
+      plan(pull, push) { p.planned = [pull, push]; }, step(kind) { p.steps[kind]++; },
+      status() {}, close() { p.closed++; } };
+    window.__lastProgress = p;
+    return p;
+  }
   function runnerFor(vault, server, settings) {
     const plugin = {
       app: { vault: { adapter: vault, getAbstractFileByPath: () => null, getName: () => 'Vault' }, workspace: { onLayoutReady() {} } },
@@ -543,6 +551,7 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     };
     const vs = new R.NexusVaultSync(plugin);
     vs.client = () => server;
+    vs.makeProgress = silentProgress;
     return vs;
   }
 
@@ -566,6 +575,37 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     vault._store['Notes/n3.md'] = { bytes: enc('note 3 edited'), mtime: 9000000 };
     const third = await vs.syncNow(false);
     eq('third run · an ordinary edit is an upload, not a conflict', [third.uploaded, third.conflicts], [1, 0]);
+    const shown = window.__lastProgress;
+    eq('progress · plans one push for the one edit', shown.planned, [0, 1]);
+    eq('progress · and steps through it', [shown.steps.pull, shown.steps.push], [0, 1]);
+    ok('progress · and closes when the run ends', shown.closed >= 1);
+
+    // Pull before push: what arrives is in place before this device's edits go up.
+    const order = [];
+    const srv = vs.client();
+    const realGet = srv.get.bind(srv), realPut = srv.put.bind(srv);
+    srv.get = async (p) => { order.push('pull ' + p); return realGet(p); };
+    srv.put = async (p, b) => { order.push('push ' + p); return realPut(p, b); };
+    srv._store['Notes/n4.md'] = { bytes: enc('note 4 from elsewhere'), mtime: 9990000 };
+    vault._store['Notes/n5.md'] = { bytes: enc('note 5 edited here'), mtime: 9990000 };
+    await vs.syncNow(false);
+    const firstPush = order.findIndex(x => x.indexOf('push ') === 0), lastPull = order.map(x => x.indexOf('pull Notes/n4') === 0).lastIndexOf(true);
+    ok('progress · pulls before it pushes', lastPull >= 0 && firstPush > lastPull, JSON.stringify(order));
+    srv.get = realGet; srv.put = realPut;
+
+    // The notice closes on every way out: a refused run and a thrown one.
+    const blocked = runnerFor(memoryVault(notes), fakeServer({}));
+    await vault.write(blocked.statePath, JSON.stringify({ files: Object.fromEntries(Object.keys(notes).map(p => [p, { local: { size: 6, mtime: 1000 }, remote: { size: 6, mtime: 500000 } }])) }));
+    blocked.readState = async () => ({ files: Object.fromEntries(Object.keys(notes).map(p => [p, { local: { size: 6, mtime: 1000 }, remote: { size: 6, mtime: 500000 } }])) });
+    const refused = await blocked.syncNow(false);
+    ok('progress · a refused run closes it', !!refused.blocked && window.__lastProgress.closed >= 1, JSON.stringify(refused));
+    const broken = runnerFor(memoryVault({}), fakeServer({}));
+    broken.client = () => { throw new Error('no server URL is set'); };
+    await broken.syncNow(false);
+    ok('progress · a run that throws closes it', window.__lastProgress.closed >= 1);
+    broken.makeProgress = () => { throw new Error('no notices here'); };
+    await broken.syncNow(false);
+    ok('progress · a notice that cannot be built does not wedge the sync', broken.running === false);
   })();
 
   await (async () => {
@@ -722,6 +762,7 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
     }
     const vs = new R.NexusVaultSync(plugin);
     vs.client = () => server;
+    vs.makeProgress = silentProgress;
     return { plugin, vs };
   }
   const file = (store) => JSON.parse(new TextDecoder().decode(store[OWN].bytes));

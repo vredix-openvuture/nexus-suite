@@ -2,6 +2,16 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## Unreleased
+
+### Added
+
+- **A progress notice while the vault syncs.** Every run, scheduled or not,
+  shows one notice until it ends: what it is doing while both sides are listed,
+  then a *Pulling* bar (server → this device) and a *Pushing* bar (this device →
+  server) with their counts. A run with nothing to move only says *Up to date —
+  nothing to do.* Pulling now runs before pushing.
+
 ## 0.34.0 — 2026-10-11
 
 ### Changed

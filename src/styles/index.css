@@ -27,6 +27,9 @@
 /* Book capture dialog (kept before the touch overrides). */
 @import "./25-bookcapture.css";
 
+/* The progress notice of a vault sync. */
+@import "./26-sync-progress.css";
+
 /* Cross-cutting touch rules — MUST stay last: they adjust the module rules
    above and win by load order, not by specificity. This import was lost in a
    Syncthing conflict on 2026-08-05, so the whole file has been dead weight ever

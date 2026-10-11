@@ -1,0 +1,23 @@
+/* ── Sync progress notice: a status line and two bars, pull and push ── */
+.nx-syncprog { display: flex; flex-direction: column; gap: var(--nx-sp-1); min-width: var(--nx-field-w); }
+.nx-syncprog-title { font-weight: 600; }
+.nx-syncprog-status { font-size: .88em; color: var(--text-muted); }
+.nx-syncprog-row {
+  display: grid; grid-template-columns: 4.5em 1fr auto;
+  align-items: center; gap: var(--nx-sp-2);
+  font-size: .88em;
+}
+.nx-syncprog-row.is-idle { color: var(--text-faint); }
+/* A track is a container of the fill, so it takes the tile radius. */
+.nx-syncprog-track {
+  height: var(--nx-sp-1);
+  border-radius: var(--nx-r-tile);
+  background: var(--nx-sf-2);
+  overflow: hidden;
+}
+.nx-syncprog-fill {
+  width: 0; height: 100%;
+  background: var(--nx-accent, var(--interactive-accent));
+  transition: width .2s ease-out;
+}
+.nx-syncprog-count { font-variant-numeric: tabular-nums; color: var(--text-muted); }

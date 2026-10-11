@@ -81,7 +81,7 @@ class ItemView {
   registerInterval(id) { return id; }
   addAction() { return document.createElement('div'); }
 }
-class Notice { constructor(msg) { (window.__notices = window.__notices || []).push(msg); } }
+class Notice { constructor(msg) { (window.__notices = window.__notices || []).push(msg); } hide() {} setMessage() {} }
 class TFile {}
 class TFolder {}
 class TAbstractFile {}

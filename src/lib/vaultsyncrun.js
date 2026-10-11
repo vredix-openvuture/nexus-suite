@@ -14,6 +14,7 @@
 const { Notice, TFile, TFolder, moment } = require('obsidian');
 const sync = require('./vaultsync.js');
 const { WebDavClient, joinUrl } = require('./webdav.js');
+const { SyncProgress } = require('./syncprogress.js');
 const { ensureFolder } = require('./vaultpaths.js');
 
 /* Where backups lived until 2026-10: zips INSIDE the vault folder on the
@@ -64,7 +65,11 @@ class NexusVaultSync {
       this.app.workspace.onLayoutReady(() => window.setTimeout(() => this.syncNow(false), 2500));
     }
   }
-  destroy() { if (this.timer) { window.clearInterval(this.timer); this.timer = null; } }
+  destroy() {
+    if (this.timer) { window.clearInterval(this.timer); this.timer = null; }
+    // A run stalled on a request would otherwise leave its notice up after unload.
+    if (this._progress) this._progress.close();
+  }
 
   schedule() {
     if (this.timer) { window.clearInterval(this.timer); this.timer = null; }
@@ -155,7 +160,12 @@ class NexusVaultSync {
     this._agreedSettings = undefined;
     this._report = null;
     const started = Date.now();
+    // Made inside the try: a notice that cannot be built must not leave
+    // `running` set and stop every later run.
+    let progress = null;
     try {
+      progress = this.makeProgress();
+      this._progress = progress;
       const client = this.client();
       const skip = sync.makeSkip({ config: !!this.s.config, exclude: this.s.exclude || [] });
       const state = await this.readState();
@@ -171,7 +181,10 @@ class NexusVaultSync {
         new Notice('Nexus: sync stopped — ' + safety.reason + '.');
         return { blocked: safety.reason };
       }
-      const report = await this.apply(client, plan, local, remote, state);
+      progress.plan(plan.download.length + plan.deleteLocal.length + plan.compare.length + plan.conflict.length,
+        plan.upload.length + plan.deleteRemote.length);
+      const report = await this.apply(client, plan, local, remote, state, progress);
+      progress.status('Recording what both sides hold now…');
       await this.reconcile(client, report, state, skip);
       await this.recordSettingsBase(state, report, skip);
       report.settingsClashes = this._settingsClashes;
@@ -182,6 +195,7 @@ class NexusVaultSync {
       report.seconds = Math.round((Date.now() - started) / 100) / 10;
       this.lastReport = report;
       await this.dropLegacyState();
+      progress.close();
       if (this.s.backup) await this.tryBackup(client, state, report);
       // A file that fails on every run is announced once, not every minute.
       const failedKey = report.errors.join('|');
@@ -194,9 +208,14 @@ class NexusVaultSync {
       new Notice('Nexus: sync failed — ' + message);
       return { error: message };
     } finally {
+      if (progress) progress.close();
+      this._progress = null;
       this.running = false;
     }
   }
+
+  // Shown on every run, scheduled or not; tests swap in a silent one.
+  makeProgress() { return new SyncProgress(); }
 
   describe(report) {
     if (!report) return 'nothing happened.';
@@ -219,7 +238,7 @@ class NexusVaultSync {
     return text;
   }
 
-  async apply(client, plan, local, remote, state) {
+  async apply(client, plan, local, remote, state, progress) {
     const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, errors: [], copies: [], failedPaths: new Set() };
     this._report = report;
     const fail = (path, err) => {
@@ -237,21 +256,17 @@ class NexusVaultSync {
     // an upload and guessing at it is what makes a sync loop.
     const settled = new Set();
 
-    for (const item of plan.upload) {
-      try { await this.upload(client, item.path); report.uploaded++; settled.add(item.path); }
-      catch (e) { fail(item.path, e); }
-    }
+    // Pull (server → device) first, then push: what arrives is in place before
+    // anything of this device's goes up.
     for (const item of plan.download) {
       try { await this.download(client, item.path); report.downloaded++; settled.add(item.path); }
       catch (e) { fail(item.path, e); }
-    }
-    for (const item of plan.deleteRemote) {
-      try { await client.remove(item.path); report.deleted++; delete state.files[item.path]; }
-      catch (e) { fail(item.path, e); }
+      progress.step('pull');
     }
     for (const item of plan.deleteLocal) {
       try { await this.removeLocal(item.path); report.deleted++; delete state.files[item.path]; }
       catch (e) { fail(item.path, e); }
+      progress.step('pull');
     }
     for (const path of plan.adopt || []) state.files[path] = sync.agreement(local[path], remote[path]);
     for (const item of plan.compare || []) {
@@ -260,7 +275,10 @@ class NexusVaultSync {
         if (await this.settle(client, item, local, remote, state, report) !== 'config') report.conflicts++;
         settled.add(item.path);
       } catch (e) { fail(item.path, e); }
+      finally { progress.step('pull'); }
     }
+    // Conflicts count under pulling even when settling one also uploads: they
+    // start from what the server has.
     for (const item of plan.conflict) {
       try {
         // A config file settled without a copy is not announced as a conflict:
@@ -268,6 +286,17 @@ class NexusVaultSync {
         if (await this.settle(client, item, local, remote, state, report) !== 'config') report.conflicts++;
         settled.add(item.path);
       } catch (e) { fail(item.path, e); }
+      progress.step('pull');
+    }
+    for (const item of plan.upload) {
+      try { await this.upload(client, item.path); report.uploaded++; settled.add(item.path); }
+      catch (e) { fail(item.path, e); }
+      progress.step('push');
+    }
+    for (const item of plan.deleteRemote) {
+      try { await client.remove(item.path); report.deleted++; delete state.files[item.path]; }
+      catch (e) { fail(item.path, e); }
+      progress.step('push');
     }
     report.settled = settled;
     return report;
