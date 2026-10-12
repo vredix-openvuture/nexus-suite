@@ -367,6 +367,7 @@ const NX_MODULES = {
   kanban:        { name: 'Kanban',       sub: 'Columns and cards in a note, or every note of a folder' },
   planner:       { name: 'Planner',      sub: 'A month on one screen, one line per day — the paper-calendar view' },
   vaultSync:     { name: 'Vault sync',   sub: 'The whole vault to a WebDAV server, with daily backups and conflict copies' },
+  addons:        { name: 'Add-ons',      sub: 'Plugins that extend the suite, downloaded from their own repos' },
   quicknote:     { name: 'Chatter',      sub: 'A note you speak instead of type' },
   bookCapture:   { name: 'Book capture', sub: 'A book note from its ISBN — scan the barcode, the cover comes with it' },
   galaxy:        { name: 'Galaxy',       sub: 'The vault as a turnable map of its links' },

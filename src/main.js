@@ -427,6 +427,8 @@ class NexusSuite extends Plugin {
     this.settingTab = new NexusSettingsTab(this.app, this);
     this.addSettingTab(this.settingTab);
     console.log('[Nexus] Suite loaded · Banner module:', this.settings.banner.enabled);
+    // Last: an add-on that loaded first registers its pages and sources now.
+    this.announceReady();
   }
 
   onunload() {
@@ -565,14 +567,7 @@ class NexusSuite extends Plugin {
     }
     try { this.app.workspace.getLeavesOfType('nx-homepage').forEach(l => { try { l.view.render(); } catch (e) {} }); }
     catch (e) { console.warn('[Nexus] re-drawing the dashboard failed:', e); }
-    // The settings tab is redrawn only when nobody is typing in it: a redraw
-    // throws away the field with the caret in it.
-    const tab = this.settingTab;
-    try {
-      const shown = tab && tab.containerEl && tab.containerEl.isShown && tab.containerEl.isShown();
-      const typing = shown && document.activeElement && tab.containerEl.contains(document.activeElement);
-      if (shown && !typing) tab.display();
-    } catch (e) { console.warn('[Nexus] re-drawing the settings tab failed:', e); }
+    this.redrawSettings();
     if (this.vaultSync) this.vaultSync.schedule();
   }
 
@@ -749,6 +744,7 @@ class NexusSuite extends Plugin {
 
 // Everything else the plugin does lives in src/features/, one file per job.
 mixin(NexusSuite, [
+  require('./features/addon-host.js'),
   require('./features/settings-migrations.js'),
   require('./features/ink-pdf.js'),
   require('./features/note-decor.js'),

@@ -58,3 +58,4 @@ window.NexusSettingsTab = require('../src/settings.js').NexusSettingsTab;
 window.NexusHomepageView = require('../src/views/homepage.js').NexusHomepageView;
 window.accountModal = require('../src/modals/account.js');
 window.textLib = require('../src/lib/text.js');
+window.addonsLib = require('../src/lib/addons.js');

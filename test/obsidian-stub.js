@@ -252,6 +252,9 @@ module.exports = {
   Plugin, PluginSettingTab, Setting, Modal, ItemView, Notice, TFile, TFolder,
   TAbstractFile, Component, MarkdownRenderChild, MarkdownView, FuzzySuggestModal, SuggestModal, Menu,
   MenuItem, ButtonComponent, Platform, EditorSuggest, moment, requestUrl, normalizePath,
+  // Tests set globalThis.__apiVersion to play an older Obsidian.
+  requireApiVersion: (v) => { const have = String(globalThis.__apiVersion || '1.14.4').split('.').map(Number); const need = String(v).split('.').map(Number);
+    for (let i = 0; i < 3; i++) { if ((have[i] || 0) !== (need[i] || 0)) return (have[i] || 0) > (need[i] || 0); } return true; },
   debounce, setIcon, setTooltip, parseYaml, stringifyYaml, addIcon, getIcon,
   MarkdownRenderer: { render: async () => {}, renderMarkdown: async () => {} },
 };

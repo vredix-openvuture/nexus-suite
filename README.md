@@ -654,6 +654,28 @@ of leaving an empty pane behind when you close the final tab in the main area.
 The old *Open on startup* toggle is migrated on the first load: on became *a tab
 of its own*, off became *Nothing*.
 
+## Add-ons
+
+Plugins that extend the suite without being part of it, each in its own public repo. Settings →
+Nexus Suite → **Add-ons** lists them; the switch downloads the newest release into
+`.obsidian/plugins/<id>/` (works on mobile too) and turns it on, ↻ updates, the bin removes.
+
+- **Their settings are pages here.** A running add-on adds its page under Add-ons in the nav
+  (`registerSettingsPage`), not a tab of its own in Obsidian's list.
+- **Keys stay on the device.** An add-on keeps them in Obsidian's secret storage, never in
+  `data.json` or a repo. Obsidian encrypts that store with the system's key store where there is
+  one (Windows, macOS, Linux with a keyring, Android) and says so in its own settings where there
+  is none.
+- **Careful update.** Every file is downloaded and staged before a live file is replaced; files
+  only come from github.com; a release whose manifest names another plugin, needs a newer Obsidian
+  or is desktop-only on a phone is refused, and the running version stays. An add-on that was off
+  stays off after an update.
+- **Trust is in the repo.** Like BRAT, this runs whatever the add-on's repo releases, on every
+  device it is switched on.
+- **Removing** turns it off and deletes its folder with its settings; it is asked first to forget
+  what it keeps on the device only (keys, cached data). Pages and notes it made stay.
+- **Nexus Vikunja** is the first: Vikunja projects as kanban boards (`vredix-openvuture/nexus-vikunja`).
+
 ## Vault sync
 
 The whole vault to a WebDAV server: Nextcloud, a Synology, anything that speaks

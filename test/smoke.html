@@ -84,6 +84,111 @@ function makePlugin() {
   }
 }
 
+// ── add-ons: the catalogue page and a page an add-on registers ─────────────
+{
+  const p = makePlugin();
+  const tab = new window.NexusSettingsTab(p.app, p);
+  p.settingTab = tab;
+  document.getElementById('stage').appendChild(tab.containerEl);
+  tab.display();
+  const nav = () => Array.from(tab.containerEl.querySelectorAll('.nx-settings-tab[data-id]')).map(el => el.getAttribute('data-id'));
+  ok('addons · the catalogue page is in the nav', nav().indexOf('addons') >= 0);
+  let drawn = 0;
+  const off = p.registerSettingsPage({ id: 'nexus-test', name: 'Test add-on', icon: 'puzzle',
+    display: (el) => { drawn++; el.createEl('p', { text: 'from the add-on' }); } });
+  tab.display();
+  ok('addons · a registered page joins the nav', nav().indexOf('addon:nexus-test') >= 0);
+  tab.active = 'addon:nexus-test';
+  tab.display();
+  ok('addons · and draws the add-on’s own settings', drawn === 1 && /from the add-on/.test(tab.containerEl.textContent));
+  ok('addons · under its own name', tab.containerEl.querySelector('.nx-settings-head h3').textContent === 'Test add-on');
+  p.registerSettingsPage({ id: 'nexus-broken', name: 'Broken', display: () => { throw new Error('boom'); } });
+  tab.active = 'addon:nexus-broken';
+  let err = null;
+  try { tab.display(); } catch (e) { err = e; }
+  ok('addons · a page that throws does not take the tab down', !err && /boom/.test(tab.containerEl.textContent));
+  off();
+  tab.display();
+  ok('addons · unregistering takes it out again', nav().indexOf('addon:nexus-test') < 0);
+}
+
+// ── add-ons: downloading and loading one ───────────────────────────────────
+{
+  const { AddonManager } = window.addonsLib;
+  const files = {}, calls = [];
+  const enabled = new Set();
+  const app = {
+    vault: { configDir: '.obsidian', adapter: {
+      exists: async (p) => p in files || Object.keys(files).some(k => k.startsWith(p + '/')),
+      mkdir: async () => {}, write: async (p, t) => { files[p] = t; },
+      remove: async (p) => { delete files[p]; },
+      rename: async (a, b) => { files[b] = files[a]; delete files[a]; },
+      rmdir: async (p) => { Object.keys(files).forEach(k => { if (k.startsWith(p + '/')) delete files[k]; }); },
+    } },
+    plugins: {
+      manifests: {}, enabledPlugins: enabled,
+      loadManifests: async () => { calls.push('load'); const m = files['.obsidian/plugins/nexus-vikunja/manifest.json']; app.plugins.manifests = m ? { 'nexus-vikunja': JSON.parse(m) } : {}; },
+      enablePluginAndSave: async (id) => { calls.push('enable ' + id); if (globalThis.__refuseLoad) return false; enabled.add(id); return true; },
+      disablePlugin: async (id) => { calls.push('disable ' + id); enabled.delete(id); },
+      disablePluginAndSave: async (id) => { calls.push('off ' + id); enabled.delete(id); },
+    },
+  };
+  let version = '0.1.0';
+  globalThis.__requestUrl = async (o) => {
+    if (/api\.github\.com/.test(o.url)) return { status: 200, json: { tag_name: version, assets: ['main.js', 'manifest.json', 'styles.css'].map(n => ({ name: n, browser_download_url: 'https://github.com/r/releases/download/v/' + n })) } };
+    const name = o.url.split('/').pop();
+    if (name === 'manifest.json') return { status: 200, text: JSON.stringify({ id: 'nexus-vikunja', version }) };
+    return { status: 200, text: '/* ' + name + ' ' + version + ' */' };
+  };
+  const m = new AddonManager({ app });
+  const addon = m.list().find(a => a.id === 'nexus-vikunja');
+  await m.enable(addon);
+  ok('download · the release files land in the plugin folder', /0\.1\.0/.test(files['.obsidian/plugins/nexus-vikunja/main.js'] || ''));
+  ok('download · and the add-on is turned on', m.isEnabled('nexus-vikunja') && m.installedVersion('nexus-vikunja') === '0.1.0');
+  version = '0.2.0';
+  await m.latest(addon, true);
+  ok('download · a newer release is noticed', m.updateAvailable(addon));
+  calls.length = 0;
+  await m.install(addon, false);
+  ok('download · an update reloads the running add-on', JSON.stringify(calls) === JSON.stringify(['load', 'disable nexus-vikunja', 'enable nexus-vikunja']), calls.join(','));
+  ok('download · with the new code', /0\.2\.0/.test(files['.obsidian/plugins/nexus-vikunja/main.js']));
+  ok('download · no staged file is left behind', !Object.keys(files).some(k => /\.new$/.test(k)), Object.keys(files).join(','));
+  await m.disable(addon);
+  await m.install(addon, false);
+  ok('download · an update keeps an add-on that was off, off', !m.isEnabled('nexus-vikunja'));
+  await m.enable(addon);
+  globalThis.__apiVersion = '1.4.0';
+  version = '0.3.0';
+  const oldReq = globalThis.__requestUrl;
+  globalThis.__requestUrl = async (o) => (/manifest/.test(o.url) ? { status: 200, text: JSON.stringify({ id: 'nexus-vikunja', version, minAppVersion: '1.6.0' }) } : oldReq(o));
+  let tooOld = null;
+  try { await m.install(addon, false); } catch (e) { tooOld = e; }
+  ok('download · a release this Obsidian cannot run is refused', !!tooOld && /needs Obsidian 1\.6\.0/.test(tooOld.message), tooOld && tooOld.message);
+  ok('download · and the running version stays', /0\.2\.0/.test(files['.obsidian/plugins/nexus-vikunja/main.js']));
+  globalThis.__apiVersion = null;
+  globalThis.__requestUrl = oldReq;
+  version = '0.2.0';
+  globalThis.__refuseLoad = true;
+  await m.disable(addon);
+  let notLoaded = null;
+  try { await m.enable(addon); } catch (e) { notLoaded = e; }
+  ok('download · Obsidian refusing to load it is reported, not called "on"', !!notLoaded && /did not load/.test(notLoaded.message));
+  globalThis.__refuseLoad = false;
+  await m.enable(addon);
+  ok('download · only github.com is accepted as a file source', window.addonsLib.fromGithub('https://github.com/a/b/releases/download/v1/main.js') && !window.addonsLib.fromGithub('https://evil.example/main.js'));
+  globalThis.__requestUrl = async (o) => /manifest/.test(o.url) ? { status: 200, text: JSON.stringify({ id: 'someone-else' }) }
+    : /api\.github/.test(o.url) ? { status: 200, json: { tag_name: '9', assets: [{ name: 'main.js', browser_download_url: 'https://github.com/x/main.js' }, { name: 'manifest.json', browser_download_url: 'https://github.com/x/manifest.json' }] } }
+    : { status: 200, text: 'evil' };
+  let refused = null;
+  try { await m.install(addon); } catch (e) { refused = e; }
+  ok('download · a release for another plugin is refused', !!refused && /someone-else/.test(refused.message));
+  ok('download · and nothing was written', /0\.2\.0/.test(files['.obsidian/plugins/nexus-vikunja/main.js']));
+  await m.uninstall(addon);
+  ok('download · removing deletes the folder', !Object.keys(files).length && !m.isEnabled('nexus-vikunja'));
+  ok('download · version compare', window.addonsLib.newer('0.10.0', '0.9.9') && !window.addonsLib.newer('1.0.0', '1.0.0'));
+  globalThis.__requestUrl = null;
+}
+
 // ── the narrow layout: a page picker instead of the rail ───────────────────
 /* The switch is measured on the tab, not on the window: the same 1000px
    window shows the rail in a wide tab and the picker in a 420px one — the

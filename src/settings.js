@@ -78,13 +78,27 @@ class NexusSettingsTab extends PluginSettingTab {
         { id: 'galaxy',        icon: 'orbit',            fn: (e) => this.tGalaxy(e) },
         { id: 'vaultSync',     icon: 'refresh-cw',       fn: (e) => this.tVaultSync(e) },
       ] },
+      /* The catalogue first, then one page per add-on that is running and
+         registered one (main.js · registerSettingsPage). */
+      { title: 'Add-ons', tabs: [
+        { id: 'addons',        icon: 'puzzle',           fn: (e) => this.tAddons(e) },
+      ].concat(Array.from(this.plugin.settingsPages.values()).map(p => ({
+        id: 'addon:' + p.id, icon: p.icon || 'puzzle', meta: { name: p.name, sub: p.sub || '' },
+        fn: (e) => {
+          try { p.display(e); }
+          catch (err) {
+            console.error('[Nexus] settings page of ' + p.id, err);
+            e.createDiv({ cls: 'setting-item-description', text: 'This add-on’s settings could not be drawn: ' + (err && err.message ? err.message : err) });
+          }
+        },
+      }))) },
     ];
     const tabs = groups.flatMap(g => g.tabs);
     if (!tabs.find(t => t.id === this.active)) this.active = tabs[0].id;
 
     // Names come from NX_MODULES, never from a literal in here — one table,
     // so nav, panel heading and command palette can't drift apart.
-    const meta = (id) => NX_MODULES[id] || { name: id, sub: '' };
+    const meta = (id) => NX_MODULES[id] || (tabs.find(t => t.id === id) || {}).meta || { name: id, sub: '' };
 
     const renderBody = () => {
       body.empty();
@@ -164,6 +178,7 @@ mixin(NexusSettingsTab, [
   require('./settings/sketch.js'),
   require('./settings/capture.js'),
   require('./settings/vault.js'),
+  require('./settings/addons.js'),
 ]);
 
 module.exports = { NexusSettingsTab };

@@ -6,6 +6,10 @@ Grouped by what changed for you, not by commit. Newest first.
 
 ### Added
 
+- **Add-ons.** Settings → Nexus Suite → Add-ons lists plugins that extend the suite; the switch downloads one's
+  newest GitHub release into the vault and turns it on, with update and remove. A running add-on
+  shows its settings as a page under Add-ons. Keys stay in each device's secret storage. The
+  first add-on is **Nexus Vikunja**.
 - **Kanban boards from other plugins.** A board with a `source:` the suite does
   not know asks a registry (`kanban.registerSource`); a companion plugin fills
   it and the suite draws it. Until that plugin is loaded the board says so. The
