@@ -144,10 +144,11 @@ notes: Projects/Roadmap
 * **Indented lines under a card are its description**, shown under the title on
   the board — at most four lines, the rest cut off with an ellipsis. The whole
   text is in the card editor.
-* **Clicking a card opens the card editor**: text, description, due date, tags,
-  done, which column it is in, and the note it points at — with *To the note* as
-  a button, so a card with a note can still be edited. Ctrl/⌘-click goes
-  straight to the note, for a board used as an index.
+* **Clicking a card opens its note** in a new tab, so the board stays open. A
+  card without a note gets one on the spot (in the board's notes folder, or
+  beside the board), so every card is somewhere to write. On a folder board the
+  card already is a note. **Ctrl/⌘-click** — or *Edit…* in the ⋮ menu — opens
+  the card editor: text, description, due date, tags, done, column, linked note.
 * Drag with mouse or finger, between and inside columns. Dropping into a column
   whose name reads as "done" ticks the card; dragging it back out unticks it.
 * A card can **get** a note: *Create a note* writes it into the `notes:` folder

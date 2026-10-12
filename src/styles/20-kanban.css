@@ -267,12 +267,19 @@ body.is-mobile .nx-kb-card-menu { opacity: .6; }
   color: var(--nx-fg-muted, var(--text-faint));
 }
 .nx-kb-add:focus-within { border-color: var(--interactive-accent); border-style: solid; }
-.nx-kb-add-input {
+/* The ROW is the field: its border turns solid on focus. Obsidian styles every
+   input[type=text] with its own border, background and a focus ring (0,1,1),
+   which beat a lone class and drew a second, inset outline inside the row —
+   hence two classes and every state cleared. */
+.nx-kb-add .nx-kb-add-input,
+.nx-kb-add .nx-kb-add-input:hover,
+.nx-kb-add .nx-kb-add-input:focus,
+.nx-kb-add .nx-kb-add-input:active {
   flex: 1; min-width: 0;
   border: none; background: transparent; color: var(--text-normal);
+  box-shadow: none; outline: none;
   font-size: .85em; padding: 2px 0;
 }
-.nx-kb-add-input:focus { outline: none; }
 
 /* ── drag ── */
 .nx-kb-ghost {

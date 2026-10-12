@@ -47,7 +47,7 @@ function makeApp(text) {
       getAbstractFileByPath(p) { return store[p] ? store[p].file : null; },
       async read(f) { return store[f.path].text; },
       async modify(f, next) { store[f.path].text = next; },
-      async create(p, t) { const nf = new TFile(); nf.path = p; store[p] = { file: nf, text: t }; return nf; },
+      async create(p, t) { const nf = new TFile(); nf.path = p; nf.basename = p.split('/').pop().replace(/\.md$/, ''); store[p] = { file: nf, text: t }; return nf; },
       adapter: { async exists() { return true; }, async mkdir() {} },
     },
     metadataCache: { getFirstLinkpathDest: (name) => (store[name + '.md'] ? store[name + '.md'].file : null) },
@@ -825,6 +825,19 @@ function folderBoard(app, src) {
   });
   const folder = K.stringifyKanban(K.parseKanban('folder: Notes\nshow: excerpt', { source: 'folder' }));
   eq('write-back · and never grows a second tags line', (folder.match(/^tags:/gm) || []).length, 0);
+}
+
+// ── a click opens the card's note, making it first if there is none ────────
+{
+  const app = makeApp(NOTE);
+  const opened = [];
+  app.workspace.getLeaf = (how) => ({ openFile(f) { opened.push([how, f.path]); } });
+  const { el } = board(app, freshCtx(app));
+  el.querySelector('.nx-kb-card').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  for (let i = 0; i < 20 && !opened.length; i++) await new Promise(r => setTimeout(r, 10));
+  ok('click · a card without a note gets one', !!app._store['First card.md'], Object.keys(app._store).join(','));
+  eq('click · and it opens in a new tab', opened, [['tab', 'First card.md']]);
+  ok('click · the card now links it', blockOf(app).indexOf('- [ ] [[First card]]') >= 0, blockOf(app).join(' | '));
 }
 
 } catch (e) { out.push('THREW: ' + (e && e.stack || e)); fail++; }

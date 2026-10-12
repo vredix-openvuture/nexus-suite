@@ -18,6 +18,10 @@ Grouped by what changed for you, not by commit. Newest first.
 
 ### Changed
 
+- **Clicking a kanban card opens its note**, in a new tab — and makes one if the
+  card has none, so every card is somewhere to write. The card editor moved to
+  Ctrl/⌘-click and *Edit…* in the ⋮ menu. Folder boards open their notes in a
+  new tab too, so the board stays open.
 - **The Sketch tab draws paper, not only books.** Only a note with several
   pages is a notebook. One page of endless paper or a mindmap is an A4 sheet
   showing the drawing; one page of sectioned paper is a stack of sheets. *Cover…*
@@ -29,6 +33,8 @@ Grouped by what changed for you, not by commit. Newest first.
 
 ### Fixed
 
+- **Kanban: no second, offset outline when typing a new card.** Obsidian's own
+  input border and focus ring were drawn inside the row's border.
 - **The stroke eraser hits a stroke between its points**, not only at them.
 - **Stickers, notes and images land where you are looking.** On a long endless
   or sectioned page they were placed in the middle of the whole sheet, which

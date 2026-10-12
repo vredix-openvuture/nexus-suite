@@ -54,15 +54,15 @@ function blockSource(mod, cfg, el, ctx) {
       box.onclick = (e) => e.stopPropagation();
       box.onchange = () => { card.done = box.checked; save(); };
       frame.dots.onclick = (e) => { e.stopPropagation(); cardMenu(mod, e, cfg, ci, ii, el, ctx); };
-      /* One click, the whole card. It used to open the linked note, which left a
-         card with a note as the one thing on the board that could not be edited,
-         and rename the rest — so the due date, the tags and the column each meant
-         a trip through the ⋮ menu. The note is now a button inside the editor.
-         Ctrl/⌘ still goes straight to the note, for a board used as an index. */
+      /* A click opens the card's NOTE, in a new tab so the board stays where it
+         is — and a card without one gets it made on the spot, so every card is
+         somewhere to write. The card's own fields (text, due, tags, column)
+         are one step further: Ctrl/⌘-click, or "Edit…" in the ⋮ menu. */
       frame.el.onclick = (e) => {
         if (frame.el.hasClass('is-dragging')) return;
-        if (note && (e.ctrlKey || e.metaKey)) { mod.app.workspace.getLeaf('tab').openFile(note); return; }
-        editCard(mod, cfg, ci, ii, el, ctx);
+        if (e.ctrlKey || e.metaKey) { editCard(mod, cfg, ci, ii, el, ctx); return; }
+        if (note) { mod.app.workspace.getLeaf('tab').openFile(note); return; }
+        createNote(mod, cfg, ci, ii, el, ctx);
       };
       frame.el.oncontextmenu = (e) => { e.preventDefault(); cardMenu(mod, e, cfg, ci, ii, el, ctx); };
     },

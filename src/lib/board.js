@@ -342,7 +342,8 @@ function folderSource(mod, cfg, el, ctx) {
       frame.dots.onclick = (e) => { e.stopPropagation(); openMenu(e, file, col); };
       frame.el.onclick = (e) => {
         if (frame.el.hasClass('is-dragging')) return;
-        app.workspace.getLeaf(e.ctrlKey || e.metaKey ? 'tab' : false).openFile(file);
+        // A new tab, like a block board's card: the board stays where it is.
+        app.workspace.getLeaf('tab').openFile(file);
       };
       frame.el.oncontextmenu = (e) => { e.preventDefault(); openMenu(e, file, col); };
       if (cfg.links !== false) {
