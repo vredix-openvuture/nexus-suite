@@ -2,7 +2,7 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
-## Unreleased
+## 0.35.0 — 2026-10-12
 
 ### Added
 
