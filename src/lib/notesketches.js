@@ -79,13 +79,32 @@ async function addPage(plugin, file, saveSketch, presets) {
   return id;
 }
 
-/* Take a page out of the note's list. The .svg is NOT deleted — a drawing is
-   worth more than the line that pointed at it, and the sketch folder is where
-   it can still be found. */
+/* Take a page out of the note's list AND put its .svg in the trash. Leaving
+   the file behind made it an orphan: no note named it any more, so the capture
+   hub showed it as a sheet of its own — a page you deleted that came back.
+   Through fileManager.trashFile, so it follows the user's trash setting and
+   can still be restored from there. The file stays only when another note
+   names the same id (a hand-edit), because then it is still somebody's page. */
 async function removePage(plugin, file, id) {
-  await plugin.app.fileManager.processFrontMatter(file, fm => {
+  const app = plugin.app;
+  await app.fileManager.processFrontMatter(file, fm => {
     writeIds(fm, idsOf(fm).filter(x => x !== id));
   });
+  const elsewhere = app.vault.getMarkdownFiles
+    ? app.vault.getMarkdownFiles().some(f => f.path !== file.path && idsOfFile(app, f).indexOf(id) >= 0)
+    : false;
+  if (elsewhere) return;
+  // Any other view still open on this page (a second tab, a code block) must
+  // not write it back after the trash: saveSketch drops writes for these ids.
+  (plugin._trashedSketchIds = plugin._trashedSketchIds || new Set()).add(id);
+  if (plugin.sketchWritesDone) await plugin.sketchWritesDone(id);
+  const svg = app.vault.getAbstractFileByPath(plugin._sketchPath(id));
+  if (!svg) return;
+  try { await app.fileManager.trashFile(svg); }
+  catch (e) {
+    if (!app.vault.getAbstractFileByPath(svg.path)) return;   // gone meanwhile: that is the goal
+    throw new Error('could not move "' + svg.path + '" to the trash: ' + (e && e.message ? e.message : e));
+  }
 }
 
 /* ── The way back: which note owns a page ────────────────────────────────────

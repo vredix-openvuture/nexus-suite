@@ -13,7 +13,7 @@
 
 const { Notice, TFile, TFolder, moment } = require('obsidian');
 const sync = require('./vaultsync.js');
-const { WebDavClient, joinUrl } = require('./webdav.js');
+const { WebDavClient, joinUrl, isLockedError } = require('./webdav.js');
 const { SyncProgress } = require('./syncprogress.js');
 const { ensureFolder } = require('./vaultpaths.js');
 
@@ -225,6 +225,7 @@ class NexusVaultSync {
     if (report.deleted) bits.push(report.deleted + ' removed');
     if (report.conflicts) bits.push(report.conflicts + ' conflict' + (report.conflicts === 1 ? '' : 's'));
     if (report.failed) bits.push(report.failed + ' failed (details in the console)');
+    if (report.locked) bits.push(report.locked + ' locked on the server, retried next run');
     let text = bits.length ? 'sync done — ' + bits.join(', ') + '.' : 'sync done, nothing to do.';
     if (report.copies && report.copies.length) {
       text += ' Your side of ' + (report.copies.length === 1 ? 'the conflict is at "' + report.copies[0] + '".'
@@ -239,12 +240,21 @@ class NexusVaultSync {
   }
 
   async apply(client, plan, local, remote, state, progress) {
-    const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, errors: [], copies: [], failedPaths: new Set() };
+    const report = { uploaded: 0, downloaded: 0, deleted: 0, conflicts: 0, failed: 0, locked: 0, errors: [], copies: [], failedPaths: new Set() };
     this._report = report;
     const fail = (path, err) => {
-      report.failed++;
       report.failedPaths.add(path);
       const why = (err && err.message ? err.message : 'unknown');
+      /* Still locked after the client's retries: the server was busy with the
+         file, nothing is wrong with it, and the next run picks it up because
+         its record was not touched. Counted apart so it is not announced as a
+         failure — on Nextcloud that announcement came several times a day. */
+      if (isLockedError(err)) {
+        report.locked++;
+        console.warn('[Nexus] sync skipped "' + path + '" for now, the server had it locked: ' + why);
+        return;
+      }
+      report.failed++;
       // Every one of them goes to the console, not only the first five. A run
       // that fails on hundreds of files is exactly the run whose report is too
       // small to say why, and on mobile the console is the only way in.

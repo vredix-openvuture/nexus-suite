@@ -185,7 +185,7 @@ moment.weekdaysMin = () => ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 moment.months = () => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 moment.monthsShort = () => moment.months().map(m => m.slice(0, 3));
 moment.localeData = () => ({ firstDayOfWeek: () => 1 });
-const requestUrl = async () => ({ status: 200, text: '', json: {} });
+const requestUrl = async (o) => (globalThis.__requestUrl ? globalThis.__requestUrl(o) : { status: 200, text: '', json: {} });
 const normalizePath = (p) => p;
 const debounce = (fn) => fn;
 const setTooltip = () => {};

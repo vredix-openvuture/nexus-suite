@@ -85,6 +85,21 @@ const PROPFIND_BODY = '<?xml version="1.0" encoding="utf-8"?>'
   + '<d:resourcetype/><d:getlastmodified/><d:getcontentlength/><d:getetag/>'
   + '</d:prop></d:propfind>';
 
+// Writes that a server-side read lock can refuse, and the pauses before asking
+// again: a few seconds in all, enough for a download to finish, short enough
+// that a lock that does not go away only delays this file until the next run.
+const LOCKABLE = ['PUT', 'DELETE', 'MKCOL', 'MOVE'];
+const LOCK_RETRY_MS = [1500, 4000];
+
+/* Whether an error from this client means "the server had the file locked".
+   Read from the message as well as the status, because every caller builds
+   its message with "failed with <status>" and some only ever see the text. */
+function isLockedError(err) {
+  if (!err) return false;
+  if (err.status === 423) return true;
+  return /failed with 423\b/.test(String(err.message || ''));
+}
+
 class WebDavClient {
   constructor(opts) {
     opts = opts || {};
@@ -92,6 +107,9 @@ class WebDavClient {
     this.username = opts.username || '';
     this.password = opts.password || '';
     this.auth = this.username ? 'Basic ' + base64(this.username + ':' + this.password) : '';
+    // How long to wait before asking again when the server answers 423. Tests
+    // set it to zeros; nothing else should need to.
+    this.lockRetryMs = opts.lockRetryMs || LOCK_RETRY_MS;
   }
 
   headers(extra) {
@@ -100,15 +118,31 @@ class WebDavClient {
     return h;
   }
 
+  /* A write the server answers with 423 Locked is asked again after a pause.
+     Nextcloud holds shared locks on a file while anyone reads it (another
+     device downloading, its own scanner, a server-side copy), and a write that
+     lands in that window is refused although nothing is wrong with it. Reads
+     are not retried: a read is never what such a lock blocks. */
   async request(method, path, opts) {
     opts = opts || {};
-    const res = await requestUrl({
+    const send = () => requestUrl({
       url: typeof path === 'string' && /^https?:\/\//i.test(path) ? path : joinUrl(this.baseUrl, path),
       method,
       headers: this.headers(opts.headers),
       body: opts.body,
       throw: false,
     });
+    let res = await send();
+    if (LOCKABLE.indexOf(method) < 0 || this._lockOutlasted) return res;
+    for (const wait of this.lockRetryMs) {
+      if (res.status !== 423) break;
+      await new Promise(done => setTimeout(done, wait));
+      res = await send();
+    }
+    // A lock that outlasted the retries is a busy server, not a busy file: the
+    // rest of this client's run does not wait again, or N locked files would
+    // cost N times the pause. A sync builds a new client per run.
+    if (res.status === 423) this._lockOutlasted = true;
     return res;
   }
 
@@ -236,4 +270,4 @@ class WebDavClient {
   }
 }
 
-module.exports = { WebDavClient, joinUrl, hrefToPath, parseListing, base64, PROPFIND_BODY };
+module.exports = { WebDavClient, isLockedError, joinUrl, hrefToPath, parseListing, base64, PROPFIND_BODY };

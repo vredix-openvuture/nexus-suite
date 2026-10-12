@@ -26,7 +26,7 @@ function surf(host){ return { host, mode:'draw', pen:'fountain', color:'#2f2f2f'
   ruler:{on:false, angle:null}, W:1600, H:900, viewX:0, viewY:0, viewW:1600, sections:[],
   setPen(p){this.pen=p;}, setMode(m){this.mode=m;}, setColor(c){this.color=c;}, setSize(v){this.size=v;},
   getSize(){return this.size;}, setPaper(){}, setPaperStyle(){}, setBackground(){},
-  setSelectShape(k){this.selectShape=k;}, setPenMap(m){this.penMap=m;},
+  setSelectShape(k){this.selectShape=k;}, eraserType:'stroke', eraserSize:'m', setEraser(t,z){if(t)this.eraserType=t;if(z)this.eraserSize=z;}, setPenMap(m){this.penMap=m;},
   setRuler(on,a){this.ruler={on:!!on,angle:a==null||a===''?null:Number(a)};return this.ruler;},
   hasSelection(){return false;}, setSelectionColor(){}, deleteSelection(){}, duplicateSelection(){},
   addObject(){}, addSection(){}, removeSection(){}, scrollToY(){return false;},

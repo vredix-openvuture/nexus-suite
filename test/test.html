@@ -35,6 +35,8 @@ function makeSurface(host) {
     setPaper(p) { this.paper = p; }, setPaperStyle(v) { this.paperStyle = v; },
     setBackground(t) { if (t != null) this.bgType = t; },
     setSelectShape(k) { this.selectShape = k; },
+    eraserType: 'stroke', eraserSize: 'm',
+    setEraser(type, size) { if (type) this.eraserType = type; if (size) this.eraserSize = size; },
     setPenMap(m) { this.penMap = m; },
     setRuler(on, angle) { this.ruler = { on: !!on, angle: angle == null || angle === '' ? null : Number(angle) }; return this.ruler; },
     hasSelection() { return this.selection.length + this.selObjects.length > 0; },
@@ -125,16 +127,26 @@ localStorage.removeItem('nexus-suite-sketchbar');
      icons(t.sub, '.nx-sk-colors .nx-sk-color').indexOf('palette') >= 0);
 }
 
-// ── 5 · the eraser has no options, so the row collapses ────────────────────
+// ── 5 · the eraser row: stroke or area, and the disc size for area ────────
 {
   const plugin = makePlugin(), s = freshSettings();
   const t = build(plugin, s, { mode: 'full' });
   const eraser = Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn')).find(b => b.dataset.icon === 'eraser');
   eraser.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   ok('eraser · surface in erase mode', t.surface.mode === 'erase');
-  ok('eraser · row marked empty', t.sub.classList.contains('is-empty'));
-  ok('eraser · row not open', !t.sub.classList.contains('is-open'));
   ok('eraser · its bar button is active', eraser.classList.contains('is-active'));
+  ok('eraser · the row is open now that it has options', t.sub.classList.contains('is-open') && !t.sub.classList.contains('is-empty'));
+  eq('eraser · stroke and area to choose from', icons(t.sub, '.nx-sk-subpen'), ['eraser', 'circle-dashed']);
+  eq('eraser · no sizes for the stroke eraser', t.sub.querySelectorAll('.nx-sk-erasesize').length, 0);
+  t.sub.querySelectorAll('.nx-sk-subpen')[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('eraser · picking area arms the surface', t.surface.eraserType, 'area');
+  eq('eraser · and is remembered', s.eraser.type, 'area');
+  eq('eraser · area shows three sizes', t.sub.querySelectorAll('.nx-sk-erasesize').length, 3);
+  t.sub.querySelectorAll('.nx-sk-erasesize')[2].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  eq('eraser · a size sets the disc', [t.surface.eraserSize, s.eraser.size], ['l', 'l']);
+  ok('eraser · without touching the defaults', window.DEFAULT_SETTINGS.quicksketch.eraser.type === 'stroke');
+  const again = build(plugin, s, { mode: 'full' });
+  eq('eraser · a new pad starts on the remembered eraser', [again.surface.eraserType, again.surface.eraserSize], ['area', 'l']);
 }
 
 // ── 6 · reveal mode opens on a tool tap and closes on the first stroke ─────
@@ -340,7 +352,7 @@ localStorage.removeItem('nexus-suite-sketchbar');
   // Leaving the eraser DOES change the tool, so there the row must rebuild.
   const eraser = Array.from(t.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn')).find(b => b.dataset.icon === 'eraser');
   eraser.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  ok('stability · eraser collapses the row', t.sub.classList.contains('is-empty'));
+  ok('stability · the eraser row replaces the pen row', !t.sub.querySelector('.nx-sk-fav') && t.sub.querySelectorAll('.nx-sk-subpen').length === 2);
   t.bar.querySelector('.nx-sk-grp-tools .nx-sk-btn').dispatchEvent(new MouseEvent('click', { bubbles: true }));
   ok('stability · going back to the pen brings the row back', !t.sub.classList.contains('is-empty'));
   ok('stability · with its pen chips rebuilt', t.sub.querySelectorAll('.nx-sk-subpen').length === 5);

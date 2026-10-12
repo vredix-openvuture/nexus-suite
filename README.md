@@ -300,22 +300,32 @@ again and the capture is exactly the old shape.
 
 The tile shows page one and, above two, how many there are.
 
-### The Sketch tab is a shelf of books
+### The Sketch tab: paper and notebooks
 
-A card there is a **sketchbook**, not a page. A note owns a list of sketch ids
-(`sketch: [sk-a, sk-b]`), and those pages are one book: one cover, one name, one
-card, one delete that takes every page with it. Listing them separately made a
-seven-page note read as seven drawings that each claimed to be a single page.
-A drawing no note names is its own book of one page, which is what it is.
+A card there is a whole **drawing**, not a page. A note owns a list of sketch ids
+(`sketch: [sk-a, sk-b]`), and those pages are one card, one delete that takes
+every page with it. Listing them separately made a seven-page note read as seven
+drawings that each claimed to be a single page.
 
-The tile is a bound book — a stitched spine, a cover, its page edges — and not a
-thumbnail of the ink: a shelf answers *which one is this* and *how thick is it*,
-and the drawing is one tap away either way. Opening a book opens page one **with
-its note**, which is what gives the Sketch tab its page list; without it, turning
-a page reports the drawing as belonging to nothing.
+What the card looks like says what kind of drawing it is (`capture.sketchShape`):
 
-Long press a card (right click on a desktop) for **Rename**, **Cover**, **Go to
-the note** and **Delete**. Rename and Cover patch the sidecar's metadata block
+| Drawing | Card |
+|---|---|
+| A note with several pages | A bound **notebook** — stitched spine, cover, page edges, page count |
+| One page, endless paper | One **A4 sheet** showing the top of the drawing |
+| One mindmap | One A4 sheet showing the top of the map |
+| One page, sectioned paper | A **stack** of A4 sheets, the top one showing the drawing |
+
+Paper shows the drawing itself, always cut to the same A4 window on its top —
+and an empty sheet shows a few scribbled lines instead of a blank rectangle.
+The cost is that each paper tile decodes its sidecar (lazily, as it scrolls into
+view) where a book was CSS only; a very long page makes a heavier tile.
+Opening a card opens page one **with its note**, which is what gives the Sketch
+tab its page list; without it, turning a page reports the drawing as belonging
+to nothing.
+
+Long press a card (right click on a desktop) for **Rename**, **Cover** (notebooks
+only), **Go to the note** and **Delete**. Rename and Cover patch the sidecar's metadata block
 directly, and then push the same value into the pad if one happens to be open on
 that drawing — a live surface holds the name and the cover from the moment it
 loaded and writes the whole metadata block back on every committed stroke, so
@@ -395,12 +405,10 @@ A new page inherits **page one's paper** — colour, texture and grid. A second
 page on different paper is not a second page, it is a different pad.
 
 The page count is the button to the list: every page as a thumbnail, where you
-open one, add one, name one, or take one out of the note. The page number sits
+open one, add one, name one, or delete one — after asking, the page leaves the note and its .svg goes to the trash, so it cannot turn up in the capture hub as a loose sheet. The page number sits
 in the corner of the thumbnail, so the only line under the picture is the name.
 A name is typed over "Page 2" and lives in that page's own sidecar, so it
-travels with the drawing rather than with the note that lists it. Taking a page
-out leaves its `.svg` where it is — a drawing is worth more than the line that
-pointed at it.
+travels with the drawing rather than with the note that lists it.
 
 There is no close button: closing the tab closes it, and the blank paper
 auto-grow left below the last stroke is trimmed then. The `file-text` button
@@ -414,8 +422,10 @@ a finger on the paper is drawing.
 
 Two rows. The top one holds the tools, the one under it holds the options of
 whichever tool is active: pen types, widths and colours for the pen, widths and
-colours for the highlighter. The eraser has nothing to configure, so that row
-collapses instead of sitting there empty.
+colours for the highlighter, and for the eraser its type: the **stroke eraser**
+takes every stroke it touches whole, the **area eraser** removes only the ink
+under its disc (small, medium or large), cutting a stroke it crosses in two. The
+choice is remembered (`quicksketch.eraser`), and one rub is one undo step.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -665,7 +675,7 @@ with conflicts. Their working files (`.syncthing.*.tmp`, `.sync_*.db`,
 | **Settings** | With *Carry the settings too* on, `.obsidian` travels — **except** `workspace.json`, `workspace-mobile.json`, `graph.json` and the sync's own state. Those describe this machine; carrying them would rearrange panes you deliberately arranged. |
 | **Backups** | Once a day the **server** copies the vault folder into `<vault folder>-backup/<date>/` beside it (WebDAV `COPY`: nothing passes through the device, so a phone backs up a 1 GB vault too). The first device of the day makes it; the others find it there. The oldest snapshots go past the number you keep. The run's record is saved **before** the backup, and a failed backup (a full quota answers 507) is reported without failing the sync; the next run tries again. Zips from older versions in `_backups` inside the vault folder are moved beside it on the first run. |
 | **Folders** | Created a segment at a time on both sides. `adapter.mkdir` is not the same call on desktop and mobile — asked for `Tasks/Items` where `Tasks` is missing, one makes both and the other refuses — so the device *receiving* a vault has to build the path itself. On the server side the folder is created once per run, not once per file in it. |
-| **When it goes wrong** | Settings → Vault sync → **The last run** says what the run did, names the first five failures in full, and has a *Sync* button that reports right there. Every failure, not only those five, goes to the console as `[Nexus] sync failed on "<path>": <reason>`. |
+| **When it goes wrong** | Settings → Vault sync → **The last run** says what the run did, names the first five failures in full, and has a *Sync* button that reports right there. Every failure, not only those five, goes to the console as `[Nexus] sync failed on "<path>": <reason>`. A file the server answers with **423 Locked** (Nextcloud locks a file while something reads it) is asked for twice more within seconds, then left for the next run — counted as *locked*, not announced as a failure. |
 
 ### What it is not
 

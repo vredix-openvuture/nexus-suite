@@ -10,6 +10,7 @@ const { Notice, setIcon } = require('obsidian');
 const { BAR_ITEMS, SELECT_SHAPES, RULER_ANGLES } = require('../constants.js');
 const { PEN_TYPES } = require('../views/sketch.js');
 const sketchObjects = require('../lib/sketchobjects.js');
+const sketchErase = require('../lib/sketcherase.js');
 const penGestures = require('../lib/sketchgestures.js');
 const sketchExport = require('../lib/sketchexport.js');
 
@@ -17,8 +18,8 @@ class SketchBar {
 
   /* Build the sketch toolbar: a TOOL row, and under it the OPTIONS row of
      whatever tool is active — pen types + sizes + colours for the pen, sizes +
-     colours for the highlighter, nothing at all for the eraser (that row hides
-     rather than sit there empty).
+     colours for the highlighter, stroke vs. area (and the disc size) for the
+     eraser.
 
      `bar.mode` only decides whether the options row is pinned open or opens on
      a tool tap and closes again on the first stroke. Both render the SAME row,
@@ -34,6 +35,10 @@ class SketchBar {
     const full = opts.mode === 'full';
     const plugin = this;
     const layout = this.barConfig(s);
+    // Own copy: the settings merge is one level deep, so a missing `eraser`
+    // would otherwise be DEFAULT_SETTINGS' object, and picking a size would edit it.
+    s.eraser = Object.assign({ type: 'stroke', size: 'm' }, s.eraser);
+    surface.setEraser(s.eraser.type, s.eraser.size);
     const inBar = full ? layout.full : layout.compact;
 
     /* The options row is a SIBLING of the bar, so every caller's own layout —
@@ -565,16 +570,13 @@ class SketchBar {
     /* Pinned: the row is simply there. Reveal: a tool tap opens it and the
        first stroke closes it, so the canvas is whole while actually drawing. */
     const applyOpen = () => {
-      sub.toggleClass('is-open', !sub.hasClass('is-empty') && (layout.mode === 'pinned' || subOpen));
+      sub.toggleClass('is-open', layout.mode === 'pinned' || subOpen);
     };
     const renderSub = () => {
       sub.empty();
       surface.onSelect = null;   // a rebuilt row must not be driven by the old one
       const tool = TOOL_OF();
-      // The eraser has nothing to configure, so its row would be an empty strip
-      // stealing canvas. It collapses instead.
-      if (tool === 'eraser') { sub.addClass('is-empty'); applyOpen(); return; }
-      sub.removeClass('is-empty');
+      if (tool === 'eraser') { buildEraserRow(sub); applyOpen(); return; }
       if (tool === 'sheet') { buildSheetRow(sub); applyOpen(); return; }
       if (tool === 'select') { buildSelectRow(sub); applyOpen(); return; }
       if (tool === 'space') { buildSpaceRow(sub); applyOpen(); return; }
@@ -603,6 +605,29 @@ class SketchBar {
       sub.createDiv('nx-sk-sep');
       buildColors(sub);
       applyOpen();
+    };
+
+    /* Eraser: whole strokes or only what is under the disc, and for the disc
+       its size. Remembered in the settings like a pen's width. */
+    const buildEraserRow = (parent) => {
+      const kinds = parent.createDiv('nx-sk-grp nx-sk-subpens');
+      sketchErase.ERASER_TYPES.forEach(kind => {
+        const chip = kinds.createDiv({ cls: 'nx-sk-subpen', attr: { 'aria-label': kind.label } });
+        setIcon(chip, kind.icon);
+        chip.toggleClass('is-active', surface.eraserType === kind.id);
+        chip.onclick = () => { s.eraser.type = kind.id; surface.setEraser(kind.id); plugin.saveSettings(); renderSub(); };
+      });
+      if (surface.eraserType !== 'area') return;
+      parent.createDiv('nx-sk-sep');
+      const sizes = parent.createDiv('nx-sk-grp nx-sk-subpens');
+      sketchErase.ERASER_SIZES.forEach(size => {
+        const chip = sizes.createDiv({ cls: 'nx-sk-subpen nx-sk-erasesize', attr: { 'aria-label': size.label } });
+        // The dot is drawn at the disc's relative size, so the row shows what it does.
+        const dot = chip.createDiv('nx-sk-erasedot');
+        dot.style.width = dot.style.height = Math.round(6 + size.px / 2) + 'px';
+        chip.toggleClass('is-active', surface.eraserSize === size.id);
+        chip.onclick = () => { s.eraser.size = size.id; surface.setEraser(null, size.id); plugin.saveSettings(); renderSub(); };
+      });
     };
 
     /* Everything you do TO the drawing rather than on it. Four things that are

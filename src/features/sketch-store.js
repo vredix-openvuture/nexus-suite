@@ -68,7 +68,24 @@ class SketchStore {
     if (!(f instanceof TFile)) return null;
     try { return parseSketchSVG(await this.app.vault.read(f)); } catch (e) { return null; }
   }
-  async saveSketch(id, svgText) {
+  /* Writes to one sidecar run one after another, and the last one can be
+     waited for. Deleting a page needs that: a save still in flight when the
+     file goes to the trash would create it again. */
+  saveSketch(id, svgText) {
+    this._sketchWrites = this._sketchWrites || new Map();
+    const before = this._sketchWrites.get(id) || Promise.resolve();
+    const write = before.catch(() => {}).then(() => this._writeSketch(id, svgText));
+    this._sketchWrites.set(id, write);
+    write.then(() => { if (this._sketchWrites.get(id) === write) this._sketchWrites.delete(id); }, () => {});
+    return write;
+  }
+  async sketchWritesDone(id) {
+    const pending = this._sketchWrites && this._sketchWrites.get(id);
+    if (pending) { try { await pending; } catch (e) { /* the writer reported it */ } }
+  }
+  async _writeSketch(id, svgText) {
+    // A deleted page stays deleted, whichever view still had a save pending.
+    if (this._trashedSketchIds && this._trashedSketchIds.has(id)) return;
     await this.ensureSketchFolder();
     const path = this._sketchPath(id);
     const f = this.app.vault.getAbstractFileByPath(path);

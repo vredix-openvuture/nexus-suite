@@ -48,6 +48,8 @@ function makeSurface(host, over) {
     autoGrow: false, bgType: 'grid', bgSize: 27, bgOpacity: 0.12,
     paper: 'paper', paperStyle: true, strokes: [],
     setPen(p) { this.pen = p; }, setMode(m) { this.mode = m; },
+    eraserType: 'area', eraserSize: 'm', ruler: { on: false, angle: null }, setRuler() {}, setPenMap() {}, getPageZoom() { return 1; },
+    setEraser(type, size) { if (type) this.eraserType = type; if (size) this.eraserSize = size; },
     setColor(c) { this.color = c; }, setSize(v) { this.size = v; }, getSize() { return this.size; },
     setPaper(p) { this.paper = p; }, setPaperStyle(v) { this.paperStyle = v; },
     setBackground(t) { if (t != null) this.bgType = t; },
@@ -87,11 +89,12 @@ const marker = show('A · the highlighter’s own options',
 Array.from(marker.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn'))
   .find(b => b.dataset.icon === 'highlighter').dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
-const eraser = show('A · the eraser has no options',
-     'Nothing to configure, so the row collapses instead of sitting there empty.',
+const eraser = show('A · the eraser options',
+     'Stroke or area eraser; the area eraser in three disc sizes.',
      { mode: 'full', onCollapse: () => {} });
 Array.from(eraser.bar.querySelectorAll('.nx-sk-grp-tools .nx-sk-btn'))
   .find(b => b.dataset.icon === 'eraser').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+eraser.bar.nextElementSibling.querySelectorAll('.nx-sk-subpen')[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
 show('B · reveal, before the first tap',
      'One row only — the options open when a tool is picked and close on the first stroke.',

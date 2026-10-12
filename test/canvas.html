@@ -149,6 +149,70 @@ function stroke(pts) {
   return { color: '#111111', size: 3, thinning: 0, taper: 0, opacity: 1, pen: 'fountain', cap: 'round', points: pts };
 }
 
+// ── where a placed object lands: the middle of what is on SCREEN ──────────
+{
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const scroller = stage.createDiv();
+  scroller.style.cssText = 'height:300px;overflow-y:auto;width:400px';
+  const pad = scroller.createDiv('nx-sketch-pad');
+  pad.style.width = '400px';
+  const s = new window.NexusSketchSurface(pad, { W: 800, H: 4000, strokes: [] });
+  s.svg.style.cssText = 'display:block;width:400px;height:2000px';
+  scroller.scrollTop = 1000;
+  const at = s.viewCenter();
+  // 400 px wide for 800 units: 2 units per px. On screen: px 1000..1300 → units 2000..2600.
+  ok('placing · a long sheet scrolled down puts it where you look', Math.abs(at.y - 2300) < 30, JSON.stringify(at));
+  ok('placing · centred across the sheet', Math.abs(at.x - 400) < 5, JSON.stringify(at));
+  stage.innerHTML = '';
+}
+
+// ── the area eraser ────────────────────────────────────────────────────────
+{
+  const E = window.sketchErase;
+  const line = stroke([[0, 100, .5], [400, 100, .5]]);
+  const cut = E.eraseDisc([line], 200, 100, 10);
+  eq('area · a disc across a line leaves two pieces', cut.length, 2);
+  ok('area · the left piece ends before the disc', Math.max(...cut[0].points.map(p => p[0])) < 190);
+  ok('area · the right piece starts after it', Math.min(...cut[1].points.map(p => p[0])) > 210);
+  eq('area · and the original is not changed', line.points.length, 2);
+  eq('area · a miss returns null', E.eraseDisc([line], 200, 300, 10), null);
+  const other = stroke([[0, 300, .5], [400, 300, .5]]);
+  ok('area · strokes it missed are the same objects', E.eraseDisc([line, other], 200, 100, 10).indexOf(other) >= 0);
+  const box = Object.assign(stroke([[0, 0, .5], [100, 0, .5]]), { shape: { type: 'rect' } });
+  ok('area · a cut shape is no longer a shape', !('shape' in E.eraseDisc([box], 50, 0, 5)[0]));
+  eq('area · rubbing out a dot removes it', E.eraseDisc([stroke([[10, 10, .5]])], 10, 10, 5).length, 0);
+  const graze = Object.assign(stroke([[0, 0, .5], [100, 0, .5]]), { size: 0, shape: { kind: 'line' } });
+  eq('area · the rim grazing a segment is not a cut', E.eraseDisc([graze], 51.6, 10, 10), null);
+  const long = stroke([[0, 0, .5], [400, 0, .5], [400, 400, .5]]);
+  const parts = E.eraseDisc([long], 100, 0, 5);
+  ok('area · far segments keep their points', parts[1].points.slice(-2).every(p => long.points.indexOf(p) >= 0) && parts[1].points.length < 120, parts[1].points.length);
+  eq('area · the cut ends are marked', [!!parts[0].cutStart, !!parts[0].cutEnd, !!parts[1].cutStart, !!parts[1].cutEnd], [false, true, true, false]);
+  eq('area · a quick swipe erases a band, not two holes',
+     E.eraseSweep([line], { x: 100, y: 100 }, { x: 300, y: 100 }, 10).length, 2);
+
+  const s = makeSurface([stroke([[100, 100, .5], [700, 100, .5]])]);
+  s.setMode('erase');
+  s.setEraser('area', 'm');
+  drag(s, [[400, 80], [400, 100], [400, 120]]);
+  eq('area · on the surface the stroke is cut in two', s.strokes.length, 2);
+  s.undo();
+  eq('area · undo is one step and gives the whole stroke back', [s.strokes.length, s.strokes[0].points.length], [1, 2]);
+  s.redo();
+  eq('area · redo cuts it again', s.strokes.length, 2);
+  ptr(s, 'pointerdown', 250, 100);
+  const during = s.strokes.length;
+  s.undo();
+  eq('area · an undo mid-rub is ignored', s.strokes.length, during);
+  ptr(s, 'pointerup', 250, 100);
+  s.undo();
+  eq('area · and the rub is still one undo step', s.strokes.length, 2);
+  ok('area · the ring is gone after lifting', !s.svg.querySelector('.nx-sk-erasering'));
+  s.setEraser('stroke');
+  drag(s, [[150, 100], [150, 100]]);
+  eq('area · the stroke eraser still takes a whole piece', s.strokes.length, 1);
+}
+
 {
   const s = makeSurface([
     stroke([[100, 50, .5], [200, 60, .5]]),     // above the line

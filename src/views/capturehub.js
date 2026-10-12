@@ -44,16 +44,49 @@ const { nxAllFolders } = require('../lib/helpers.js');
 const { attachHoldMenu } = require('../lib/holdmenu.js');
 
 /* ── Sketch ──────────────────────────────────────────────────────────────────
-   A card here is a BOOK, not a page. A note owns a list of sketch ids and those
-   pages are one notebook — one cover, one name, one card — because listing them
-   separately made a seven-page note read as seven drawings that each claimed to
-   be a single page. A drawing no note names is its own book of one page.
+   A card here is a whole DRAWING, not a page. A note owns a list of sketch ids
+   and those pages are one card — listing them separately made a seven-page
+   note read as seven drawings that each claimed to be a single page. A drawing
+   no note names is a card of one page.
 
-   The tile is a bound book rather than a thumbnail of the ink: a closed cover
-   with a stitched spine and its page edges showing. What it answers is what a
-   shelf answers — which one is this, and how thick is it — and the drawing
-   itself is one tap away either way. The cover is CSS over two names in the
-   sidecar (lib/sketchcover.js), so it costs the vault nothing. */
+   What the card looks like says what kind of drawing it is (capture.sketchShape):
+   only a note with several pages is a bound BOOK (cover from the sidecar, see
+   lib/sketchcover.js); one page is paper — a single A4 SHEET for endless paper
+   and mindmaps, a STACK of sheets for sectioned paper. Paper shows the drawing
+   itself, since the sidecar is an SVG that renders on its own. */
+function sketchBookTile(item, card) {
+  const cover = sketchcover.coverFor(item.id || item.path, item.cover);
+  const book = card.createDiv('nx-cap-book');
+  book.dataset.tone = cover.tone;
+  book.dataset.pattern = cover.pattern;
+  book.createDiv('nx-cap-book-field');
+  book.createDiv('nx-cap-book-spine');
+  book.createDiv('nx-cap-book-face').createDiv({ cls: 'nx-cap-book-name', text: item.title });
+  book.createDiv('nx-cap-book-edges');
+  book.createSpan({ cls: 'nx-cap-badge is-pages', text: capture.pagesLabel(item.pages) });
+}
+
+/* Hand-drawn lines for a sheet with nothing on it yet: an empty white
+   rectangle reads as "the preview failed", a few scribbles read as paper. */
+const BLANK_SCRIBBLE = '<svg viewBox="0 0 70 99" preserveAspectRatio="none" fill="none" stroke="currentColor"'
+  + ' stroke-width="1.3" stroke-linecap="round" aria-hidden="true">'
+  + '<path d="M12 18c6-2 12 1 18-1s10 0 14-1"/><path d="M12 28c8 1 15-2 24 0s12-1 22 0"/>'
+  + '<path d="M12 37c7-1 13 1 20-1"/><path d="M12 50c9 0 14-2 22 0s9-1 16 1"/><path d="M12 59c5 1 11-1 17 0"/></svg>';
+
+/* One page on its paper: the sidecar itself as the picture, always cut the
+   same way — an A4 window on the top of the drawing, whatever the paper. */
+function sketchPaperTile(app, item, card, shape) {
+  const paper = card.createDiv('nx-cap-paper is-' + shape);
+  if (shape === 'stack') { paper.createDiv('nx-cap-sheet is-under'); paper.createDiv('nx-cap-sheet is-under'); }
+  const sheet = paper.createDiv('nx-cap-sheet');
+  const file = !item.blank && app.vault.getAbstractFileByPath(item.path);
+  if (file) {
+    const img = sheet.createEl('img', { attr: { alt: '', loading: 'lazy', decoding: 'async', draggable: 'false' } });
+    try { img.src = app.vault.getResourcePath(file); } catch (e) { img.remove(); }
+  }
+  if (!sheet.querySelector('img')) sheet.innerHTML = BLANK_SCRIBBLE;
+}
+
 function sketchAdapter(plugin) {
   const app = plugin.app;
 
@@ -115,18 +148,9 @@ function sketchAdapter(plugin) {
     },
 
     tile(item, card) {
-      const cover = sketchcover.coverFor(item.id || item.path, item.cover);
-      const book = card.createDiv('nx-cap-book');
-      book.dataset.tone = cover.tone;
-      book.dataset.pattern = cover.pattern;
-      book.createDiv('nx-cap-book-field');
-      book.createDiv('nx-cap-book-spine');
-      book.createDiv('nx-cap-book-face').createDiv({ cls: 'nx-cap-book-name', text: item.title });
-      book.createDiv('nx-cap-book-edges');
-      /* Only worth a badge once there is more than one — "1 page" on every card
-         is a number nobody reads. Worded exactly as the Ink tab words it: it is
-         the same badge class, and two readings of one badge is a defect. */
-      if (item.pages > 1) book.createSpan({ cls: 'nx-cap-badge is-pages', text: capture.pagesLabel(item.pages) });
+      const shape = capture.sketchShape(item);
+      if (shape === 'book') sketchBookTile(item, card);
+      else sketchPaperTile(app, item, card, shape);
       card.createDiv({ cls: 'nx-cap-title', text: item.title });
       /* The date and nothing else: the page count is already on the cover, and
          a card that says "7 pages" twice reads as two different facts. */
@@ -178,8 +202,9 @@ function sketchAdapter(plugin) {
     menu(item) {
       const entries = [
         { icon: 'pencil', label: 'Rename…', run: () => renameSketch(plugin, item) },
-        { icon: 'book', label: 'Cover…', run: () => pickSketchCover(plugin, item) },
       ];
+      // A cover belongs to a book; paper has none to pick.
+      if (capture.sketchShape(item) === 'book') entries.push({ icon: 'book', label: 'Cover…', run: () => pickSketchCover(plugin, item) });
       if (item.notePath) entries.push({
         icon: 'file-text', label: 'Go to the note',
         run: async () => {

@@ -5,12 +5,13 @@
  *  Every page the note owns, as its own thumbnail — the sidecars are ordinary
  *  SVGs, so the preview is the file itself and costs nothing to draw.
  *
- *  Removing a page takes it out of the note's list and leaves the .svg where it
- *  is. A drawing is worth more than the line that pointed at it.
+ *  Removing a page asks first, then takes it out of the note's list and puts
+ *  its .svg in the trash (lib/notesketches.js · removePage).
  * ========================================================================== */
 
 const { Modal, Notice, TFile, setIcon } = require('obsidian');
 const notesketches = require('../lib/notesketches.js');
+const { NexusConfirmModal } = require('./misc.js');
 const { parseSketchSVG, withSketchTitle } = require('../views/sketch.js');
 
 class NexusSketchPagesModal extends Modal {
@@ -107,14 +108,25 @@ class NexusSketchPagesModal extends Modal {
       // Only offered where there is something left afterwards: a note with no
       // pages has no way back to a drawing.
       if (ids.length > 1) {
-        const drop = card.createDiv({ cls: 'nx-skpick-drop', attr: { 'aria-label': 'Take this page out of the note' } });
+        const drop = card.createDiv({ cls: 'nx-skpick-drop', attr: { 'aria-label': 'Delete this page' } });
         setIcon(drop, 'x');
         drop.onclick = async (e) => {
           e.stopPropagation();
           const file2 = this.pane.noteFile();
           if (!file2) return;
-          await notesketches.removePage(this.plugin, file2, id);
-          if (id === this.pane.id) await this.pane.goToPage(this.pane.pageIds()[0]);
+          const label = (this.names || {})[id] || ('Page ' + (i + 1));
+          const sure = await new NexusConfirmModal(this.app, 'Delete ' + label + '?',
+            'The page is taken out of the note and its drawing goes to the trash.', 'Delete').openAndGet();
+          if (!sure) return;
+          /* Off the page FIRST when it is the one on screen: the pane flushes
+             its pending save on the way out, and a save landing after the
+             trash would write the deleted page straight back. */
+          if (id === this.pane.id) {
+            const rest = this.pane.pageIds().filter(x => x !== id);
+            await this.pane.goToPage(notesketches.nextId(ids, id) || notesketches.prevId(ids, id) || rest[0]);
+          }
+          try { await notesketches.removePage(this.plugin, file2, id); }
+          catch (err) { new Notice('Nexus: the page is out of the note, but ' + (err && err.message ? err.message : err)); }
           this.render();
         };
       }

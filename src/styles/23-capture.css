@@ -418,6 +418,43 @@ body.is-mobile .nx-cap-quicks { opacity: 1; }
 .nx-cap-book .nx-cap-badge { z-index: 4; }
 .nx-cap-card.is-picked .nx-cap-book { outline: 2px solid var(--nx-accent, var(--interactive-accent)); outline-offset: 1px; }
 
+/* ── Paper: a drawing of one page ──────────────────────────────────────────
+   The same 3:4 box as a book, so a shelf of mixed cards keeps one row height;
+   the A4 sheet stands inside it. The sheet is a picture of paper, not a
+   surface of the theme, so it stays light in dark mode — like the drawing it
+   shows, whose own background is part of the file. */
+.nx-cap-paper {
+  --nx-paper: #fbfaf6;
+  position: relative;
+  aspect-ratio: 3 / 4;
+  display: flex; align-items: center; justify-content: center;
+}
+.nx-cap-sheet {
+  position: relative;
+  /* A4 standing in a 3:4 box: (297/210) / (4/3) of the box width. Set as a
+     width and not as height: 100%, which a flex item sized by aspect-ratio
+     alone does not resolve. */
+  flex: 0 0 auto; width: 94.3%; aspect-ratio: 210 / 297;
+  overflow: hidden;
+  background: var(--nx-paper);
+  color: rgba(40, 44, 52, .38);   /* the scribble on an empty sheet */
+  border: 1px solid rgba(0, 0, 0, .14);
+  border-radius: 2px;   /* nx-literal-ok: a sheet of paper has a cut corner, not a control's radius */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .22);
+}
+.nx-cap-sheet img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.nx-cap-sheet > svg { display: block; width: 100%; height: 100%; }
+
+/* A stack: two sheets peeking out behind the top one, down and to the right,
+   like paper squared off against a desk. Room is made by shrinking the top
+   sheet rather than letting the pile overflow the card. */
+.nx-cap-paper.is-stack .nx-cap-sheet { width: 84%; }
+.nx-cap-paper.is-stack .nx-cap-sheet:not(.is-under) { transform: translate(-6px, -6px); }
+.nx-cap-paper.is-stack .nx-cap-sheet.is-under { position: absolute; }
+.nx-cap-paper.is-stack .nx-cap-sheet.is-under:first-child { transform: translate(4px, 4px) rotate(1.6deg); }
+.nx-cap-paper.is-stack .nx-cap-sheet.is-under:nth-child(2) { transform: translate(-1px, -1px) rotate(-.8deg); }
+.nx-cap-card.is-picked .nx-cap-sheet:not(.is-under) { outline: 2px solid var(--nx-accent, var(--interactive-accent)); outline-offset: 1px; }
+
 /* ── The cover picker ──────────────────────────────────────────────────────
    Built from the tile's own class names, so the preview and the shelf can
    never drift apart. */

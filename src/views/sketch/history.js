@@ -9,6 +9,7 @@
 const { ERASE_R } = require('./tuning.js');
 const { sketchStrokePath } = require('../../lib/sketchstroke.js');
 const { svgEl } = require('../../lib/sketchsvg.js');
+const { eraserRadiusPx, eraseSweep, touches } = require('../../lib/sketcherase.js');
 
 class SurfaceHistory {
 
@@ -16,7 +17,9 @@ class SurfaceHistory {
     for (let i = this.strokes.length - 1; i >= 0; i--) {
       const st = this.strokes[i];
       const hitR = st.size / 2 + ERASE_R;
-      if (st.points.some(pt => Math.hypot(pt[0] - p.x, pt[1] - p.y) <= hitR)) {
+      // Distance to the SEGMENTS, not only the sampled points: a piece the area
+      // eraser left behind can be two points far apart with ink between them.
+      if (touches(st, p.x, p.y, hitR)) {
         this._eraseSnapped = true;
         // Recorded in REMOVAL order with the index that was valid at that
         // moment; undo replays it backwards, which restores exactly.
@@ -29,6 +32,45 @@ class SurfaceHistory {
     }
   }
 
+  /* The area eraser: one gesture is one undo step, recorded as the array it
+     started from. The radius is fixed at pen-down from the zoom of that moment
+     — measuring the element on every move would force a layout per sample. */
+  _areaEraseStart(p) {
+    this._areaErase = { before: this.strokes, last: null, r: eraserRadiusPx(this.eraserSize) * this._uPerPx() };
+    this._areaEraseMove(p);
+  }
+  _areaEraseMove(p) {
+    const a = this._areaErase;
+    this._showEraseRing(p, a.r);
+    const next = eraseSweep(this.strokes, a.last, p, a.r);
+    a.last = p;
+    if (!next) return;
+    this.strokes = next;
+    this._invalidateSelection();
+    this._changedDuringErase = true;
+    // One redraw per frame, not per pointer sample: rebuilding every stroke's
+    // element on each move is what would make a long page lag behind the pen.
+    if (!a.frame) a.frame = requestAnimationFrame(() => { a.frame = 0; this._renderStrokes(); });
+  }
+  _areaEraseEnd() {
+    const a = this._areaErase;
+    this._areaErase = null;
+    if (a && a.frame) { cancelAnimationFrame(a.frame); this._renderStrokes(); }
+    if (this._eraseRing) { this._eraseRing.remove(); this._eraseRing = null; }
+    if (a && this.strokes !== a.before) this._pushUndo({ t: 'replace', all: a.before });
+  }
+  // Where the disc is, while it is down: erasing blind is guessing.
+  _showEraseRing(p, r) {
+    if (!this._eraseRing) {
+      this._eraseRing = svgEl('circle', { class: 'nx-sk-erasering' });
+      this.svg.appendChild(this._eraseRing);
+    }
+    this._eraseRing.setAttribute('cx', p.x.toFixed(1));
+    this._eraseRing.setAttribute('cy', p.y.toFixed(1));
+    this._eraseRing.setAttribute('r', r.toFixed(1));
+    this._eraseRing.setAttribute('stroke-width', (r / 12).toFixed(2));
+  }
+
   /* Outline geometry for a committed stroke, memoised ON the stroke and
      deliberately NON-ENUMERABLE so it stays out of the JSON that goes into the
      .svg metadata. Without it every save re-derived the outline of EVERY stroke
@@ -36,7 +78,9 @@ class SurfaceHistory {
      stroke, because it ran on the pen-up right before the next one started. */
   _strokeD(st) {
     if (st._d !== undefined) return st._d;
-    const d = sketchStrokePath(st.points, st.size, { thinning: st.thinning, taperStart: st.taper || 0, taperEnd: st.taper || 0, cap: st.cap, nib: st.nib });
+    // An end the area eraser cut ends flat: rubbed-out ink does not come to a point.
+    const taper = st.taper || 0;
+    const d = sketchStrokePath(st.points, st.size, { thinning: st.thinning, taperStart: st.cutStart ? 0 : taper, taperEnd: st.cutEnd ? 0 : taper, cap: st.cap, nib: st.nib });
     try { Object.defineProperty(st, '_d', { value: d, writable: true, configurable: true, enumerable: false }); }
     catch (e) { st._d = d; }
     return d;
@@ -220,6 +264,9 @@ class SurfaceHistory {
      not safety. */
   _renumbers(op) { return op && op.t !== 'points' && op.t !== 'color'; }
   undo() {
+    // Mid-rub the area eraser holds the array it started from; an undo now
+    // would be overwritten the moment the pen lifts.
+    if (this._areaErase) return;
     const op = this.undoStack.pop();
     if (!op) return;
     const inv = this._applyUndoOp(op);
@@ -228,6 +275,7 @@ class SurfaceHistory {
     this._renderStrokes(); this._changed();
   }
   redo() {
+    if (this._areaErase) return;
     const op = this.redoStack.pop();
     if (!op) return;
     const inv = this._applyUndoOp(op);

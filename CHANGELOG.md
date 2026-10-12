@@ -11,6 +11,32 @@ Grouped by what changed for you, not by commit. Newest first.
   then a *Pulling* bar (server → this device) and a *Pushing* bar (this device →
   server) with their counts. A run with nothing to move only says *Up to date —
   nothing to do.* Pulling now runs before pushing.
+- **An area eraser.** The eraser has an options row now: the stroke eraser
+  takes whole strokes as before, the area eraser removes only the ink under its
+  disc and cuts a stroke it crosses in two. Three disc sizes, a ring while the
+  pen is down, one undo step per rub. The choice is remembered.
+
+### Changed
+
+- **The Sketch tab draws paper, not only books.** Only a note with several
+  pages is a notebook. One page of endless paper or a mindmap is an A4 sheet
+  showing the drawing; one page of sectioned paper is a stack of sheets. *Cover…*
+  is offered for notebooks only.
+- **Deleting a page asks first, and really deletes it.** In the page list of the
+  Sketch tab, removing a page now asks for confirmation, then puts its `.svg` in
+  the trash. Before, the file stayed behind and showed up in the capture hub as
+  an empty loose sheet.
+
+### Fixed
+
+- **The stroke eraser hits a stroke between its points**, not only at them.
+- **Stickers, notes and images land where you are looking.** On a long endless
+  or sectioned page they were placed in the middle of the whole sheet, which
+  after scrolling is somewhere off screen.
+- **"Sync failed … 423" on Nextcloud.** Nextcloud locks a file while something
+  else reads it, and refused writes in that moment. A locked write is now asked
+  for twice more within a few seconds and otherwise left for the next run,
+  counted as *locked* instead of announced as a failure.
 
 ## 0.34.0 — 2026-10-11
 

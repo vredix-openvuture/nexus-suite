@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>sketch hub tiles — a look</title>
+<link rel="stylesheet" href="plugin/styles.css">
+<style>
+:root { --background-primary:#1e1e1e; --text-normal:#dcddde; --text-muted:#999; --text-faint:#666; --interactive-accent:#fb6734;
+  --wl-color1:#ce3737; --wl-color3:#4E68AB; --wl-color4:#1b3854; --wl-color5:#C95E61; }
+body { margin:0; background:#141414; color:#dcddde; font-family:system-ui,sans-serif; padding:24px; }
+.nx-cap-grid { width: 620px; }
+</style></head><body>
+<div class="nx-cap-grid" id="grid"></div>
+<script src="bundle.js"></script>
+<script>
+/* Real adapter tile + real stylesheet: a book, a stack, a sheet, a mindmap and
+   a blank sheet side by side. The previews are tiny inline SVG drawings. */
+const C = window.captureLib;
+const ink = (h, body) => 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 ' + h + '"><rect width="1600" height="' + h + '" fill="#f7f6f2"/>' + body + '</svg>');
+const lines = '<g fill="none" stroke="#223" stroke-width="10" stroke-linecap="round"><path d="M150 260c200-40 400 30 600-10s300 20 500 0"/><path d="M150 420c300 20 500-30 800 0"/><path d="M150 580c200-20 350 10 520-5"/><text x="150" y="190" font-size="120" fill="#223" stroke="none" font-family="cursive">Physik</text></g>';
+const mind = '<g fill="none" stroke="#2a4" stroke-width="12"><circle cx="800" cy="500" r="160"/><path d="M640 500L250 250M960 500l390-250M800 660v260"/><circle cx="250" cy="250" r="90"/><circle cx="1350" cy="250" r="90"/><circle cx="800" cy="1000" r="90"/></g>';
+const SRC = { a: ink(4611, lines), m: ink(1200, mind), s: ink(2263, lines) };
+const adapter = window.captureHub.sketchAdapter({ app: {
+  vault: { getAbstractFileByPath: (p) => ({ path: p }), getResourcePath: (f) => SRC[f.path] },
+  workspace: {} } });
+const doc = (path, title, extra) => Object.assign({ path, id: path, display: title, named: true, fields: { title: [], sections: [], notes: [], ocr: [] } }, extra);
+const items = [
+  C.sketchItem(doc('a', 'Physik LK', { paperType: 'endless' }), { mtime: 1 }, { paths: ['a', 'b', 'c'], pageDocs: [{}, {}], noteName: 'Physik LK' }),
+  C.sketchItem(doc('s', 'Sectioned notes', { paperType: 'sectioned' }), { mtime: 1 }),
+  C.sketchItem(doc('a', 'Endless page', { paperType: 'endless' }), { mtime: 1 }),
+  C.sketchItem(doc('m', 'Mindmap', { paperType: 'mindmap' }), { mtime: 1 }),
+  C.sketchItem(doc('e', 'Empty sheet', { paperType: 'endless', blank: true }), { mtime: 1 }),
+];
+const grid = document.getElementById('grid');
+for (const it of items) { const card = grid.createDiv('nx-cap-card'); adapter.tile(it, card); }
+</script></body></html>

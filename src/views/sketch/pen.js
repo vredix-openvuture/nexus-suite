@@ -130,7 +130,11 @@ class SurfacePen {
     e.preventDefault();
     try { this.svg.setPointerCapture(e.pointerId); } catch (err) {}
     this._ctmInv = this._invCTM();   // cache once per stroke (see _pt)
-    if (this.mode === 'erase') { this._erasing = true; this._eraseSnapped = false; this._eraseBatch = []; this._eraseAt(this._pt(e)); return; }
+    if (this.mode === 'erase') {
+      this._erasing = true; this._eraseSnapped = false; this._eraseBatch = [];
+      if (this.eraserType === 'area') this._areaEraseStart(this._pt(e)); else this._eraseAt(this._pt(e));
+      return;
+    }
     if (this.mode === 'select') { this._selDown(this._pt(e), e); return; }
     if (this.mode === 'space') { this._spaceDown(this._pt(e), e); return; }
     // Insert is a placement tool driven from its options row — the pen has
@@ -180,7 +184,7 @@ class SurfacePen {
     // fingers of the other hand (pressure/buttons are 0 in hover).
     if (e.pointerType === 'pen' && (e.buttons || e.pressure > 0)) this._lastPen = performance.now();
     if (e.pointerType === 'touch') { this._touchMove(e); return; }
-    if (this._erasing) { this._eraseAt(this._pt(e)); return; }
+    if (this._erasing) { if (this._areaErase) this._areaEraseMove(this._pt(e)); else this._eraseAt(this._pt(e)); return; }
     if (this._selDrag) { e.preventDefault(); this._selMove(this._pt(e), e); return; }
     if (this._spaceDrag) { e.preventDefault(); this._spaceMove(this._pt(e)); return; }
     if (!this._active) return;
@@ -231,6 +235,7 @@ class SurfacePen {
     if (this._erasing) {
       this._erasing = false;
       this.livePath.removeAttribute('d');
+      if (this._areaErase) this._areaEraseEnd();
       if (this._eraseBatch && this._eraseBatch.length) { this._pushUndo({ t: 'insert', items: this._eraseBatch }); }
       this._eraseBatch = null;
       if (this._changedDuringErase) { this._changedDuringErase = false; this._changed(); }

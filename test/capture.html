@@ -66,6 +66,17 @@ const chatSrc = { path: 'Inbox/Quicknote/Buy the flux.md', basename: 'Buy the fl
   const it = C.sketchItem(sketchDoc, { mtime: 9 });
   eq('sketch · the title is the display name', it.title, 'Firmware notes');
   eq('sketch · the stamp is the file, since a drawing has no frontmatter', it.stamp, 9);
+  // What the hub draws: only several pages make a notebook.
+  eq('shape · one endless page is a sheet', C.sketchShape(C.sketchItem(Object.assign({}, sketchDoc, { paperType: 'endless' }), {})), 'sheet');
+  eq('shape · a mindmap is a sheet', C.sketchShape(C.sketchItem(Object.assign({}, sketchDoc, { paperType: 'mindmap' }), {})), 'sheet');
+  eq('shape · sectioned paper is a stack', C.sketchShape(C.sketchItem(Object.assign({}, sketchDoc, { paperType: 'sectioned' }), {})), 'stack');
+  eq('shape · several pages are a book, whatever the paper', C.sketchShape(C.sketchItem(Object.assign({}, sketchDoc, { paperType: 'sectioned' }), {},
+    { paths: ['a.svg', 'b.svg'], pageDocs: [{ blank: true }] })), 'book');
+  eq('shape · an old sidecar without a paper type is endless', C.sketchItem(Object.assign({}, sketchDoc, { paperType: undefined }), {}).paperType, 'endless');
+  const S = window.sketchSearch;
+  ok('shape · a sidecar with no ink is blank', S.sketchDocument('x.svg', { strokes: [] }).blank);
+  ok('shape · one stroke is not', !S.sketchDocument('x.svg', { strokes: [{ points: [] }] }).blank);
+  ok('shape · nor is a sticker alone', !S.sketchDocument('x.svg', { strokes: [], objects: [{ kind: 'sticker' }] }).blank);
   ok('sketch · a section is searchable', C.matchesQuery(it, 'irq'));
   ok('sketch · and so is read handwriting', C.matchesQuery(it, 'reset'));
 }

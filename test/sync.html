@@ -959,6 +959,48 @@ const b = (localEntry, remoteEntry) => ({ local: localEntry || null, remote: rem
   })();
 
   await (async () => {
+    // Nextcloud answers 423 while another reader holds the file. That is not a
+    // failure: no notice, the record untouched, and the next run uploads it.
+    const vault = memoryVault({ 'ok.md': 'fine', 'busy.md': 'held' });
+    const server = fakeServer({});
+    const put = server.put;
+    let locked = true;
+    server.put = async (p, b) => { if (p === 'busy.md' && locked) throw new Error('uploading "busy.md" failed with 423'); return put(p, b); };
+    const vs = runnerFor(vault, server);
+    window.__notices = [];
+    const first = await vs.syncNow(false);
+    eq('locked · counted apart', [first.locked, first.failed], [1, 0]);
+    eq('locked · and not announced', (window.__notices || []).length, 0);
+    ok('locked · described as retried', /1 locked on the server/.test(vs.describe(first)), vs.describe(first));
+    locked = false;
+    const second = await vs.syncNow(false);
+    eq('locked · the next run uploads it', [second.uploaded, second.locked], [1, 0]);
+  })();
+
+  await (async () => {
+    // The client itself asks again after a 423, and only for writes.
+    const calls = [];
+    let answers = [423, 423, 201];
+    globalThis.__requestUrl = async (o) => { calls.push(o.method); return { status: o.method === 'PUT' ? answers.shift() : 423, text: '' }; };
+    const c = new W.WebDavClient({ baseUrl: 'https://x/dav', lockRetryMs: [0, 0] });
+    await c.put('a.md', 'x');
+    eq('locked · a PUT is retried until it goes through', calls, ['PUT', 'PUT', 'PUT']);
+    answers = [423, 423, 423];
+    calls.length = 0;
+    let err = null;
+    try { await c.put('a.md', 'x'); } catch (e) { err = e; }
+    eq('locked · and gives up after two retries', calls.length, 3);
+    ok('locked · with an error the run recognises', W.isLockedError(err), err && err.message);
+    calls.length = 0;
+    try { await c.get('a.md'); } catch (e) {}
+    eq('locked · a GET is not retried', calls, ['GET']);
+    calls.length = 0;
+    try { await c.put('b.md', 'x'); } catch (e) {}
+    eq('locked · after one lock outlasted the retries, the run stops waiting', calls, ['PUT']);
+    globalThis.__requestUrl = null;
+  })();
+
+  await (async () => {
     // Many conflicts, one toast.
     const notes = {}, theirs = {};
     for (let i = 0; i < 12; i++) { notes['c' + i + '.md'] = 'mine ' + i; theirs['c' + i + '.md'] = 'their ' + i + ' longer'; }

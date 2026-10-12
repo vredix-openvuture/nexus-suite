@@ -100,14 +100,14 @@ function inkItem(src) {
    and the search box read the same fields — a second parse of the SVG would
    drift from it the first time either side changed.
 
-   One item is a BOOK, not a page. A note owns a list of sketch ids (see
-   lib/notesketches.js) and those pages are one notebook: one cover, one name,
-   one row in the hub. Listing them separately is what made a seven-page note
-   read as seven drawings that each claimed to be a single page.
+   One item is a whole DRAWING, not a page. A note owns a list of sketch ids
+   (see lib/notesketches.js) and those pages are one item: one name, one card
+   in the hub. Listing them separately is what made a seven-page note read as
+   seven drawings that each claimed to be a single page. How the card is drawn
+   — notebook, sheet or stack — is sketchShape's answer below.
 
    `book` describes the owner and is absent for a loose sketch — one that no
-   note names. Then the drawing is its own book of one page, which is what it
-   actually is.
+   note names. Then the drawing is an item of one page.
 
      notePath  the note that owns the pages ('' when nothing does)
      noteName  its basename, used as the book's name when the sketch is unnamed
@@ -149,8 +149,19 @@ function sketchItem(doc, stat, book) {
     pages: pagePaths.length,
     stamp: (stat && (stat.mtime || stat.ctime)) || 0,
     cover: doc.cover || null,
+    paperType: doc.paperType || 'endless',
+    blank: !!doc.blank && laterPages.every(page => page.blank),
     search,
   };
+}
+
+/* How the hub draws a drawing. Only a note with several PAGES is a notebook;
+   one page is paper — a pile of A4 sheets when it is sectioned (it is cut into
+   pages, but they are one drawing), a single sheet when it is endless or a
+   mindmap. */
+function sketchShape(item) {
+  if (item && item.pages > 1) return 'book';
+  return item && item.paperType === 'sectioned' ? 'stack' : 'sheet';
 }
 
 /* "3 pages" — the one place a page count is turned into words, so nothing in
@@ -344,7 +355,7 @@ function readOcrSection(note) {
 
 module.exports = {
   SORTS, parseStamp, stripFrontmatter, firstLine, formatDuration, shortDate, tagList,
-  isInkCapture, inkItem, sketchItem, pagesLabel, isChatter, chatterItem,
+  isInkCapture, inkItem, sketchItem, sketchShape, pagesLabel, isChatter, chatterItem,
   matchesQuery, filterItems, sortItems, CaptureSelection,
   normalizeFolder, baseName, moveTarget, movePlan, commonFolder,
   OCR_BEGIN, OCR_END, ocrSection, withOcrSection, readOcrSection,

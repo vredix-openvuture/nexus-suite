@@ -481,6 +481,15 @@
   cursor: crosshair;
 }
 .nx-sk-live { pointer-events: none; }
+/* The area eraser's disc while it is down. Dark rim with a light halo, so it
+   is visible on light paper and on dark paper alike. */
+.nx-sk-erasesize { display: inline-flex; align-items: center; justify-content: center; }
+.nx-sk-erasedot { border-radius: 50%; border: 1.5px solid currentColor; }   /* nx-literal-ok: a picture of the round disc, not a control corner */
+.nx-sk-erasering {
+  pointer-events: none; fill: rgba(127, 127, 127, .12);
+  stroke: rgba(30, 30, 30, .65); paint-order: stroke;
+  filter: drop-shadow(0 0 1px rgba(255, 255, 255, .9));
+}
 /* Low-latency live layer: the in-progress stroke is painted here (desynchronized
    2d contexts, see sketch.js) and committed to the SVG on release.
    TWO stacked canvases — accumulated chunks + the moving tail — inside one

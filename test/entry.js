@@ -30,6 +30,7 @@ window.sketchGestures = require('../src/lib/sketchgestures.js');
 window.sketchExport = require('../src/lib/sketchexport.js');
 window.sketchSearch = require('../src/lib/sketchsearch.js');
 window.sketchCover = require('../src/lib/sketchcover.js');
+window.sketchErase = require('../src/lib/sketcherase.js');
 window.withSketchTitle = require('../src/views/sketch.js').withSketchTitle;
 window.withSketchCover = require('../src/views/sketch.js').withSketchCover;
 window.fieldScore = require('../src/modals/search.js').fieldScore;

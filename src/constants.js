@@ -144,6 +144,7 @@ const DEFAULT_SETTINGS = {
     penConfig: {},                                         // per-pen behaviour overrides (streamline/thinning/taper/speedThin/cap/noStack)
     sizeFavorites: [1.5, 3, 8],                            // quick-set px favorites
     shapeSnap: true,                                       // hold pen still after drawing → snap to line/rect/ellipse/triangle
+    eraser: { type: 'stroke', size: 'm' },               // stroke | area; area disc s | m | l
     autoGrow: false,                                       // extend canvas downward while drawing near the bottom
     // bgSize 27 ≈ 5 mm squares like real DIN-A4 grid paper: canvas width 1600
     // units ≙ 297 mm (A4 landscape) → 5 mm ≙ ~26.9 units.

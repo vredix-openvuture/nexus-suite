@@ -216,9 +216,34 @@ function viewFor(plugin, file) {
   eq('pages · and writes its sidecar first', saved.length, 1);
   ok('pages · with something a viewer can open', saved[0][1]);
 
+  // The page being deleted is still being saved when the delete comes in: the
+  // save must land first, or it would create the trashed file again.
+  const trashed = [];
+  t.app.fileManager.trashFile = async (f) => { trashed.push(f.path); delete t.vault.files[f.path]; };
+  t.app.vault.getMarkdownFiles = () => [t.file];
+  const p1 = t.plugin._sketchPath('sk-1');
+  await t.plugin.saveSketch('sk-1', '<svg/>');
+  const late = t.plugin.saveSketch('sk-1', '<svg>later</svg>');
   await NS.removePage(t.plugin, t.file, 'sk-1');
+  await late;
   eq('pages · removing one takes it out of the note', t.frontmatter.sketch, id);
-  ok('pages · and never touches the drawing itself', true);
+  eq('pages · and puts its drawing in the trash', trashed, [p1]);
+  ok('pages · after the save that was still running', !t.vault.files[p1], Object.keys(t.vault.files).join(','));
+
+  // A page another note also names stays: it is still that note's page.
+  const shared = makeApp({ sketch: ['sk-x', 'sk-y'] });
+  const other = { path: 'Other.md', extension: 'md', basename: 'Other' };
+  const gone = [];
+  shared.app.fileManager.trashFile = async (f) => { gone.push(f.path); };
+  shared.app.vault.getMarkdownFiles = () => [shared.file, other];
+  shared.app.metadataCache.getFileCache = (f) => ({ frontmatter: f === other ? { sketch: 'sk-x' } : Object.assign({}, shared.frontmatter) });
+  await shared.plugin.saveSketch('sk-x', '<svg/>');
+  await NS.removePage(shared.plugin, shared.file, 'sk-x');
+  eq('pages · a page another note names is not trashed', gone, []);
+
+  // Another view still open on the deleted page must not write it back.
+  await t.plugin.saveSketch('sk-1', '<svg/>');
+  ok('pages · a late save from another view does not recreate it', !t.vault.files[p1]);
 }
 
 {

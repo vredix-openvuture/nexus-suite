@@ -44,6 +44,9 @@ function sketchDocument(path, data) {
     named: !!(data.title && String(data.title).trim()),
     // The book cover, straight from the sidecar — see lib/sketchcover.js.
     cover: data.cover || null,
+    // What the capture hub draws the drawing as: a sheet, a stack or a book.
+    paperType: data.paperType || 'endless',
+    blank: !((data.strokes || []).length || (data.objects || []).length),
   };
 }
 

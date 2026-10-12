@@ -144,7 +144,25 @@ class SurfaceView {
      placed object belongs, rather than the middle of a page that may be metres
      long. */
   viewCenter() {
-    return { x: this.viewX + this.viewW / 2, y: this.viewY + this._vh() / 2 };
+    const whole = { x: this.viewX + this.viewW / 2, y: this.viewY + this._vh() / 2 };
+    if (this.infinite) return whole;
+    /* A sheet's viewBox is the whole sheet; what is on screen is decided by the
+       pane scrolling around it. So the visible part is the sheet's rectangle
+       clipped to the scroller (or the window), mapped back into canvas units —
+       otherwise a sticker placed on page six of an endless page lands on page
+       three, out of sight. */
+    const r = this.svg.getBoundingClientRect();
+    if (!r.width || !r.height) return whole;
+    const sc = this._findScroller();
+    const box = sc ? sc.getBoundingClientRect()
+      : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+    const left = Math.max(r.left, box.left), right = Math.min(r.right, box.right);
+    const top = Math.max(r.top, box.top), bottom = Math.min(r.bottom, box.bottom);
+    if (right <= left || bottom <= top) return whole;
+    return {
+      x: this.viewX + ((left + right) / 2 - r.left) / r.width * this.viewW,
+      y: this.viewY + ((top + bottom) / 2 - r.top) / r.height * this._vh(),
+    };
   }
   _uPerPx() {
     const w = this.svg.getBoundingClientRect().width || this.W;

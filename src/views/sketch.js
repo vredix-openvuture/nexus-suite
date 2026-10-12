@@ -70,6 +70,9 @@ class NexusSketchSurface {
     /* Selection lives here and not in the toolbar: undo, erase and a
        reload all invalidate it, and they all happen in the engine. */
     this.selectShape = 'lasso';   // lasso | rect | ellipse
+    // stroke: a touch takes the whole stroke; area: only the ink under the disc.
+    this.eraserType = opts.eraserType === 'area' ? 'area' : 'stroke';
+    this.eraserSize = opts.eraserSize || 'm';   // s | m | l, see lib/sketcherase.js
     this.paperWidth = opts.paperWidth || 0;   // px cap on the sheet, 0 = fill the pane
     // Straight edge: on/off plus a fixed angle in degrees (null = follow the
     // direction the stroke starts in).
@@ -261,6 +264,10 @@ class NexusSketchSurface {
       this.host.classList.toggle('is-space', m === 'space');
     }
     if (this.gSel) { if (m === 'space') this._paintSpace(); else this._paintSel(null); }
+  }
+  setEraser(type, size) {
+    if (type === 'stroke' || type === 'area') this.eraserType = type;
+    if (size) this.eraserSize = size;
   }
   setSelectShape(k) { if (['lasso', 'rect', 'ellipse'].includes(k)) this.selectShape = k; }
   setPenMap(map) { this.penMap = map || {}; }
