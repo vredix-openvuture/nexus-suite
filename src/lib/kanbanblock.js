@@ -217,6 +217,32 @@ function readSource(src, fallback) {
   return out;
 }
 
+/* The `source:` value exactly as written, lowercased — '' when there is none.
+   readSource folds everything into block/folder; this is what tells the
+   renderer that a board belongs to a source another plugin registered. */
+function rawSource(src) {
+  for (const raw of String(src || '').split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    if (RE_HEAD.test(line) || RE_CARD.test(line)) break;
+    const m = line.match(/^source\s*:\s*(.*)$/i);
+    if (m) return m[1].trim().toLowerCase();
+  }
+  return '';
+}
+
+/* The `key: value` lines above the first column, as a plain map with
+   lowercased keys — what a registered source reads its own settings from. */
+function configOf(src) {
+  const out = {};
+  for (const raw of String(src || '').split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    if (RE_HEAD.test(line) || RE_CARD.test(line)) break;
+    const i = line.indexOf(':');
+    if (i > 0) out[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+  }
+  return out;
+}
+
 /* The keys only a folder board has. A block board must NOT consume them: it
    cannot write them back, so reading them would delete the line. */
 function folderKey(cfg, k, v, bucket) {
@@ -316,6 +342,6 @@ function stringifyKanban(cfg) {
 }
 
 module.exports = {
-  parseKanban, stringifyKanban, cardLine, cardLines, cardTitle,
+  parseKanban, stringifyKanban, cardLine, cardLines, cardTitle, rawSource, configOf,
   bucketKind, kindVar, KIND_SLOT,
 };

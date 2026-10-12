@@ -32,7 +32,9 @@ const blockedit = require('./blockedit.js');
 const block = require('./kanbanblock.js');
 const edit = require('./kanbanedit.js');
 const { safeFileName, uniquePath } = require('./vaultpaths.js');
-const { parseKanban, stringifyKanban, kindVar } = block;
+const { parseKanban, stringifyKanban, kindVar, bucketKind, rawSource, configOf } = block;
+// Ids another plugin may not register: the suite answers these itself.
+const OWN_SOURCES = /^(|block|folder|vault|query|notes)$/;
 const { blockSource } = edit;
 
 /* Auto-scroll the column strip while a card is held against its edge. Without
@@ -93,8 +95,42 @@ function cardFrame(parent, v) {
 /* ---- the module ----------------------------------------------------------- */
 
 class NexusKanban {
-  constructor(plugin) { this.plugin = plugin; this.app = plugin.app; }
+  constructor(plugin) { this.plugin = plugin; this.app = plugin.app; this._sources = new Map(); }
   get s() { return this.plugin.settings.kanban || {}; }
+
+  /* ---- sources from other plugins ------------------------------------------
+     A companion plugin (nexus-vikunja, for one) hands the board its cards:
+
+       const off = app.plugins.getPlugin('nexus-suite').kanban
+         .registerSource('vikunja', (board) => source);
+
+     `board` is { kanban, app, src, el, ctx, cfg, config, helpers, repaint };
+     `config` is the block's own `key: value` lines, `repaint()` draws the board
+     again — call it when fresh cards arrive. The returned source answers the
+     same seam a block board does (lib/kanbanedit.js). A board whose source is
+     not registered (yet) says so, and is drawn the moment it is. */
+  registerSource(id, factory) {
+    const key = String(id || '').trim().toLowerCase();
+    if (!key || OWN_SOURCES.test(key)) throw new Error('kanban source id "' + id + '" is not available');
+    this._sources.set(key, factory);
+    this.repaintSource(key);
+    return () => {
+      if (this._sources.get(key) !== factory) return;
+      this._sources.delete(key);
+      this.repaintSource(key);
+    };
+  }
+  hasSource(id) { return this._sources.has(String(id || '').trim().toLowerCase()); }
+  repaintSource(key) {
+    // Every window: a board can sit in a popout, whose document is its own.
+    const docs = new Set([document]);
+    try { this.app.workspace.iterateAllLeaves(leaf => { const d = leaf.view && leaf.view.containerEl && leaf.view.containerEl.ownerDocument; if (d) docs.add(d); }); }
+    catch (e) { /* no workspace (tests): the main document is all there is */ }
+    docs.forEach(doc => doc.querySelectorAll('.nx-kb').forEach(el => {
+      if (el._nxSourceId !== key || !el._nxRepaint) return;
+      try { el._nxRepaint(); } catch (e) { console.error('[nexus-suite] kanban source repaint', key, e); }
+    }));
+  }
 
   init() {
     const p = this.plugin;
@@ -196,6 +232,11 @@ class NexusKanban {
        settings cannot re-bucket a note. Everything else the settings say is
        applied where it is used (here, and in createNote). */
     const cfg = parseKanban(src, o.defaults);
+    /* Foreign = a source another plugin provides. Anything readSource already
+       reads as a folder board (its match is loose: "folders", "Folder board")
+       stays one, so no board written before this changes what it shows. */
+    const sourceId = rawSource(src);
+    const foreign = cfg.source !== 'folder' && sourceId !== '' && sourceId !== 'block';
     // The grid and the graph are their own block now; the old fence still
     // reaches them, so a note written before today renders what it always did.
     if (cfg.source === 'folder' && (cfg.mode === 'grid' || cfg.mode === 'graph')) {
@@ -210,17 +251,32 @@ class NexusKanban {
     el.removeClass('nx-graph'); el.removeClass('is-sm'); el.removeClass('is-lg');
     el.addClass('nx-kb');
     el.toggleClass('is-compact', cfg.compact || !!this.s.compact);
-    el.toggleClass('is-folder', cfg.source === 'folder');
+    el.toggleClass('is-folder', cfg.source === 'folder' && !foreign);
     el._nxSrc = src;   // what is on the board right now — see save()/locateBlock
     el._nxFence = o.fence || 'nexus-kanban';
     el._nxRepaint = (next) => {
       try { this.render(next != null ? next : src, el, ctx, o); }
       catch (e) { console.error('[nexus-suite] ' + el._nxFence + ' repaint', ctx && ctx.sourcePath, e); }
     };
+    el._nxSourceId = foreign ? sourceId : '';
 
-    const source = cfg.source === 'folder'
-      ? require('./board.js').folderSource(this, cfg, el, ctx)
-      : blockSource(this, cfg, el, ctx);
+    let source;
+    if (foreign) {
+      const factory = this._sources.get(sourceId);
+      if (!factory) {
+        el.createDiv({ cls: 'nx-kb-empty',
+          text: 'This board’s cards come from “' + sourceId + '” — the plugin that provides them is not loaded.' });
+        return;
+      }
+      source = factory({
+        kanban: this, app: this.app, src, el, ctx, cfg, config: configOf(src),
+        helpers: { bucketKind, kindVar }, repaint: () => el._nxRepaint(),
+      });
+    } else {
+      source = cfg.source === 'folder'
+        ? require('./board.js').folderSource(this, cfg, el, ctx)
+        : blockSource(this, cfg, el, ctx);
+    }
     const cols = source.columns();
 
     const head = el.createDiv('nx-kb-head');
@@ -261,9 +317,9 @@ class NexusKanban {
 
     const strip = el.createDiv('nx-kb-cols');
     if (!cols.length) {
-      // Only a block board can have none: a folder board is given the default
-      // columns rather than being left with nothing to drop into.
-      strip.createDiv({ cls: 'nx-kb-empty', text: 'No columns yet — use + up there.' });
+      // A block board with none yet, or another plugin's board that has not
+      // loaded; a folder board is always given the default columns.
+      strip.createDiv({ cls: 'nx-kb-empty', text: source.emptyText || 'No columns yet — use + up there.' });
       return;
     }
     cols.forEach((col, i) => this.column(strip, cfg, source, col, i));
@@ -430,7 +486,9 @@ class NexusKanban {
         clear();
         window.setTimeout(() => cardEl.removeClass('is-dragging'), 0);
         if (!moved || !s) return;
-        if (s.bucket === bi && (s.at === ci || s.at === ci + 1)) return;   // dropped where it was
+        // `at` counts the cards WITHOUT the dragged one, so it is already the
+        // index the card ends up at — the same index is the same place.
+        if (s.bucket === bi && s.at === ci) return;
         source.move(bi, ci, s.bucket, s.at);
       };
       document.addEventListener('pointermove', move);

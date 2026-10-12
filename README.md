@@ -160,7 +160,7 @@ notes: Projects/Roadmap
 
 | Key | Values | Default |
 |---|---|---|
-| `source` | `block` (the cards are in the fence) or `folder` | `block` |
+| `source` | `block` (the cards are in the fence), `folder`, or the id a companion plugin registered (e.g. `vikunja`) | `block` |
 | `title` | board title | the note's name |
 | `notes` | folder for notes created from cards | the board note's folder |
 | `template` | note used as the body for new cards' notes | — |
@@ -169,6 +169,14 @@ notes: Projects/Roadmap
 
 `New kanban board (note)` and `Insert a kanban board` are in the command
 palette; the default columns come from Settings → Kanban.
+
+### Cards from another plugin
+
+Any other `source:` is a board whose cards a companion plugin provides through
+`NexusKanban.registerSource(id, factory)` (on `app.plugins.getPlugin('nexus-suite').kanban`).
+The suite draws it and hands moves, ticks and new cards to that plugin; until it
+is loaded the board says so. **Nexus Vikunja** (`source: vikunja`, `project: <id>`)
+is the first: a Vikunja project's buckets and tasks, written back through its API.
 
 ### A folder as the board
 

@@ -827,6 +827,52 @@ function folderBoard(app, src) {
   eq('write-back · and never grows a second tags line', (folder.match(/^tags:/gm) || []).length, 0);
 }
 
+// ── a source registered by another plugin ───────────────────────────────────
+{
+  const app = makeApp(NOTE);
+  const stage = document.getElementById('stage');
+  stage.innerHTML = '';
+  const el = stage.createDiv();
+  const kb = new K.NexusKanban({ app, settings: { kanban: { enabled: true } } });
+  const src = 'source: Remote\nproject: 24\ntitle: Remote board';
+  kb.render(src, el, freshCtx(app));
+  ok('source · an unregistered source says so', /not loaded/.test(el.textContent), el.textContent);
+  const moves = [];
+  let seen = null;
+  const off = kb.registerSource('remote', (board) => {
+    seen = board;
+    return {
+      id: 'remote',
+      columns: () => [{ title: 'Todo', kind: 'open', items: [{ t: 'One' }], count: { text: '1' } },
+                      { title: 'Done', kind: 'done', items: [], count: { text: '0' } }],
+      total: () => '1 / 1',
+      view: (item) => ({ title: item.t, chips: [] }),
+      fill() {},
+      move: (ci, ii, to, at) => moves.push([ci, ii, to, at]),
+    };
+  });
+  eq('source · registering draws the waiting board', el.querySelectorAll('.nx-kb-col').length, 2);
+  eq('source · the factory gets the block config', seen && seen.config.project, '24');
+  ok('source · and the title line', el.querySelector('.nx-kb-title').textContent === 'Remote board');
+  ok('source · no block-only tools on it', !el.querySelector('.nx-kb-tool'));
+  ok('source · nor an add row it did not ask for', !el.querySelector('.nx-kb-add'));
+  off();
+  ok('source · unregistering puts the notice back', /not loaded/.test(el.textContent));
+  let threw = false;
+  try { kb.registerSource('folder', () => ({})); } catch (e) { threw = true; }
+  ok('source · the suite’s own source names cannot be taken', threw);
+}
+
+// ── reordering inside a column ─────────────────────────────────────────────
+{
+  const cfg = K.parseKanban('## A\n- [ ] one\n- [ ] two\n- [ ] three');
+  const src = K.blockSource({ save: async () => true }, cfg, document.createElement('div'), {});
+  src.move(0, 0, 0, 1);   // dropped below "two": index 1 counted without "one"
+  eq('reorder · one slot down lands one slot down', cfg.buckets[0].cards.map(c => c.text), ['two', 'one', 'three']);
+  src.move(0, 1, 0, 2);
+  eq('reorder · to the end', cfg.buckets[0].cards.map(c => c.text), ['two', 'three', 'one']);
+}
+
 // ── a click opens the card's note, making it first if there is none ────────
 {
   const app = makeApp(NOTE);

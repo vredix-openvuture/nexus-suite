@@ -22,11 +22,16 @@ const { safeFileName, uniquePath } = require('./vaultpaths.js');
      columns()                 [{ title, limit, kind, items, count }]
      total()                   the line under the board title
      fill(frame, item, ci, ii) what this card shows and does
-     move(ci, ii, toCol, at)   persist a move — may be async
+     move(ci, ii, toCol, at)   persist a move — may be async. `at` is the
+                               card's new index, counted without it
      add(ci, title)            make a card, or null: this source has none
      colMenu(evt, ci)          the ⋮ on a column, or null
      head(el) / tools(el)      what this source adds to the head
      after(el)                 anything that needs the cards in the DOM
+     emptyText                 what a board with no columns says (optional)
+
+   A source from another plugin answers the same seam — see
+   NexusKanban.registerSource in kanban.js.
 */
 
 function blockSource(mod, cfg, el, ctx) {
@@ -97,8 +102,8 @@ function moveCard(cfg, bi, ci, toB, toIndex) {
   if (!from || !to) return;
   const [card] = from.cards.splice(ci, 1);
   if (!card) return;
+  // `toIndex` is where the card ends up, counted without it (see dragSource).
   let at = toIndex == null ? to.cards.length : toIndex;
-  if (bi === toB && ci < at) at -= 1;                    // the gap it left shifts the target
   at = Math.max(0, Math.min(to.cards.length, at));
   // Dropping into a "done" column completes the card, dragging it out reopens
   // it — otherwise the column and the checkbox would tell different stories.

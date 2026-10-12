@@ -6,6 +6,10 @@ Grouped by what changed for you, not by commit. Newest first.
 
 ### Added
 
+- **Kanban boards from other plugins.** A board with a `source:` the suite does
+  not know asks a registry (`kanban.registerSource`); a companion plugin fills
+  it and the suite draws it. Until that plugin is loaded the board says so. The
+  first one is the separate **Nexus Vikunja** plugin.
 - **A progress notice while the vault syncs.** Every run, scheduled or not,
   shows one notice until it ends: what it is doing while both sides are listed,
   then a *Pulling* bar (server → this device) and a *Pushing* bar (this device →
