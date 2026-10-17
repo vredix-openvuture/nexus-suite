@@ -31,9 +31,8 @@
 }
 /* Our own PDF viewer replacing Obsidian's CORS-broken native embed (see
    plugin._renderInkPdfEmbed) — plain canvas + prev/next, TOC panel, page vs.
-   endless-scroll mode. Starts at 50% of the note's width (comfortable for
-   typically-portrait scan pages) — adjustable live via the −/+ toolbar
-   buttons, up to 100%. NOT scoped to .nx-ink-note — applies to any embedded
+   endless-scroll mode. Starts at 80% of the note's width — adjustable live via
+   the −/+ toolbar buttons (30–100%), and the chosen size is remembered. NOT scoped to .nx-ink-note — applies to any embedded
    PDF anywhere, since the CORS bug it works around isn't Ink-Capture-specific
    (an ink-capture note re-embedded inside an unrelated note hit the same
    broken native viewer there). */
@@ -55,7 +54,7 @@
      combined with overflow:hidden — every page taller than 800px was
      clipped at the bottom. The viewer must always grow to its content. */
   display: block !important;
-  width: 50% !important; max-width: 50% !important; margin: 1.25em auto !important;
+  width: 80% !important; max-width: 80% !important; margin: 1.25em auto !important;
   height: auto !important; max-height: none !important;
   border: var(--nx-hairline); border-radius: var(--nx-radius);
   overflow: hidden; background: var(--background-secondary);

@@ -39,7 +39,7 @@ function pencilFilterStr(id) {
 /* One tile of a background pattern → { w, h, inner } where `inner` is an SVG
    markup STRING. Used for BOTH the live DOM (parsed via DOMParser, like the
    pencil filter) and the export, so one source of truth drives every renderer
-   and multi-line tiles (isometric, graph…) stay simple. null = none/unknown. */
+   and multi-line tiles (isometric) stay simple. null = none/unknown. */
 const SQRT3 = 1.7320508075688772;
 function bgPatternTile(type, size, color, opacity) {
   const s = size;
@@ -48,16 +48,12 @@ function bgPatternTile(type, size, color, opacity) {
   switch (type) {
     case 'dots':  return { w: s, h: s, inner: dt(s / 2, s / 2) };
     case 'lines': return { w: s, h: s, inner: ln(`M0 ${s} L${s} ${s}`) };
+    // 'graph' (engineering paper) was removed; sketches saved with it get the grid.
+    case 'graph':
     case 'grid':  return { w: s, h: s, inner: ln(`M${s} 0 L0 0 L0 ${s}`) };
     case 'cross': {   // small plus centred in each tile (kept off the edge so no clipping)
       const c = Math.max(2.5, s * 0.16), m = s / 2;
       return { w: s, h: s, inner: ln(`M${m - c} ${m} L${m + c} ${m}`) + ln(`M${m} ${m - c} L${m} ${m + c}`) };
-    }
-    case 'graph': {   // engineering paper: thin minor grid + bold major every 5th
-      let inner = '';
-      for (let i = 1; i < 5; i++) inner += ln(`M${i * s} 0 L${i * s} ${5 * s}`, 1) + ln(`M0 ${i * s} L${5 * s} ${i * s}`, 1);
-      inner += ln(`M0 0 L0 ${5 * s}`, 2) + ln(`M0 0 L${5 * s} 0`, 2);
-      return { w: 5 * s, h: 5 * s, inner };
     }
     case 'isometric': {   // triangular grid: two horizontals + a ±60° diagonal each
       const h = s * SQRT3;

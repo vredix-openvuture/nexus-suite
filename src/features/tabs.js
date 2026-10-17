@@ -6,7 +6,7 @@
  *  empty workspace, and the tabs that stay pinned. Mixed into the plugin class.
  * ========================================================================== */
 
-const { CAL_VIEW, HOME_VIEW, NX_MODULES } = require('../constants.js');
+const { CAL_VIEW, CAPTURE_VIEW, GALAXY_VIEW, HOME_VIEW, NX_MODULES } = require('../constants.js');
 
 class Tabs {
 
@@ -108,7 +108,7 @@ class Tabs {
     }
   }
 
-  /* ---- Pinned tabs (the dashboard) ----
+  /* ---- Pinned tabs (the dashboard, the galaxy, the capture hub) ----
      A pinned page sits at the tab bar as its bare icon and stays there: Obsidian's
      own pin flag keeps the next opened file from replacing it, CSS takes away the
      close button (see 01-core.css), and the watchdog below reopens it if something
@@ -118,6 +118,13 @@ class Tabs {
     return [
       { key: 'home',     type: HOME_VIEW,     cls: 'nx-pin-home',  label: NX_MODULES.homepage.name,
         on: () => this.settings.homepage.enabled,      open: () => this.openHomepage() },
+      { key: 'galaxy',   type: GALAXY_VIEW,   cls: 'nx-pin-galaxy', label: NX_MODULES.galaxy.name,
+        on: () => this.settings.galaxy.enabled,        open: () => this.openGalaxy() },
+      // A tab of its own, never the active one: openCaptureHub takes over the
+      // current leaf, which the watchdog must not do to an open note.
+      { key: 'captures', type: CAPTURE_VIEW,  cls: 'nx-pin-captures', label: 'Capture hub',
+        on: () => true,
+        open: () => this.app.workspace.getLeaf(true).setViewState({ type: CAPTURE_VIEW, active: true }) },
     ];
   }
   isTabPinned(key) { return !!(this.settings.pinnedTabs || {})[key]; }
@@ -133,6 +140,9 @@ class Tabs {
       document.body.classList.toggle(p.cls, on);
       this.app.workspace.getLeavesOfType(p.type).forEach(leaf => {
         try { if (leaf.setPinned) leaf.setPinned(on); } catch (e) {}
+        // The icon-only look hangs on this class (01-core.css), so one rule set
+        // serves every pinnable page instead of one copy per view type.
+        if (leaf.tabHeaderEl) leaf.tabHeaderEl.classList.toggle('nx-pinned-tab', on);
       });
     });
   }

@@ -152,9 +152,9 @@ class HomeHabit {
       const it = (lvl, txt) => { const s = leg.createDiv('nx-habit-legend-item'); this._legendSwatch(s, lvl); s.createSpan({ text: txt }); };
       it(0, 'offen'); it(4, 'erledigt');
     } else {
-      leg.createSpan({ cls: 'nx-habit-legend-cap', text: 'weniger' });
+      leg.createSpan({ cls: 'nx-habit-legend-cap', text: 'less' });
       for (let l = 0; l <= 4; l++) this._legendSwatch(leg, l);
-      leg.createSpan({ cls: 'nx-habit-legend-cap', text: 'mehr' });
+      leg.createSpan({ cls: 'nx-habit-legend-cap', text: 'more' });
     }
   }
   _legendSwatch(parent, lvl) {

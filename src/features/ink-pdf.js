@@ -109,8 +109,13 @@ class InkPdfEmbeds {
     // clipped the page) whenever the container was resized after the initial
     // render without anything telling us to re-rasterize.
     let lastRenderWidth = 0;
-    const DEFAULT_SIZE_PCT = 50;   // matches the CSS default width:50%; portrait pages got uncomfortably huge at 80%
-    let sizePct = DEFAULT_SIZE_PCT;
+    // 50% was a thumbnail on a desktop column, so the default is 80% and the
+    // −/+ choice is remembered for every PDF: one size suits one screen.
+    const DEFAULT_SIZE_PCT = 80;   // matches the CSS default width in 11-ink.css
+    const ink = this.settings.inkCapture;
+    const saved = Number(ink.pdfSizePct);
+    let sizePct = saved >= 30 && saved <= 100 ? saved : DEFAULT_SIZE_PCT;
+    const keepSize = () => { ink.pdfSizePct = sizePct; this.saveSettings(); };
     // Three flex groups (left/center/right) instead of one flat row — TOC on
     // the far left, page-nav + mode in the middle, size controls on the far
     // right, per the user's requested layout.
@@ -148,9 +153,9 @@ class InkPdfEmbeds {
     // replaces the WHOLE inline style (cssText), so without it the size
     // buttons would wipe out the forced-max-height fix on their first click.
     const applySize = () => { setElStyle('width:' + sizePct + '%!important;max-width:' + sizePct + '%!important;height:auto!important;max-height:none!important;'); return render(); };
-    sizeDownBtn.onclick = () => { sizePct = Math.max(30, sizePct - 10); applySize(); };
-    sizeUpBtn.onclick = () => { sizePct = Math.min(100, sizePct + 10); applySize(); };
-    sizeResetBtn.onclick = () => { sizePct = DEFAULT_SIZE_PCT; applySize(); };
+    sizeDownBtn.onclick = () => { sizePct = Math.max(30, sizePct - 10); keepSize(); applySize(); };
+    sizeUpBtn.onclick = () => { sizePct = Math.min(100, sizePct + 10); keepSize(); applySize(); };
+    sizeResetBtn.onclick = () => { sizePct = DEFAULT_SIZE_PCT; keepSize(); applySize(); };
 
     const body = el.createDiv('nx-ink-pdf-body');
     const tocPanel = body.createDiv('nx-ink-pdf-toc');

@@ -38,7 +38,7 @@
   color: var(--nx-fg-muted, var(--text-muted));
   font-variant-numeric: tabular-nums;
 }
-.nx-galaxy-bar .nx-btn.is-active {
+.nx-galaxy-bar .nx-btn.is-on {
   background: var(--nx-sf-2);
   border-color: var(--nx-accent, var(--interactive-accent));
   color: var(--nx-fg, var(--text-normal));
@@ -58,6 +58,38 @@
   cursor: grab;
 }
 .nx-galaxy-stage:active { cursor: grabbing; }
+
+/* The star chart behind the map, the same one the theme draws behind
+   Obsidian's own graph: eight faint meridians, rings every 60px and a glow
+   of the accent in the middle. It stays put while the map turns, like the
+   sky behind a planetarium projector. The canvas itself is transparent. */
+.theme-dark .nx-galaxy-stage {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg stroke='rgb(200,215,235)' stroke-opacity='0.04' stroke-width='0.15'%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(11.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(33.75,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(56.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(78.75,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(101.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(123.75,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(146.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(168.75,50,50)'/%3E%3C/g%3E%3C/svg%3E"),
+    repeating-radial-gradient(circle at 50% 50%,
+      transparent 0px, transparent 59px,
+      rgba(200, 215, 235, 0.05) 60px, transparent 61px),
+    radial-gradient(circle at 50% 52%,
+      color-mix(in srgb, var(--nx-gx-hub) 13%, transparent) 0%,
+      color-mix(in srgb, var(--nx-gx-hub) 4%, transparent) 30%,
+      transparent 60%);
+  background-size: 100% 100%, 100% 100%, 150% 150%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.theme-light .nx-galaxy-stage {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cg stroke='rgb(60,70,90)' stroke-opacity='0.1' stroke-width='0.15'%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(11.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(33.75,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(56.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(78.75,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(101.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(123.75,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(146.25,50,50)'/%3E%3Cline x1='50' y1='-100' x2='50' y2='200' transform='rotate(168.75,50,50)'/%3E%3C/g%3E%3C/svg%3E"),
+    repeating-radial-gradient(circle at 50% 50%,
+      transparent 0px, transparent 59px,
+      rgba(60, 70, 90, 0.1) 60px, transparent 61px),
+    radial-gradient(circle at 50% 52%,
+      color-mix(in srgb, var(--nx-gx-hub) 12%, transparent) 0%,
+      transparent 58%);
+  background-size: 100% 100%, 100% 100%, 150% 150%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
 .nx-galaxy-stage canvas { display: block; width: 100%; height: 100%; }
 
 /* The label follows the node under the pointer, so it is positioned from JS and
@@ -86,6 +118,46 @@
   width: 44px; height: 44px;
   transform: translate(-50%, -50%);
   border-radius: var(--nx-r-circle);
+}
+
+/* The control panel floats over the map's corner like Obsidian's graph
+   controls, so the map keeps its full size while it is being tuned. */
+.nx-galaxy-panel {
+  position: absolute;
+  top: var(--nx-sp-2);
+  right: var(--nx-sp-2);
+  width: 260px;
+  max-height: calc(100% - 2 * var(--nx-sp-2));
+  overflow-y: auto;
+  display: none;
+  padding: var(--nx-sp-2) var(--nx-sp-3);
+  background: color-mix(in srgb, var(--background-secondary) 92%, transparent);
+  border: var(--nx-hairline);
+  border-radius: var(--nx-r-tile);
+  backdrop-filter: blur(8px);
+  cursor: default;
+  touch-action: auto;
+}
+.nx-galaxy-panel.is-open { display: block; }
+.nx-galaxy-panel-head {
+  margin: var(--nx-sp-2) 0 var(--nx-sp-1);
+  font-size: .75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--nx-fg-muted, var(--text-muted));
+}
+.nx-galaxy-panel .setting-item {
+  padding: var(--nx-sp-1) 0;
+  border: 0;
+  gap: var(--nx-sp-2);
+}
+.nx-galaxy-panel .setting-item-name { font-size: .85em; }
+.nx-galaxy-panel input[type=range] { width: 110px; }
+.nx-galaxy-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--nx-sp-2);
 }
 
 @media (prefers-reduced-motion: reduce) {

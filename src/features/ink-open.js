@@ -6,8 +6,8 @@
  *  hub. Mixed into the plugin class (lib/mixin.js).
  * ========================================================================== */
 
-const { moment } = require('obsidian');
-const { INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW } = require('../constants.js');
+const { Notice, moment } = require('obsidian');
+const { INK_VIEW, CAPTURE_VIEW, GALAXY_VIEW, NX_MODULES } = require('../constants.js');
 const { uniquePath } = require('../lib/vaultpaths.js');
 
 class InkOpen {
@@ -81,7 +81,7 @@ class InkOpen {
   refreshGalaxy() {
     for (const leaf of this.app.workspace.getLeavesOfType(GALAXY_VIEW)) {
       const view = leaf.view;
-      if (view && typeof view.reload === 'function') view.reload();
+      if (view && typeof view.refreshSettings === 'function') view.refreshSettings();
     }
   }
 
@@ -97,6 +97,12 @@ class InkOpen {
     ws.revealLeaf(leaf);
   }
   captureScan() {
+    // Every way in checks the module: with it off, the inbox watcher ignores
+    // the file, and an upload would sit unprocessed in the inbox folder.
+    if (!this.settings.inkCapture.enabled) {
+      new Notice(NX_MODULES.inkCapture.name + ' is switched off — turn it on in Settings → Nexus Suite → ' + NX_MODULES.inkCapture.name + '.');
+      return;
+    }
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'image/*,application/pdf';
     input.setAttribute('capture', 'environment');   // mobile: prefer the camera, but still lets you pick an existing file (incl. PDF)

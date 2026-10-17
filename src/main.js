@@ -446,6 +446,9 @@ class NexusSuite extends Plugin {
     this.app.workspace.detachLeavesOfType(SIDE_CAPTURE_VIEW);
     this.app.workspace.detachLeavesOfType(SCRATCH_VIEW);
     this.app.workspace.detachLeavesOfType(SKETCH_VIEW);
+    // Sketch popovers hang off document.body and close on the next outside
+    // click — which never comes once the plugin is gone, so they would float on.
+    document.querySelectorAll('.nx-sk-pop').forEach(el => el.remove());
     (this._inkPdfDocs || []).forEach((pdf) => { try { pdf.destroy(); } catch (e) {} });
     this._inkPdfDocs = [];
     const pel = document.getElementById('nx-palette-style'); if (pel) pel.remove();

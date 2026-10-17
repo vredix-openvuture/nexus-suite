@@ -223,7 +223,7 @@ function plugin(viewTypes, homepage, pinned) {
   eq('removed · the Vikunja tokens left this device',
      ['acc-0', 'acc-1', 'acc-2'].map(id => window.localStorage.getItem('nexus-suite-cred-' + id)), [null, null, null]);
   ok('removed · the vault-sync credential stayed', window.localStorage.getItem('nexus-suite-cred-vaultsync') !== null);
-  eq('removed · the calendar pin is gone, the dashboard pin is not', saved.pinnedTabs, { home: true });
+  eq('removed · the calendar pin is gone, the dashboard pin is not', saved.pinnedTabs, { home: true, galaxy: false, captures: false });
   eq('removed · calendar and tasks cards left the dashboard', saved.homepage.widgets.map(w => w.uid), ['c1']);
   eq('removed · in every device profile too', saved.homepage.profiles['dev-a'].widgets.map(w => w.uid), ['l1']);
   window.localStorage.removeItem('nexus-suite-cred-vaultsync');

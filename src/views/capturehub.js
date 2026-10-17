@@ -40,7 +40,7 @@ const { inkAdapter, NexusInkTagModal } = require('./ink.js');
 const { NexusConfirmModal, NexusNameModal } = require('../modals/misc.js');
 const { NexusMoveModal, NexusSketchCoverModal } = require('../modals/capture.js');
 const { withSketchTitle, withSketchCover } = require('./sketch.js');
-const { nxAllFolders } = require('../lib/helpers.js');
+const { nxAllFolders, nxPinMenuItem } = require('../lib/helpers.js');
 const { attachHoldMenu } = require('../lib/holdmenu.js');
 
 /* ── Sketch ──────────────────────────────────────────────────────────────────
@@ -720,6 +720,11 @@ class NexusCaptureHubView extends ItemView {
   getViewType() { return this.type; }
   getDisplayText() { return 'Captures'; }
   getIcon() { return 'camera'; }
+  // Only the hub in the main area pins; the sidebar copy is a dock panel.
+  onPaneMenu(menu, source) {
+    if (this.type === CAPTURE_VIEW) nxPinMenuItem(this.plugin, menu, 'captures');
+    return super.onPaneMenu(menu, source);
+  }
 
   async onOpen() {
     this.hub = new NexusCaptureHub(this.plugin, this.contentEl, { tab: this.tab });

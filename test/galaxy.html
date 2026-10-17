@@ -52,6 +52,25 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
   eq('settle · a step after it is done changes nothing', pos(sim), frozen);
 }
 
+// ── reheat: new forces on the map as it stands ─────────────────────────────
+{
+  const links = [['n0','n1'],['n1','n2'],['n2','n0']];
+  const sim = settle(F.createLayout(spec(10, links), { seed: 4, linkDistance: 40 }), 600);
+  const byId = () => { const m = {}; sim.nodes.forEach(n => { m[n.id] = n; }); return m; };
+  const before = dist(byId().n0, byId().n1);
+  const kept = pos(sim);
+  sim.reheat({ linkDistance: 160 });
+  ok('reheat · a settled map starts moving again', sim.settled === false);
+  eq('reheat · and starts from where it stood, not from a new unfold', pos(sim), kept);
+  sim.run(600);
+  const after = dist(byId().n0, byId().n1);
+  ok('reheat · a longer link distance pushes linked notes apart', after > before * 1.5,
+     before.toFixed(1) + ' → ' + after.toFixed(1));
+  ok('reheat · and it settles again', sim.settled === true);
+  ok('reheat · every dial has a range with its default inside',
+     F.FORCES.every(f => f.min <= F.DEFAULTS[f.key] && F.DEFAULTS[f.key] <= f.max));
+}
+
 // ── nothing may become NaN ─────────────────────────────────────────────────
 {
   const cases = {

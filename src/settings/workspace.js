@@ -228,9 +228,9 @@ class WorkspacePages {
       }))
       .addButton(b => b.setButtonText('Open switcher').onClick(() => new NexusWorkspaceModal(this.plugin, false).open()));
   }
-  /* The galaxy. Four settings and no more: everything else about how it looks
-     is the palette's business, and a graph with a dozen sliders is a graph
-     nobody ends up looking at. */
+  /* The galaxy. Only the switches live here; the forces and display sliders
+     sit in the panel on the map, where their effect is visible as they move.
+     Colour stays the palette's business. */
   tGalaxy(e) {
     const s = this.plugin.settings.galaxy;
     this.head(e, s);
@@ -252,12 +252,10 @@ class WorkspacePages {
       .addToggle(t => t.setValue(s.showOrphans !== false)
         .onChange(async v => { s.showOrphans = v; await this.save(); this.plugin.refreshGalaxy(); }));
 
-    new Setting(e).setName('Link length')
-      .setDesc('How far apart two linked notes settle. Longer spreads the map out; shorter pulls clusters together.')
-      .addSlider(sl => { sl.setLimits(30, 140, 5).setValue(s.linkDistance || 60).setDynamicTooltip();
-        sl.onChange(async v => { s.linkDistance = v; await this.save(); this.plugin.refreshGalaxy(); }); })
-      .addExtraButton(b => b.setIcon('rotate-ccw').setTooltip('Default').onClick(async () => {
-        s.linkDistance = 60; await this.save(); this.plugin.refreshGalaxy(); this.display(); }));
+    // The forces and display dials live on the map itself, where their effect
+    // is visible while they move — a copy here would only drift from them.
+    e.createEl('p', { cls: 'setting-item-description',
+      text: 'Forces, link distance, node size and labels: the slider button in the galaxy\'s own bar.' });
   }
 
   tSearch(e) {

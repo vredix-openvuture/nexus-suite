@@ -25,12 +25,13 @@
 const { ItemView, setIcon } = require('obsidian');
 const { GALAXY_VIEW, NX_MODULES } = require('../constants.js');
 const f3 = require('../lib/force3d.js');
+const { GalaxyPanel } = require('./galaxy-panel.js');
+const { nxPinMenuItem } = require('../lib/helpers.js');
 
 const DRIFT = 0.0011;      // radians of yaw per frame when nothing is touching it
 const ORBIT = 0.006;       // radians per pixel dragged
 const SPIN_DECAY = 0.94;   // how quickly a flick runs out
 const HIT = 16;            // px around a note that count as pointing at it
-const NAMES = 7;           // how many hubs carry their name on the map
 
 const reduced = () => !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -57,6 +58,10 @@ class NexusGalaxyView extends ItemView {
   getViewType() { return GALAXY_VIEW; }
   getDisplayText() { return NX_MODULES.galaxy.name; }
   getIcon() { return 'orbit'; }
+  onPaneMenu(menu, source) {
+    nxPinMenuItem(this.plugin, menu, 'galaxy');
+    return super.onPaneMenu(menu, source);
+  }
 
   async onOpen() {
     this.build();
@@ -68,13 +73,25 @@ class NexusGalaxyView extends ItemView {
     this.registerEvent(this.app.workspace.on('css-change', () => { this.readColours(); this.wake(); }));
   }
   onClose() {
+    if (this.panel) this.panel.save.run();
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = 0;
     if (this._ro) { try { this._ro.disconnect(); } catch (e) {} this._ro = null; }
     return Promise.resolve();
   }
 
-  get settings() { return this.plugin.settings.galaxy || {}; }
+  get settings() {
+    if (!this.plugin.settings.galaxy) this.plugin.settings.galaxy = {};
+    return this.plugin.settings.galaxy;
+  }
+  /* A setting changed outside the panel (settings tab, sync adopting another
+     device's settings): the layout is cached, so it has to be told. */
+  refreshSettings() {
+    this.reload();
+    this.pickHubs();
+    this.applyForces();
+    if (this.panel) this.panel.render();
+  }
 
   /* ---- the frame ---------------------------------------------------------- */
   build() {
@@ -93,6 +110,10 @@ class NexusGalaxyView extends ItemView {
     const reset = bar.createEl('button', { cls: 'nx-btn is-sm is-icon is-quiet' });
     setIcon(reset, 'locate-fixed');
     reset.setAttribute('aria-label', 'Back to the starting view');
+    const tune = bar.createEl('button', { cls: 'nx-btn is-sm is-icon is-quiet' });
+    setIcon(tune, 'sliders-horizontal');
+    tune.setAttribute('aria-label', 'Forces and display');
+    tune.onclick = () => tune.toggleClass('is-on', this.panel.toggle());
     reset.onclick = () => {
       this.cam.yaw = 0.6; this.cam.pitch = -0.32;
       this.pan.x = this.pan.y = 0; this.userZoom = 1;
@@ -104,6 +125,7 @@ class NexusGalaxyView extends ItemView {
     this.canvas = this.stage.createEl('canvas');
     this.label = this.stage.createDiv('nx-galaxy-label');
     this.probe = this.stage.createDiv('nx-galaxy-probe');
+    this.panel = new GalaxyPanel(this);
     this.readColours();
     this.bindPointer();
     if (window.ResizeObserver) {
@@ -168,17 +190,17 @@ class NexusGalaxyView extends ItemView {
       links.forEach(l => { linked.add(l[0]); linked.add(l[1]); });
       notes = files.filter(f => linked.has(f.path));
     }
-    const sig = notes.length + '/' + links.length + '/' + (s.linkDistance || 60);
+    const sig = notes.length + '/' + links.length;
     if (sig === this._sig && this.sim) return;
     this._sig = sig;
 
     this.files = new Map(notes.map(f => [f.path, f]));
     this.sim = f3.createLayout(
       { nodes: notes.map(f => ({ id: f.path })), links },
-      { seed: 20260901, linkDistance: clamp(s.linkDistance || 60, 20, 200),
+      Object.assign({ seed: 20260901 }, this.forces(),
         // A big vault pays O(n²) per step, so it gets fewer of them rather
         // than a slower unfold — see the cost note in lib/force3d.js.
-        maxSteps: notes.length > 900 ? 220 : 600 });
+        { maxSteps: notes.length > 900 ? 220 : 600 }));
     this.neighbours = new Map();
     this.sim.edges.forEach(([a, b]) => {
       const ia = this.sim.nodes[a].id, ib = this.sim.nodes[b].id;
@@ -188,12 +210,34 @@ class NexusGalaxyView extends ItemView {
     });
     this.maxDeg = 1;
     this.sim.nodes.forEach(n => { if (n.deg > this.maxDeg) this.maxDeg = n.deg; });
-    this.hubs = new Set(this.sim.nodes.slice().sort((a, b) => b.deg - a.deg).slice(0, NAMES)
-      .filter(n => n.deg > 1).map(n => n.id));
+    this.pickHubs();
     this.cam.zoom = 0;
-    this.hover = null;
+    this.setHover(null);
     if (this.count) this.count.setText(notes.length + ' notes · ' + this.sim.edges.length + ' links');
     this.wake();
+  }
+
+  /* The forces as the settings hold them, each kept inside the range its
+     slider offers — a hand-edited data.json must not be able to explode it. */
+  forces() {
+    const s = this.settings, out = {};
+    f3.FORCES.forEach(f => {
+      const v = Number(s[f.key]);
+      out[f.key] = isFinite(v) && v > 0 ? clamp(v, f.min, f.max) : f3.DEFAULTS[f.key];
+    });
+    return out;
+  }
+  applyForces() {
+    if (!this.sim) return;
+    this.sim.reheat(this.forces());
+    this.wake();
+  }
+  /* The best-linked notes carry their name, so the map reads as somewhere. */
+  pickHubs() {
+    if (!this.sim) return;
+    const labels = clamp(Math.round(this.settings.labels == null ? 7 : this.settings.labels), 0, 60);
+    this.hubs = new Set(this.sim.nodes.slice().sort((a, b) => b.deg - a.deg).slice(0, labels)
+      .filter(n => n.deg > 1).map(n => n.id));
   }
 
   /* ---- the loop ----------------------------------------------------------- */
@@ -209,17 +253,24 @@ class NexusGalaxyView extends ItemView {
     if (!sim.settled && !document.hidden) {
       // Stepped in the frame loop rather than up front, because watching the
       // vault unfold is half of what the user asked for.
-      const n = sim.nodes.length;
-      sim.run(n > 600 ? 1 : n > 250 ? 3 : 6);
+      // A time budget rather than a step count: at most six steps, so a small
+      // vault still unfolds at a watchable pace, and never a step that would
+      // run past the budget, so a big one keeps its frame rate.
+      const start = performance.now();
+      let steps = 0, cost = 0;
+      while (!sim.settled && steps < 6 && (steps === 0 || performance.now() - start + cost <= 9)) {
+        const t = performance.now(); sim.step(); cost = performance.now() - t; steps++;
+      }
       busy = true;
     }
     if (this.dragging) busy = true;
+    else if (this.hover) { this.spin.yaw = this.spin.pitch = 0; }
     else if (Math.abs(this.spin.yaw) > 2e-4 || Math.abs(this.spin.pitch) > 2e-4) {
       cam.yaw += this.spin.yaw; cam.pitch += this.spin.pitch;
       this.spin.yaw *= SPIN_DECAY; this.spin.pitch *= SPIN_DECAY;
       busy = true;
     } else if (!still && this.settings.drift !== false && cam.flatten < 0.5) {
-      cam.yaw += DRIFT; busy = true;
+      cam.yaw += DRIFT * clamp(Number(this.settings.driftSpeed) || 1, 0.1, 5); busy = true;
     }
     cam.pitch = clamp(cam.pitch, -1.3, 1.3);
     if (cam.flatten !== this.flatTarget) {
@@ -228,6 +279,9 @@ class NexusGalaxyView extends ItemView {
       if (Math.abs(this.flatTarget - cam.flatten) < 0.004) cam.flatten = this.flatTarget;
       busy = true;
     }
+    // The lens backs off with the cloud: a fixed distance puts a wide map's
+    // near side almost on the lens, and its notes balloon into discs.
+    cam.distance = Math.max(900, sim.radius() * 3);
     const want = f3.fitZoom(sim.radius(), this.W, this.H) * this.userZoom;
     if (!(cam.zoom > 0)) cam.zoom = want;
     else if (Math.abs(want - cam.zoom) > 5e-4) { cam.zoom += (want - cam.zoom) * 0.12; busy = true; }
@@ -241,8 +295,8 @@ class NexusGalaxyView extends ItemView {
     if (!c || !W || !col) return;
     const dpr = window.devicePixelRatio || 1;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.fillStyle = css(col.ground);
-    c.fillRect(0, 0, W, H);
+    // Transparent, so the star chart on the stage shows through (24-galaxy.css).
+    c.clearRect(0, 0, W, H);
     c.translate(this.pan.x, this.pan.y);
 
     const R = sim.radius() || 1;
@@ -257,7 +311,8 @@ class NexusGalaxyView extends ItemView {
     this.pts = pts;
     const hi = this.hover, near = hi ? this.neighbours.get(hi) : null;
 
-    c.lineWidth = 1;
+    const s = this.settings;
+    c.lineWidth = clamp(Number(s.linkWidth) || 1, 0.25, 4);
     for (let e = 0; e < sim.edges.length; e++) {
       const a = pts[sim.edges[e][0]], b = pts[sim.edges[e][1]];
       const lit = hi && (a.n.id === hi || b.n.id === hi);
@@ -268,7 +323,7 @@ class NexusGalaxyView extends ItemView {
     }
 
     const order = f3.sortByDepth(pts.slice());
-    const scale = clamp(this.cam.zoom, 0.55, 1.5);
+    const scale = clamp(this.cam.zoom, 0.55, 1.5) * clamp(Number(s.nodeSize) || 1, 0.3, 3);
     c.globalAlpha = 1;
     for (let i = 0; i < order.length; i++) {
       const p = order[i], n = p.n;
@@ -286,6 +341,13 @@ class NexusGalaxyView extends ItemView {
       c.fill();
     }
     this.names(c, order, hi, near);
+    if (hi) {
+      const at = pts.find(p => p.n.id === hi);
+      if (at) {
+        this.label.style.left = (at.x + this.pan.x) + 'px';
+        this.label.style.top = (at.y + this.pan.y) + 'px';
+      }
+    }
     c.setTransform(1, 0, 0, 1, 0, 0);
   }
 
@@ -325,10 +387,11 @@ class NexusGalaxyView extends ItemView {
     this.hover = id;
     const file = id ? this.files.get(id) : null;
     this.label.setText(file ? file.basename + ' · ' + (p.n.deg || 0) + ' links' : '');
+    this.label.toggleClass('is-on', !!file);
     this.canvas.style.cursor = id ? 'pointer' : 'grab';
     this.wake();
   }
-  open(p) {
+  openNote(p) {
     const file = this.files.get(p.n.id);
     if (file) this.app.workspace.getLeaf(false).openFile(file);
   }
@@ -367,6 +430,7 @@ class NexusGalaxyView extends ItemView {
       const dx = p.x - d.x, dy = p.y - d.y;
       d.moved += Math.abs(dx) + Math.abs(dy);
       d.x = p.x; d.y = p.y;
+      if (d.moved >= 7 && this.hover) this.setHover(null);
       // Turning in 3D and panning in 2D are the same gesture; the dial decides
       // which of the two it currently is.
       const turn = 1 - this.cam.flatten;
@@ -388,7 +452,7 @@ class NexusGalaxyView extends ItemView {
         const hit = this.nodeAt(at(e).x, at(e).y);
         // A mouse has already hovered by the time it clicks; a finger has not,
         // so the first tap lights the note and the second one opens it.
-        if (hit && (e.pointerType === 'mouse' || this.hover === hit.n.id)) this.open(hit);
+        if (hit && (e.pointerType === 'mouse' || this.hover === hit.n.id)) this.openNote(hit);
         else this.setHover(hit);
       }
       if (reduced()) { this.spin.yaw = 0; this.spin.pitch = 0; }
@@ -396,7 +460,9 @@ class NexusGalaxyView extends ItemView {
     };
     this.registerDomEvent(el, 'pointerup', release);
     this.registerDomEvent(el, 'pointercancel', release);
-    this.registerDomEvent(el, 'pointerleave', () => { if (!this.dragging) this.setHover(null); });
+    this.registerDomEvent(el, 'pointerleave', (e) => {
+      if (!this.dragging && e.pointerType === 'mouse') this.setHover(null);
+    });
     this.registerDomEvent(el, 'wheel', (e) => {
       e.preventDefault();
       this.userZoom = clamp(this.userZoom * Math.exp(-e.deltaY * 0.0015), 0.3, 4);

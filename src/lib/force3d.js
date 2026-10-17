@@ -34,10 +34,10 @@
 
 const DEFAULTS = {
   seed: 1,
-  linkDistance: 60,     // the rest length of a link
-  repulsion: 1600,      // Coulomb constant — how hard two notes push apart
-  spring: 0.06,         // Hooke constant of a link
-  centre: 0.012,        // pull towards the origin, so the cloud cannot drift away
+  linkDistance: 35,     // the rest length of a link
+  repulsion: 6000,      // Coulomb constant — how hard two notes push apart
+  spring: 0.2,          // Hooke constant of a link, before the degree weighting
+  centre: 0.002,        // pull towards the origin, so the cloud cannot drift away
   damping: 0.82,        // share of the velocity a node keeps into the next step
   maxStep: 12,          // the furthest a node may travel in one step
   minDist2: 4,          // below this two nodes count as coincident
@@ -132,7 +132,12 @@ function createLayout(spec, options) {
       let dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (!(d > 1e-6)) continue;          // coincident: repulsion already handled it
-      const f = (d - o.linkDistance) * o.spring;
+      /* Weighted by the less-linked end, as d3-force does: a note's link to a
+         hub pulls hard, but the hub's dozens of links each pull only a little.
+         Without this every hub drags its groups into one tight ball; with it
+         the groups stay apart and hang off the hub like spokes. */
+      const weight = Math.min(1, 2 / Math.min(a.deg, b.deg));
+      const f = (d - o.linkDistance) * o.spring * weight;
       dx = f * dx / d; dy = f * dy / d; dz = f * dz / d;
       a.vx += dx; a.vy += dy; a.vz += dz;
       b.vx -= dx; b.vy -= dy; b.vz -= dz;
@@ -159,6 +164,16 @@ function createLayout(spec, options) {
     let done = 0;
     while (!sim.settled && done < (max == null ? o.maxSteps : max)) { sim.step(); done++; }
     return done;
+  };
+
+  /* New forces on the map as it stands: the nodes keep their places and the
+     layout runs again from there, so a slider moves the picture instead of
+     throwing it away and unfolding a new one. */
+  sim.reheat = function (changes) {
+    Object.assign(o, changes || {});
+    sim.settled = nodes.length === 0;
+    sim.steps = 0;
+    return sim;
   };
 
   /* How far the cloud reaches, for framing it in a viewport. */
@@ -218,4 +233,13 @@ function fitZoom(radius, w, h) {
   return (Math.min(w, h) * 0.42) / radius;
 }
 
-module.exports = { DEFAULTS, createLayout, edgeList, rng, project, sortByDepth, depthFade, fitZoom };
+/* The forces a user may turn, with the range each one makes sense in. Shared
+   by the view's panel and the settings tab, so both offer the same dials. */
+const FORCES = [
+  { key: 'centre',       name: 'Center force',  min: 0.002, max: 0.06, step: 0.002 },
+  { key: 'repulsion',    name: 'Repel force',   min: 200,   max: 8000, step: 100 },
+  { key: 'spring',       name: 'Link force',    min: 0.01,  max: 0.3,  step: 0.01 },
+  { key: 'linkDistance', name: 'Link distance', min: 20,    max: 200,  step: 5 },
+];
+
+module.exports = { DEFAULTS, FORCES, createLayout, edgeList, rng, project, sortByDepth, depthFade, fitZoom };

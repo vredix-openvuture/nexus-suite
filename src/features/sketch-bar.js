@@ -56,7 +56,7 @@ class SketchBar {
       if (cb) b.onclick = cb;
       return b;
     };
-    const BG_ICON = { none: 'square', grid: 'layout-grid', graph: 'grid-3x3', lines: 'align-justify', dots: 'grip', cross: 'plus', isometric: 'triangle', isodots: 'grip' };
+    const BG_ICON = { none: 'square', grid: 'layout-grid', graph: 'layout-grid', lines: 'align-justify', dots: 'grip', cross: 'plus', isometric: 'triangle', isodots: 'grip' };
 
     // ── shared state referenced across groups ──
     let favWrap, colWrap;
@@ -391,9 +391,9 @@ class SketchBar {
       };
       pop.createDiv({ cls: 'nx-sk-pop-title', text: 'Pattern' });
       const trow = pop.createDiv('nx-sk-bgtypes');
-      [['none', 'None'], ['grid', 'Grid'], ['graph', 'Graph'], ['lines', 'Lines'], ['dots', 'Dots'], ['cross', 'Cross'], ['isometric', 'Isometric'], ['isodots', 'Iso dots']].forEach(([id, label]) => {
+      [['none', 'None'], ['grid', 'Grid'], ['lines', 'Lines'], ['dots', 'Dots'], ['cross', 'Cross'], ['isometric', 'Isometric'], ['isodots', 'Iso dots']].forEach(([id, label]) => {
         const b = trow.createDiv({ cls: 'nx-sk-bgtype', text: label });
-        b.toggleClass('is-active', surface.bgType === id);
+        b.toggleClass('is-active', surface.bgType === id || (id === 'grid' && surface.bgType === 'graph'));
         b.onclick = () => {
           surface.setBackground(id); surface.persist();
           if (bgBtn) { setIcon(bgBtn, BG_ICON[id] || 'layout-grid'); bgBtn.toggleClass('is-active', id !== 'none'); }

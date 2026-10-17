@@ -64,7 +64,7 @@ class LookPages {
 
     // ── Pinned tabs ──
     // Lives here because the dashboard is the page you reach for first, but it
-    // covers all three Nexus pages — the same switch sits in each page's tab menu.
+    // covers every pinnable Nexus page — the same switch sits in each tab menu.
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Pinned tabs' });
     e.createEl('p', { cls: 'setting-item-description',
       text: 'A pinned page stays at the tab bar as its bare icon: no title, no close button, and it comes back if something closes it anyway. Also switchable via right-click on the tab.' });

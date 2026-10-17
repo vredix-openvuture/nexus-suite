@@ -69,7 +69,7 @@ const DEFAULT_SETTINGS = {
      ordinary canvas. `drift` is the slow idle turn — the thing that makes it
      feel alive rather than parked — and it is the first setting anyone will
      want off, so it is a switch and not a slider. */
-  galaxy:     { enabled: true, ribbon: true, drift: true, linkDistance: 60, showOrphans: true },
+  galaxy:     { enabled: true, ribbon: true, drift: true, showOrphans: true },
   explorer:   { enabled: true,  folderBg: true, intensity: 22,
                 hideAttachments: false, attachmentFolder: '' },
   /* Folder notes — defaults mirror the folder-notes plugin's own so an
@@ -120,7 +120,7 @@ const DEFAULT_SETTINGS = {
     conflict: 'keepBoth',   // keepBoth | newer | local | remote
     exclude: [] },
   tagTools:   { enabled: true },
-  inkCapture: { enabled: true, ribbon: true, tagOnCapture: true,
+  inkCapture: { enabled: true, ribbon: true, tagOnCapture: true, pdfSizePct: 80,
     /* Only "paper" is fixed — that's the in-app camera capture. Every other
        source is whatever app the user exports from; they name it themselves. */
     sources: [{ id: 'paper', label: 'Paper (camera)', folder: 'Inbox/Paper', enabled: true }],
@@ -173,7 +173,7 @@ const DEFAULT_SETTINGS = {
   /* Nexus pages that live permanently at the tab bar as an icon (see
      applyPinnedTabs): pinned in Obsidian's own sense, close button hidden,
      reopened by the watchdog if something detaches them anyway. */
-  pinnedTabs: { home: false },
+  pinnedTabs: { home: false, galaxy: false, captures: false },
   /* Settings that belong to ONE machine, keyed by plugin.deviceId(): the sync
      connection and its schedule. In data.json so they are
      synced and backed up, keyed so no device overwrites another's entry — the

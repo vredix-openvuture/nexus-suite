@@ -37,20 +37,20 @@ body.nx-hide-explorer-buttons .workspace-leaf-content[data-type="file-explorer"]
 
 
 /* ── PINNED NEXUS TABS ──
-   A pinned page (the dashboard) sits in the tab bar as a SQUARE
+   A pinned page (the dashboard, the galaxy) sits in the tab bar as a SQUARE
    icon button — no title, no close X, no pin glyph — so it reads as a fixed
-   button rather than a document that happens to be open. The JS side sets the
-   body class, pins the leaf in Obsidian's own sense and reopens the page if it
-   is detached anyway (see main.js · applyPinnedTabs / guardPinnedTabs).
+   button rather than a document that happens to be open. The JS side marks the
+   tab header with .nx-pinned-tab, pins the leaf in Obsidian's own sense and
+   reopens the page if it is detached anyway (features/tabs.js ·
+   applyPinnedTabs / guardPinnedTabs). The [data-type] keeps the specificity the
+   old per-view selectors had, which the theme's active-tab rule needs.
 
    The button needs an EXPLICIT width: `width: auto` collapsed it to the bare
    3px+3px padding, because .workspace-tab-header-inner is `width:100%` +
    `overflow:hidden` and therefore contributes nothing to the tab's intrinsic
    size. Square = the tab pill's own height (bar height minus its padding). */
-body.nx-pin-home {
+body .workspace-tab-header.nx-pinned-tab[data-type] {
   --nx-pin-size: calc(var(--nx-bar-h) - 2 * var(--nx-tab-gap));
-}
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] {
   flex: 0 0 auto !important;
   width:     var(--nx-pin-size) !important;
   min-width: var(--nx-pin-size) !important;
@@ -64,11 +64,11 @@ body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] {
   box-shadow: inset 0 0 0 1px color-mix(in srgb,
               var(--nx-accent, var(--interactive-accent)) 22%, transparent) !important;
 }
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:hover {
+body .workspace-tab-header.nx-pinned-tab[data-type]:hover {
   background-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 20%,
                               var(--nx-chip-side, var(--background-secondary))) !important;
 }
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-title {
+body .workspace-tab-header.nx-pinned-tab[data-type] .workspace-tab-header-inner-title {
   display: none !important;
 }
 /* Both the close X and the pin glyph Obsidian swaps in for pinned tabs — either
@@ -77,16 +77,16 @@ body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-
    (updateHeader → .workspace-tab-header-status-icon.mod-pinned), so the status
    container has to go too — otherwise a stray accent-coloured pin is the only
    thing left inside the button. */
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-close-button,
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-status-container {
+body .workspace-tab-header.nx-pinned-tab[data-type] .workspace-tab-header-inner-close-button,
+body .workspace-tab-header.nx-pinned-tab[data-type] .workspace-tab-header-status-container {
   display: none !important;
 }
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner {
+body .workspace-tab-header.nx-pinned-tab[data-type] .workspace-tab-header-inner {
   padding: 0 !important;
   justify-content: center !important;
   gap: 0;
 }
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-header-inner-icon {
+body .workspace-tab-header.nx-pinned-tab[data-type] .workspace-tab-header-inner-icon {
   margin: 0 !important;
   padding: 0 !important;
   opacity: 1;
@@ -99,13 +99,13 @@ body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"] .workspace-tab-
    (body.nx-blocked.theme-dark .mod-root .workspace-tab-header.is-active, also
    !important) — hence the extra .workspace-split.mod-root in the chain, so this
    lands the same way on every palette instead of depending on load order. */
-body.nx-pin-home  .workspace-split.mod-root .workspace-tab-header[data-type="nx-homepage"].is-active {
+body .workspace-split.mod-root .workspace-tab-header.nx-pinned-tab[data-type].is-active {
   background-color: color-mix(in srgb, var(--nx-accent, var(--interactive-accent)) 28%,
                               var(--nx-chip-side, var(--background-secondary))) !important;
   box-shadow: inset 0 0 0 1px color-mix(in srgb,
               var(--nx-accent, var(--interactive-accent)) 38%, transparent) !important;
 }
 /* A little extra air between the pinned button and the first document tab. */
-body.nx-pin-home  .workspace-tab-header[data-type="nx-homepage"]:has(+ .workspace-tab-header:not([data-type="nx-homepage"])) {
+body .workspace-tab-header.nx-pinned-tab[data-type]:has(+ .workspace-tab-header:not(.nx-pinned-tab)) {
   margin-inline-end: 6px !important;
 }
