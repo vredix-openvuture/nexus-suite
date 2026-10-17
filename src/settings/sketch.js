@@ -49,10 +49,10 @@ class SketchPage {
           s.paperWidth = isFinite(px) && px > 0 ? px : 0;
           await this.save();
         }));
-    /* ── Pen ─────────────────────────────────────────────────────────────────
-       The honest framing matters here: people expect the S Pen's air gestures
-       and they simply are not available to a web app, so the note says so
-       rather than letting someone hunt for a setting that cannot exist. */
+    new Setting(e).setName('Paper texture').setDesc('Lay a subtle paper grain over the pad. Works on any paper colour; toggle live per sketch via the background button.')
+      .addToggle(t => t.setValue(s.paperStyle !== false).onChange(async v => { s.paperStyle = v; await this.save(); }));
+    new Setting(e).setName('Invert ink on dark paper').setDesc('On a dark paper (Black), lift ONLY near-black ink so dark drawings stay readable — vivid colours keep their punch. Non-destructive: colours are only changed for display and export.')
+      .addToggle(t => t.setValue(s.invertOnDark !== false).onChange(async v => { s.invertOnDark = v; await this.save(); }));
     /* ── Handwriting ─────────────────────────────────────────────────────────
        Recognition runs a binary that is already on the machine. That keeps the
        plugin one file and the text on the device, and it is why this is a
@@ -79,6 +79,10 @@ class SketchPage {
         b.setDisabled(false).setButtonText('Test');
       }));
 
+    /* ── Pen ─────────────────────────────────────────────────────────────────
+       The honest framing matters here: people expect the S Pen's air gestures
+       and they simply are not available to a web app, so the note says so
+       rather than letting someone hunt for a setting that cannot exist. */
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Pen buttons' });
     const penNote = e.createEl('p', { cls: 'setting-item-description' });
     const renderPenNote = () => {
@@ -110,13 +114,6 @@ class SketchPage {
           });
         });
     });
-
-    new Setting(e).setName('Paper texture').setDesc('Lay a subtle paper grain over the pad. Works on any paper colour; toggle live per sketch via the background button.')
-      .addToggle(t => t.setValue(s.paperStyle !== false).onChange(async v => { s.paperStyle = v; await this.save(); }));
-    new Setting(e).setName('Invert ink on dark paper').setDesc('On a dark paper (Black), lift ONLY near-black ink so dark drawings stay readable — vivid colours keep their punch. Non-destructive: colours are only changed for display and export.')
-      .addToggle(t => t.setValue(s.invertOnDark !== false).onChange(async v => { s.invertOnDark = v; await this.save(); }));
-    new Setting(e).setName('Default ink color').setDesc('What the pen starts with in a vault that has never drawn. After that every tool remembers the colour it was last used with.')
-      .addColorPicker(cp => cp.setValue(s.ink || '#2f2f2f').onChange(async v => { s.ink = v; await this.save(); }));
 
     /* ── Toolbar ─────────────────────────────────────────────────────────────
        Which buttons a toolbar shows is a property of the DEVICE, not of the
@@ -197,6 +194,7 @@ class SketchPage {
             if (nums.length) { s.sizeFavorites[id] = nums; await this.save(); }
           }));
     });
+    e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Drawing' });
     new Setting(e).setName('Auto-extend downward').setDesc('New pads grow taller automatically as you draw near the bottom. Toggle per sketch in the toolbar.')
       .addToggle(t => t.setValue(!!s.autoGrow).onChange(async v => { s.autoGrow = v; await this.save(); }));
     new Setting(e).setName('Shape recognition').setDesc('Hold the pen still right after drawing → the stroke snaps to a clean line / rectangle / ellipse / triangle.')
@@ -209,6 +207,8 @@ class SketchPage {
     e.createEl('div', { cls: 'nx-cardcfg-sec', text: 'Colour palettes' });
     e.createEl('p', { cls: 'setting-item-description',
       text: 'Max 8 colours each. The one marked active is the default; a tool that was given its own palette (swatch-book button in the options row) keeps using that one instead.' });
+    new Setting(e).setName('Default ink color').setDesc('What the pen starts with in a vault that has never drawn. After that every tool remembers the colour it was last used with.')
+      .addColorPicker(cp => cp.setValue(s.ink || '#2f2f2f').onChange(async v => { s.ink = v; await this.save(); }));
     if (!Array.isArray(s.palettes) || !s.palettes.length) s.palettes = [{ name: 'Default', colors: (s.palette || ['#2f2f2f']).slice(0, 8) }];
     if (s.activePalette == null || s.activePalette >= s.palettes.length) s.activePalette = 0;
     s.palette = s.palettes[s.activePalette].colors;

@@ -2,6 +2,16 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.36.3 — 2026-10-17
+
+### Fixed
+
+- **Quick Sketch settings sit under the right headings.** Paper texture and
+  *Invert ink on dark paper* moved from *Pen buttons* to *The paper*, the
+  default ink colour to *Colour palettes*, and auto-extend and shape
+  recognition got their own *Drawing* heading instead of trailing *Size
+  favourites*.
+
 ## 0.36.2 — 2026-10-17
 
 ### Changed
