@@ -2,6 +2,15 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.36.2 — 2026-10-17
+
+### Changed
+
+- **Pen settings show only what the pen has.** The *Huion / XP-Pen display*
+  profile lists its two grip buttons, *Front button* and *Back button*, each
+  with its own action, and no eraser end or double-tap. The second side button
+  (the middle button under Linux) is now a gesture of its own on every pen.
+
 ## 0.36.1 — 2026-10-17
 
 ### Fixed

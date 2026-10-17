@@ -737,7 +737,18 @@ async function tapTests() {
     v._selDrag = { fake: true };
     ok('penpan · a drag in progress finishes first', !v._penPan(pen('pointermove', 10, 10, 3)));
     // On a Wacom (no panHold), value 4 is not the side button.
-    eq('gestures · value 4 is a side button only where it pans', [window.sketchGestures.decodeButtons(4).barrel, window.sketchGestures.decodeButtons(4, true).barrel], [false, true]);
+    const G = window.sketchGestures;
+    eq('gestures · value 4 is the second side button, not the first', [G.decodeButtons(4).barrel, G.decodeButtons(4).barrel2], [false, true]);
+    eq('gestures · a Huion has two grip buttons and nothing else', G.profileGestures('huion').map(g => g.label), ['Front button', 'Back button']);
+    eq('gestures · other pens keep side button, eraser end and double-tap', G.profileGestures('wacom').map(g => g.id), ['barrel', 'eraserTip', 'doubleTap']);
+    ok('gestures · moving the page is not offered for a tap', !G.actionFits(G.penAction('panHold'), 'doubleTap') && G.actionFits(G.penAction('panHold'), 'barrel2'));
+    // The back button can carry the pan instead of the front one.
+    const w = makeSurface([], { paperType: 'mindmap', penMap: { barrel: 'none', barrel2: 'panHold' } });
+    const wx = w.viewX;
+    w._onMove(pen('pointermove', 300, 200, 4)); w._onMove(pen('pointermove', 200, 120, 4)); w._applyGesture();
+    ok('penpan · the back button pans when it is set to', w.viewX !== wx, wx + ' → ' + w.viewX);
+    w._onMove(pen('pointermove', 200, 120, 0));
+    ok('penpan · and lets go with it', w._penPanId == null);
     Object.assign(u._penSession, { hovered: false, reportsContact: false });
   }
   {

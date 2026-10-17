@@ -122,10 +122,9 @@ class SurfacePen {
      barrel mid-stroke is exactly when someone wants to rub something out. */
   _checkPenButtons(e) {
     if (e.pointerType !== 'pen') return;
-    // Value 4 (a second side button under Linux) only counts where the side button pans.
-    const now = gestures.decodeButtons(e.buttons, this.penMap.barrel === 'panHold');
-    const was = this._penButtons || { barrel: false, eraserTip: false };
-    for (const id of ['barrel', 'eraserTip']) {
+    const now = gestures.decodeButtons(e.buttons);
+    const was = this._penButtons || { barrel: false, barrel2: false, eraserTip: false };
+    for (const id of ['barrel', 'barrel2', 'eraserTip']) {
       if (now[id] === was[id]) continue;
       this._fireGesture(id, now[id] ? 'start' : 'end');
     }

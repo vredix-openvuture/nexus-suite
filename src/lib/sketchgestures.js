@@ -20,8 +20,7 @@
 const BUTTON_BARREL = 2;    // buttons bit 1 (value 2) — the side button
 const BUTTON_ERASER = 32;   // buttons bit 5 (value 32) — the eraser end
 // A pen with two side buttons reports the second one as the middle button
-// (value 4) under Linux — the Huion PW517 for one. It counts as the side button
-// only where that pans: on a Wacom the same value used to do nothing.
+// (value 4) under Linux — the Huion PW517 for one.
 const BUTTON_BARREL_2 = 4;
 
 const DOUBLE_TAP_MS = 320;  // two taps further apart than this are two taps
@@ -29,6 +28,7 @@ const DOUBLE_TAP_R = 24;    // …and further apart than this are aimed at diffe
 
 const PEN_GESTURES = [
   { id: 'barrel', label: 'Side button', hint: 'The button on the barrel of the pen.' },
+  { id: 'barrel2', label: 'Second side button', hint: 'The other barrel button, on pens that have two. A browser sees it as the middle button.' },
   { id: 'eraserTip', label: 'Eraser tip', hint: 'Turning a pen around that has an eraser end.' },
   { id: 'doubleTap', label: 'Double-tap', hint: 'Two quick taps of the tip in the same spot.' },
 ];
@@ -38,7 +38,7 @@ const PEN_GESTURES = [
 const PEN_ACTIONS = [
   { id: 'none', label: 'Nothing' },
   { id: 'eraseHold', label: 'Erase while held', hold: true },
-  { id: 'panHold', label: 'Move the page while held', hold: true, only: 'barrel' },
+  { id: 'panHold', label: 'Move the page while held', hold: true, only: ['barrel', 'barrel2'] },
   { id: 'eraseToggle', label: 'Switch to the eraser' },
   { id: 'select', label: 'Switch to select' },
   { id: 'undo', label: 'Undo' },
@@ -47,36 +47,51 @@ const PEN_ACTIONS = [
   { id: 'nextColor', label: 'Next colour in the palette' },
   { id: 'lastTool', label: 'Back to the previous tool' },
 ];
+/* What a profile's pen has, with its own names for it. */
+function profileGestures(profileId) {
+  const profile = PEN_PROFILES[profileId] || PEN_PROFILES.generic;
+  const ids = profile.gestures || DEFAULT_GESTURES;
+  return PEN_GESTURES.filter(g => ids.includes(g.id))
+    .map(g => Object.assign({}, g, { label: (profile.names && profile.names[g.id]) || g.label }));
+}
+/* Whether an action can be put on a gesture (moving the page needs a held button). */
+function actionFits(action, gestureId) {
+  return !action.only || action.only.includes(gestureId);
+}
 function penAction(id) { return PEN_ACTIONS.find(a => a.id === id) || PEN_ACTIONS[0]; }
 function isHoldAction(id) { return !!penAction(id).hold; }
 
 /* Presets, one per pen people actually own. They differ in what the hardware
-   has, not in what the browser exposes. */
+   has, not in what the browser exposes. `gestures` lists what the pen has (the
+   settings show only those); `names` is what its own buttons are called. */
+const DEFAULT_GESTURES = ['barrel', 'eraserTip', 'doubleTap'];
 const PEN_PROFILES = {
   generic: {
     label: 'Generic stylus',
     note: 'Side button erases while held. Anything the pen does off the glass is invisible to a web app.',
-    map: { barrel: 'eraseHold', eraserTip: 'eraseToggle', doubleTap: 'none' },
+    map: { barrel: 'eraseHold', barrel2: 'none', eraserTip: 'eraseToggle', doubleTap: 'none' },
   },
   spen: {
     label: 'Samsung S Pen',
     note: 'No eraser end, so the side button carries the erasing. Air actions are handled by Android and never reach the page.',
-    map: { barrel: 'eraseHold', eraserTip: 'none', doubleTap: 'lastTool' },
+    map: { barrel: 'eraseHold', barrel2: 'none', eraserTip: 'none', doubleTap: 'lastTool' },
   },
   lenovo: {
     label: 'Lenovo Precision Pen',
     note: 'Two side buttons, but a browser sees only one of them; the eraser end works.',
-    map: { barrel: 'eraseHold', eraserTip: 'eraseToggle', doubleTap: 'undo' },
+    map: { barrel: 'eraseHold', barrel2: 'none', eraserTip: 'eraseToggle', doubleTap: 'undo' },
   },
   wacom: {
     label: 'Wacom / AES pen',
     note: 'Side button and eraser end both report normally.',
-    map: { barrel: 'select', eraserTip: 'eraseHold', doubleTap: 'none' },
+    map: { barrel: 'select', barrel2: 'none', eraserTip: 'eraseHold', doubleTap: 'none' },
   },
   huion: {
     label: 'Huion / XP-Pen display',
-    note: 'Side button moves the page while held, as in Krita. Under Linux the nib arrives without pressure.',
-    map: { barrel: 'panHold', eraserTip: 'none', doubleTap: 'none' },
+    note: 'Two buttons on the grip, no eraser end. The front one moves the page while held, as in Krita. Under Linux the nib arrives without pressure.',
+    gestures: ['barrel', 'barrel2'],
+    names: { barrel: 'Front button', barrel2: 'Back button' },
+    map: { barrel: 'panHold', barrel2: 'none', eraserTip: 'none', doubleTap: 'none' },
   },
 };
 const PROFILE_IDS = Object.keys(PEN_PROFILES);
@@ -95,10 +110,9 @@ function resolveMap(profileId, overrides) {
 }
 
 /* Which physical buttons a pointer event reports. */
-function decodeButtons(buttons, countSecondBarrel) {
+function decodeButtons(buttons) {
   const bits = Number(buttons) || 0;
-  const barrelBits = countSecondBarrel ? (BUTTON_BARREL | BUTTON_BARREL_2) : BUTTON_BARREL;
-  return { barrel: (bits & barrelBits) !== 0, eraserTip: (bits & BUTTON_ERASER) !== 0 };
+  return { barrel: (bits & BUTTON_BARREL) !== 0, barrel2: (bits & BUTTON_BARREL_2) !== 0, eraserTip: (bits & BUTTON_ERASER) !== 0 };
 }
 
 /* Two taps count as one double-tap when they are close in time AND in space.
@@ -112,5 +126,5 @@ function isDoubleTap(previous, x, y, t) {
 module.exports = {
   BUTTON_BARREL, BUTTON_ERASER, DOUBLE_TAP_MS, DOUBLE_TAP_R,
   PEN_GESTURES, PEN_ACTIONS, PEN_PROFILES, PROFILE_IDS,
-  penAction, isHoldAction, resolveMap, decodeButtons, isDoubleTap,
+  penAction, isHoldAction, resolveMap, decodeButtons, isDoubleTap, profileGestures, actionFits,
 };

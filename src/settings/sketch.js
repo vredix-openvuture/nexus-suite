@@ -83,7 +83,7 @@ class SketchPage {
     const penNote = e.createEl('p', { cls: 'setting-item-description' });
     const renderPenNote = () => {
       const profile = penGestures.PEN_PROFILES[s.penProfile] || penGestures.PEN_PROFILES.generic;
-      penNote.setText(profile.note + ' A browser only sees what the pen does on or near the glass: the side button, the eraser end, and taps.');
+      penNote.setText(profile.note + ' A browser only sees what the pen does on or near the glass: its buttons, the eraser end, and taps.');
     };
     new Setting(e).setName('Pen').setDesc('Picks the presets below. It does not change what the hardware reports, only what is assumed about it.')
       .addDropdown(dd => {
@@ -99,12 +99,11 @@ class SketchPage {
           });
       });
     renderPenNote();
-    penGestures.PEN_GESTURES.forEach(g => {
+    penGestures.profileGestures(s.penProfile).forEach(g => {
       const active = penGestures.resolveMap(s.penProfile, s.penMap);
       new Setting(e).setName(g.label).setDesc(g.hint).setClass('nx-set-sub')
         .addDropdown(dd => {
-          // Some actions only exist for one gesture (moving the page needs a held button).
-          penGestures.PEN_ACTIONS.filter(a => !a.only || a.only === g.id).forEach(a => dd.addOption(a.id, a.label));
+          penGestures.PEN_ACTIONS.filter(a => penGestures.actionFits(a, g.id)).forEach(a => dd.addOption(a.id, a.label));
           dd.setValue(active[g.id] || 'none').onChange(async v => {
             s.penMap = Object.assign({}, s.penMap, { [g.id]: v });
             await this.save();

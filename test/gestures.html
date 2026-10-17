@@ -19,12 +19,13 @@ const G = window.sketchGestures;
 
 // ── decoding what the hardware reports ─────────────────────────────────────
 {
-  eq('decode · nothing pressed', G.decodeButtons(0), { barrel: false, eraserTip: false });
-  eq('decode · the tip alone is not a gesture', G.decodeButtons(1), { barrel: false, eraserTip: false });
-  eq('decode · the side button', G.decodeButtons(2), { barrel: true, eraserTip: false });
-  eq('decode · tip and side button together', G.decodeButtons(3), { barrel: true, eraserTip: false });
-  eq('decode · the eraser end', G.decodeButtons(32), { barrel: false, eraserTip: true });
-  eq('decode · rubbish is not a gesture', G.decodeButtons(undefined), { barrel: false, eraserTip: false });
+  eq('decode · nothing pressed', G.decodeButtons(0), { barrel: false, barrel2: false, eraserTip: false });
+  eq('decode · the tip alone is not a gesture', G.decodeButtons(1), { barrel: false, barrel2: false, eraserTip: false });
+  eq('decode · the side button', G.decodeButtons(2), { barrel: true, barrel2: false, eraserTip: false });
+  eq('decode · tip and side button together', G.decodeButtons(3), { barrel: true, barrel2: false, eraserTip: false });
+  eq('decode · the second side button (the middle button under Linux)', G.decodeButtons(4), { barrel: false, barrel2: true, eraserTip: false });
+  eq('decode · the eraser end', G.decodeButtons(32), { barrel: false, barrel2: false, eraserTip: true });
+  eq('decode · rubbish is not a gesture', G.decodeButtons(undefined), { barrel: false, barrel2: false, eraserTip: false });
 }
 
 // ── double-tap needs time AND place ────────────────────────────────────────

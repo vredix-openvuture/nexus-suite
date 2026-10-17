@@ -15,12 +15,14 @@ const gestures = require('../../lib/sketchgestures.js');
 class SurfacePenPan {
   /* Run on every pen event. True when the event belonged to a pan. */
   _penPan(e) {
-    if (e.pointerType !== 'pen' || this.penMap.barrel !== 'panHold') return false;
+    const panButtons = ['barrel', 'barrel2'].filter(id => this.penMap[id] === 'panHold');
+    if (e.pointerType !== 'pen' || !panButtons.length) return false;
     // The nib took the pan over (see _penPanHandover); hover events must not take it back.
     if (this._nibPanId != null && this._touches.has(this._nibPanId)) return true;
     const isPanPointer = this._penPanId === e.pointerId;
     const isEnd = e.type === 'pointerup' || e.type === 'pointercancel';
-    if (isEnd || !gestures.decodeButtons(e.buttons, true).barrel) {
+    const held = gestures.decodeButtons(e.buttons);
+    if (isEnd || !panButtons.some(id => held[id])) {
       // Any pen event without the button ends a pan — also one whose pointer
       // left hover range and came back under a new id.
       if (this._penPanId != null) this._penPanEnd(this._penPanId);
