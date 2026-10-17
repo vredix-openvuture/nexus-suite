@@ -23,9 +23,21 @@ const { ItemView, Notice, setIcon } = require('obsidian');
 const { SKETCH_VIEW } = require('../constants.js');
 const notesketches = require('../lib/notesketches.js');
 const { NexusSketchSurface, sketchPresets } = require('./sketch.js');
+const { SketchZen } = require('./sketchzen.js');
 
 class NexusSketchPaneView extends ItemView {
-  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; this.id = ''; this.notePath = ''; }
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin; this.id = ''; this.notePath = '';
+    this.zen = new SketchZen(this);
+  }
+  onload() {
+    super.onload();
+    // Ctrl+Tab to another tab must not leave this one covering the window.
+    this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => {
+      if (leaf && leaf !== this.leaf) this.zen.set(false);
+    }));
+  }
   getViewType() { return SKETCH_VIEW; }
   getDisplayText() {
     const base = this.notePath ? this.notePath.split('/').pop().replace(/\.md$/i, '') : '';
@@ -95,6 +107,7 @@ class NexusSketchPaneView extends ItemView {
      instead: whatever blank space auto-grow added below the last stroke is not
      worth saving. */
   async onClose() {
+    this.zen.set(false);   // a closed tab must not leave the window covered
     if (this.surface) {
       try {
         if (!this.surface.infinite) { this.surface.setPageZoom(1); this.surface.setHeight(0); }
@@ -109,11 +122,11 @@ class NexusSketchPaneView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass('nx-skpane');
-    if (!this.id) { root.createDiv({ cls: 'nx-home-empty', text: 'No sketch selected.' }); return; }
+    if (!this.id) { this.zen.set(false); root.createDiv({ cls: 'nx-home-empty', text: 'No sketch selected.' }); return; }
 
     const s = this.plugin.settings.quicksketch;
     const data = await this.plugin.loadSketch(this.id);
-    if (!data) { root.createDiv({ cls: 'nx-home-empty', text: 'Sketch "' + this.id + '" not found.' }); return; }
+    if (!data) { this.zen.set(false); root.createDiv({ cls: 'nx-home-empty', text: 'Sketch "' + this.id + '" not found.' }); return; }
 
     const bar = root.createDiv('nx-sketch-bar nx-skpane-bar');
     const stage = root.createDiv('nx-skpane-stage');
@@ -203,6 +216,7 @@ class NexusSketchPaneView extends ItemView {
       };
       this._pages(bar);
     }
+    this.zen.addButton(bar);
   }
 
   /* Which page you are on, and every page there is. The label doubles as the

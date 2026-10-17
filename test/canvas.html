@@ -591,6 +591,8 @@ async function tapTests() {
     /* The reported regression: on a pen tablet the pen HOVERS over the glass the
        whole time, and palm rejection counted hover — so no finger tap ever got
        through. Contact opens the window, hover does not. */
+    // The pen tablet in question is Android: there the nib arrives as 'pen'.
+    window.ObsidianPlatform.isMobile = true;
     const s = drawn(1);
     const hover = new PointerEvent('pointermove', { bubbles: true, pointerId: 9, pointerType: 'pen', buttons: 0, pressure: 0 });
     s._onMove(hover);
@@ -603,6 +605,159 @@ async function tapTests() {
     const contact = new PointerEvent('pointermove', { bubbles: true, pointerId: 9, pointerType: 'pen', buttons: 1, pressure: 0.5 });
     s._onMove(contact);
     ok('tap · a pen in contact does open it', s._lastPen > 0, 'lastPen ' + s._lastPen);
+  }
+  {
+    /* A Huion on a Linux desktop: the pen hovers as 'pen' and then puts its nib
+       down as 'touch' with no pressure. That touch must draw, not pan. */
+    window.ObsidianPlatform.isMobile = false;
+    const s = makeSurface([], {});
+    // A touch before any pen has shown itself is a finger.
+    Object.assign(s._penSession, { hovered: false, reportsContact: false });
+    const ev0 = new PointerEvent('pointerdown', { bubbles: true, pointerId: 30, pointerType: 'touch', buttons: 1 });
+    ev0.__x = 100; ev0.__y = 120;
+    s._onDown(ev0); s._onUp(new PointerEvent('pointerup', { bubbles: true, pointerId: 30, pointerType: 'touch' }));
+    ok('nib · with no pen seen yet, a touch is a finger', !s._nibIds || !s._nibIds.size);
+    const hover = new PointerEvent('pointermove', { bubbles: true, pointerId: 9, pointerType: 'pen', buttons: 0, pressure: 0 });
+    s._onMove(hover);
+    const ev = (type, x) => {
+      const e = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 31, pointerType: 'touch', buttons: type === 'pointerup' ? 0 : 1, pressure: 0.5 });
+      e.__x = x; e.__y = 120;   // how this harness hands coordinates to _pt (see ptr)
+      return e;
+    };
+    const before = s.strokes.length;
+    s._onDown(ev('pointerdown', 100)); s._onMove(ev('pointermove', 140)); s._onMove(ev('pointermove', 180)); s._onUp(ev('pointerup', 180));
+    eq('nib · on desktop, once a pen has hovered, its touch-down draws a stroke', s.strokes.length, before + 1);
+    ok('nib · and is forgotten once it lifts', !s._nibIds || !s._nibIds.has(31));
+
+    // A pen that touches down as 'pen' reports properly: fingers are fingers.
+    const t = makeSurface([], {});
+    const contact = new PointerEvent('pointermove', { bubbles: true, pointerId: 9, pointerType: 'pen', buttons: 1, pressure: 0.4 });
+    t._onMove(contact);
+    const n = t.strokes.length;
+    t._onDown(ev('pointerdown', 100)); t._onMove(ev('pointermove', 160)); t._onUp(ev('pointerup', 160));
+    eq('nib · after a real pen contact, a touch does not draw', t.strokes.length, n);
+    Object.assign(t._penSession, { hovered: false, reportsContact: false });
+  }
+  {
+    // The middle mouse button drags the plane around, like one finger.
+    const s = makeSurface([], { paperType: 'mindmap' });
+    s._lastPen = -Infinity;
+    const x0 = s.viewX, y0 = s.viewY, n = s.strokes.length;
+    const mid = (type, x, y) => {
+      const e = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', button: type === 'pointermove' ? -1 : 1, buttons: type === 'pointerup' ? 0 : 4 });
+      Object.defineProperty(e, 'clientX', { value: x }); Object.defineProperty(e, 'clientY', { value: y });
+      e.__x = x; e.__y = y;
+      return e;
+    };
+    s._onDown(mid('pointerdown', 200, 200));
+    s._onMove(mid('pointermove', 150, 170));
+    s._applyGesture();
+    s._onMove(mid('pointermove', 100, 140));
+    s._applyGesture();
+    s._onUp(mid('pointerup', 100, 140));
+    ok('middle · dragging with the middle button moves the view', s.viewX !== x0 || s.viewY !== y0, [x0, y0, s.viewX, s.viewY].join(','));
+    eq('middle · and draws nothing', s.strokes.length, n);
+    ok('middle · and lets go of the button', !s._middlePanId);
+  }
+  {
+    // The pen's side button held = move the page, hovering or with the nib down.
+    window.ObsidianPlatform.isMobile = false;
+    const s = makeSurface([], { paperType: 'mindmap', penMap: { barrel: 'panHold' } });
+    Object.assign(s._penSession, { hovered: false, reportsContact: false });
+    s._lastPen = -Infinity;
+    const pen = (type, x, y, buttons, button) => {
+      const e = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 40, pointerType: 'pen',
+        button: button == null ? -1 : button, buttons, pressure: buttons & 1 ? 0.5 : 0 });
+      Object.defineProperty(e, 'clientX', { value: x }); Object.defineProperty(e, 'clientY', { value: y });
+      e.__x = x; e.__y = y;
+      return e;
+    };
+    const x0 = s.viewX, y0 = s.viewY, n = s.strokes.length;
+    s._onMove(pen('pointermove', 300, 200, 0));
+    s._onDown(pen('pointerdown', 300, 200, 2, 2));       // side button pressed while hovering
+    s._onMove(pen('pointermove', 250, 170, 2));
+    s._applyGesture();
+    ok('penpan · hovering with the side button held moves the view', s.viewX !== x0 || s.viewY !== y0, [x0, y0, s.viewX, s.viewY].join(','));
+    ok('penpan · a held side button is not pen contact', !s._penSession.reportsContact);
+    // A Huion puts its nib down as touch: with the button still held, that touch pans on.
+    const touch = (type, x, y) => {
+      const e = new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 41, pointerType: 'touch', buttons: type === 'pointerup' ? 0 : 1 });
+      Object.defineProperty(e, 'clientX', { value: x }); Object.defineProperty(e, 'clientY', { value: y });
+      e.__x = x; e.__y = y;
+      return e;
+    };
+    const x1 = s.viewX;
+    s._onDown(touch('pointerdown', 250, 170));
+    s._onMove(touch('pointermove', 180, 170));
+    s._applyGesture();
+    ok('penpan · the nib touching down with the button held keeps panning', s.viewX !== x1, x1 + ' → ' + s.viewX);
+    s._onUp(touch('pointerup', 180, 170));
+    eq('penpan · and draws nothing', s.strokes.length, n);
+    ok('penpan · the pan lets go', !s._penPanId && !s._touches.size);
+    // Button released: the nib draws again.
+    s._onMove(pen('pointermove', 200, 200, 0));
+    s._onDown(touch('pointerdown', 100, 100)); s._onMove(touch('pointermove', 160, 120)); s._onUp(touch('pointerup', 160, 120));
+    eq('penpan · after the button is let go the nib draws', s.strokes.length, n + 1);
+
+    // Without panHold mapped, the side button does not pan.
+    const t = makeSurface([], { paperType: 'mindmap', penMap: { barrel: 'none' } });
+    const tx = t.viewX;
+    t._onMove(pen('pointermove', 300, 200, 2)); t._applyGesture();
+    t._onMove(pen('pointermove', 200, 100, 2)); t._applyGesture();
+    eq('penpan · only when the side button is set to move the page', t.viewX, tx);
+    ok('cursor · a hovering pen keeps its arrow (a tablet without a screen aims with it)', !t.host.classList.contains('is-pen-drawing'));
+    t._onDown(pen('pointerdown', 100, 100, 1, 0));
+    ok('cursor · a pen drawing drops the arrow', t.host.classList.contains('is-pen-drawing'));
+    t._onUp(pen('pointerup', 120, 100, 0, 0));
+    ok('cursor · and gets it back when the stroke ends', !t.host.classList.contains('is-pen-drawing'));
+    Object.assign(t._penSession, { hovered: false, reportsContact: false });
+
+    // A pan that lost its pointer (pen left hover range with the button down) ends on the next plain pen event.
+    const u = makeSurface([], { paperType: 'mindmap', penMap: { barrel: 'panHold' } });
+    u._onMove(pen('pointermove', 300, 200, 2));
+    const stale = new PointerEvent('pointermove', { bubbles: true, pointerId: 77, pointerType: 'pen', buttons: 0 });
+    u._onMove(stale);
+    ok('penpan · a stale pan is dropped', u._penPanId == null && !u._touches.size);
+    // A side button pressed mid-select does not hijack the drag.
+    const v = makeSurface([], { paperType: 'mindmap', penMap: { barrel: 'panHold' } });
+    v._selDrag = { fake: true };
+    ok('penpan · a drag in progress finishes first', !v._penPan(pen('pointermove', 10, 10, 3)));
+    // On a Wacom (no panHold), value 4 is not the side button.
+    eq('gestures · value 4 is a side button only where it pans', [window.sketchGestures.decodeButtons(4).barrel, window.sketchGestures.decodeButtons(4, true).barrel], [false, true]);
+    Object.assign(u._penSession, { hovered: false, reportsContact: false });
+  }
+  {
+    // Switching a sheet to a mindmap drops the sheet's width cap: the plane fills the pane.
+    const s = makeSurface([], { paperType: 'endless', paperWidth: 500 });
+    eq('mindmap · a sheet is capped', s.host.style.maxWidth, '500px');
+    s.host.style.width = '800px';   // what a page zoom leaves on the pad
+    s.setPaperType('mindmap');
+    eq('mindmap · the plane is not', [s.host.style.maxWidth, s.host.style.width], ['', '']);
+    s.setPaperType('endless');
+    eq('mindmap · and back to a sheet caps it again', s.host.style.maxWidth, '500px');
+  }
+  {
+    // Zen mode lifts the Sketch tab's content into a layer over the window and puts it back.
+    const container = document.body.createDiv();
+    const content = container.createDiv('view-content');
+    const view = { containerEl: container, contentEl: content };
+    const zen = new window.SketchZen(view);
+    const bar = document.body.createDiv();
+    zen.addButton(bar);
+    zen.button.onclick();
+    ok('zen · the content moves into the layer', content.parentElement && content.parentElement.classList.contains('nx-sketch-zen-layer'));
+    // The harness page does not carry the plugin CSS; this one rule is read from the built file.
+    const css = document.head.appendChild(Object.assign(document.createElement('link'), { rel: 'stylesheet', href: 'plugin/styles.css' }));
+    await new Promise((resolve) => { css.onload = resolve; css.onerror = resolve; });
+    eq('zen · the layer covers the window', getComputedStyle(content.parentElement).position, 'fixed');
+    css.remove();
+    ok('zen · the button says it is on', zen.button.classList.contains('is-active'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
+    ok('zen · Esc puts it back', content.parentElement === container);
+    ok('zen · and removes the layer', !document.querySelector('.nx-sketch-zen-layer'));
+    zen.set(true); zen.set(false);
+    ok('zen · twice in and out leaves no layer behind', !document.querySelector('.nx-sketch-zen-layer') && content.parentElement === container);
+    container.remove(); bar.remove();
   }
   {
     // A three-finger tap is six events with a hand between them — the first

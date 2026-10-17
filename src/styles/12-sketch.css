@@ -344,6 +344,10 @@
 /* The ruler stays on across strokes, so the pad has to say so at a glance. */
 .nx-sketch-pad.is-ruler .nx-sketch-surface { cursor: crosshair; }
 
+/* A pen drawing is its own pointer: an arrow on top of the nib only covers the
+   line. Set only while a stroke is down (views/sketch/pen.js). */
+.nx-sketch-pad.is-pen-drawing .nx-sketch-surface { cursor: none; }
+
 /* A note in the options row: the selection count, the ruler angle, that kind of
    thing. Never a control, always the answer to "did that do what I meant". */
 .nx-sk-subnote {
@@ -751,6 +755,18 @@ body.is-mobile .nx-sk-zoompill { padding: 9px 15px; }
 .nx-skpane-stage > .nx-sk-infinite { height: 100%; }
 .nx-skpane-stage > .nx-sk-infinite > .nx-sketch-surface { height: 100%; }
 .nx-skpane-back { margin-left: var(--nx-sp-1); }
+.nx-skpane-zen { margin-left: var(--nx-sp-1); }
+/* Zen mode (views/sketchzen.js): the Sketch tab's content sits in a layer over
+   the whole window — above ribbon, sidebars, tab bar and status bar, below
+   popovers, menus and notices so the toolbar's own popups still open on top. */
+.nx-sketch-zen-layer {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--layer-status-bar, 15) + 1);
+  display: flex;
+  background: var(--background-primary);
+}
+.nx-sketch-zen-layer > .view-content { flex: 1; width: 100%; height: 100%; }
 /* Which page you are on. The count sits IN the button, because a page number you
    cannot press is a fact with nothing to do — and it is drawn as a real control
    rather than as one more quiet icon, because it is the only way to the rest of

@@ -1,6 +1,8 @@
 require('./dom-ext.js');
 
 window.NexusSuite = require('../src/main.js');
+// The stub's Platform, so a test can say which device it stands for.
+window.ObsidianPlatform = require('obsidian').Platform;
 window.NexusSketchSurface = require('../src/views/sketch.js').NexusSketchSurface;
 window.DEFAULT_SETTINGS = require('../src/constants.js').DEFAULT_SETTINGS;
 window.BAR_ITEMS = require('../src/constants.js').BAR_ITEMS;
@@ -59,3 +61,4 @@ window.NexusHomepageView = require('../src/views/homepage.js').NexusHomepageView
 window.accountModal = require('../src/modals/account.js');
 window.textLib = require('../src/lib/text.js');
 window.addonsLib = require('../src/lib/addons.js');
+window.SketchZen = require('../src/views/sketchzen.js').SketchZen;

@@ -8,7 +8,20 @@
 
 const canvas = require('../../lib/sketchcanvas.js');
 const gestures = require('../../lib/sketchgestures.js');
+const { Platform } = require('obsidian');
 const { AUTOGROW_MARGIN, AUTOGROW_LOOKAHEAD, TAP_TRAVEL, HOLD_MS, HOLD_R } = require('./tuning.js');
+
+/* What this desktop's pen has shown so far, shared by every sketch surface.
+   Some graphics tablets (a Huion under Linux/Wayland, logged 2026-10-14) hover
+   as 'pen' but put the nib down as 'touch' — fixed 34.7px contact, pressure
+   0.5 — so the pad read every stroke as a finger and panned. A pen seen
+   hovering that has never once touched down as 'pen' is such a device, and
+   its single touches are the nib. One real pen contact (a Surface, a Wacom
+   that reports properly) turns the rule off for the rest of the session.
+   The nib lands straight out of hover, so a touch long after the pen was last
+   near the glass is a finger again (a 2-in-1's pen lying on the desk). */
+const penSession = { hovered: false, reportsContact: false, lastHoverAt: -Infinity };
+const NIB_AFTER_HOVER_MS = 1000;
 const { PEN_TYPES, recognizeShape, shapeToPoints } = require('../../lib/sketchstroke.js');
 const { splitAlpha } = require('../../lib/sketchsvg.js');
 
@@ -109,7 +122,8 @@ class SurfacePen {
      barrel mid-stroke is exactly when someone wants to rub something out. */
   _checkPenButtons(e) {
     if (e.pointerType !== 'pen') return;
-    const now = gestures.decodeButtons(e.buttons);
+    // Value 4 (a second side button under Linux) only counts where the side button pans.
+    const now = gestures.decodeButtons(e.buttons, this.penMap.barrel === 'panHold');
     const was = this._penButtons || { barrel: false, eraserTip: false };
     for (const id of ['barrel', 'eraserTip']) {
       if (now[id] === was[id]) continue;
@@ -117,11 +131,39 @@ class SurfacePen {
     }
     this._penButtons = now;
   }
+  get _penSession() { return penSession; }
+  _toggleHostClass(name, isOn) {
+    if (this.host && this.host.classList) this.host.classList.toggle(name, isOn);
+  }
+  /* A touch is a finger unless it is a pen nib reported as touch (see
+     penSession): recognised at pointerdown, remembered by pointer id. */
+  _isFinger(e) {
+    if (e.pointerType === 'mouse') return this._middlePanId === e.pointerId;
+    return e.pointerType === 'touch' && !(this._nibIds && this._nibIds.has(e.pointerId));
+  }
   _onDown(e) {
     this._stopFling();
     this._checkPenButtons(e);
-    if (e.pointerType === 'pen') this._lastPen = performance.now();   // contact — opens the palm window
-    if (e.pointerType === 'touch') { this._touchDown(e); return; }    // finger = pan / page-scroll / zoom, never draws
+    const isNib = e.pointerType === 'touch' && !Platform.isMobile && penSession.hovered && !penSession.reportsContact
+      && performance.now() - penSession.lastHoverAt < NIB_AFTER_HOVER_MS;
+    if (this._penPan(e) || this._penPanHandover(e, isNib)) return;
+    // A side button pressed while hovering fires pointerdown too; only the nib is contact.
+    const isSideButton = e.button === 1 || e.button === 2;
+    if (e.pointerType === 'pen') { penSession.hovered = true; if (!isSideButton) penSession.reportsContact = true; }
+    if (isNib && !this._touches.size) {
+      (this._nibIds || (this._nibIds = new Set())).add(e.pointerId);
+    }
+    if (!this._isFinger(e) && e.pointerType !== 'mouse') this._lastPen = performance.now();   // contact — opens the palm window
+    if (this._isFinger(e)) { this._touchDown(e); return; }            // finger = pan / page-scroll / zoom, never draws
+    // Held middle button = one finger: drag the plane around, or scroll the
+    // page it sits on. It is never a tap, so a double middle-click undoes nothing.
+    if (e.pointerType === 'mouse' && e.button === 1) {
+      e.preventDefault();
+      this._middlePanId = e.pointerId;
+      this._touchDown(e);
+      this._tap = null;
+      return;
+    }
     if (this.locked) return;                                          // view mode: pen/mouse never draw or erase
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     // Pen wins over fingers: a palm that slipped in as a "pan" gets dropped the
@@ -154,6 +196,9 @@ class SurfacePen {
       points: [],
     };
     this._active._sl = (pt.streamline != null) ? pt.streamline : this.streamline;
+    // While a pen draws, an arrow on the nib only covers the line. Only while it
+    // draws: on a tablet without a screen the arrow is the only way to aim.
+    this._toggleHostClass('is-pen-drawing', e.pointerType !== 'mouse');
     this._speedThin = pt.speedThin || 0;
     this._vSm = 0; this._lastRawT = e.timeStamp;
     this._chunkStart = 0;
@@ -180,10 +225,19 @@ class SurfacePen {
   }
   _onMove(e) {
     this._checkPenButtons(e);
+    if (this._penPan(e)) return;
     // Only while the nib is actually down: a hovering pen must not veto the
-    // fingers of the other hand (pressure/buttons are 0 in hover).
-    if (e.pointerType === 'pen' && (e.buttons || e.pressure > 0)) this._lastPen = performance.now();
-    if (e.pointerType === 'touch') { this._touchMove(e); return; }
+    // fingers of the other hand. Read from the buttons alone — a pen without
+    // pressure reports 0.5 for a held side button, which is not contact.
+    const isNibDown = (e.buttons & (1 | gestures.BUTTON_ERASER)) !== 0;
+    if (e.pointerType === 'pen') {
+      penSession.hovered = true;
+      penSession.lastHoverAt = performance.now();
+      if (isNibDown) penSession.reportsContact = true;
+    }
+    if (e.pointerType === 'pen' && isNibDown) this._lastPen = performance.now();
+    if (this._isFinger(e)) { this._touchMove(e); return; }
+    if (e.pointerType === 'touch') this._lastPen = performance.now();   // a nib (see _isFinger)
     if (this._erasing) { if (this._areaErase) this._areaEraseMove(this._pt(e)); else this._eraseAt(this._pt(e)); return; }
     if (this._selDrag) { e.preventDefault(); this._selMove(this._pt(e), e); return; }
     if (this._spaceDrag) { e.preventDefault(); this._spaceMove(this._pt(e)); return; }
@@ -228,7 +282,15 @@ class SurfacePen {
     }
   }
   _onUp(e) {
-    if (e.pointerType === 'touch') { this._touchUp(e); return; }
+    this._checkPenButtons(e);   // before the pan check, so a hold action hears its release on time
+    if (this._penPan(e)) return;
+    if (e.pointerType === 'mouse' && this._middlePanId === e.pointerId) {
+      this._middlePanId = null;
+      this._touchUp(e);
+      return;
+    }
+    const wasNib = !!(this._nibIds && this._nibIds.delete(e.pointerId));
+    if (e.pointerType === 'touch' && !wasNib) { this._touchUp(e); return; }
     this._checkPenButtons(e);
     this._ctmInv = null;
     if (this._holdTimer) { clearTimeout(this._holdTimer); this._holdTimer = null; }
@@ -245,6 +307,7 @@ class SurfacePen {
     if (this._spaceDrag) { this._spaceUp(); return; }
     if (!this._active) return;
     const st = this._active; this._active = null;
+    this._toggleHostClass('is-pen-drawing', false);
     this._rulerAnchor = null; this._rulerDir = null;
     if (st._raw && !st._snapped) this._addPointFinal(st, st._raw);
     this.livePath.removeAttribute('d');

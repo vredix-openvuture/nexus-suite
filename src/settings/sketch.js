@@ -103,7 +103,8 @@ class SketchPage {
       const active = penGestures.resolveMap(s.penProfile, s.penMap);
       new Setting(e).setName(g.label).setDesc(g.hint).setClass('nx-set-sub')
         .addDropdown(dd => {
-          penGestures.PEN_ACTIONS.forEach(a => dd.addOption(a.id, a.label));
+          // Some actions only exist for one gesture (moving the page needs a held button).
+          penGestures.PEN_ACTIONS.filter(a => !a.only || a.only === g.id).forEach(a => dd.addOption(a.id, a.label));
           dd.setValue(active[g.id] || 'none').onChange(async v => {
             s.penMap = Object.assign({}, s.penMap, { [g.id]: v });
             await this.save();
@@ -283,13 +284,12 @@ class SketchPage {
       .addDropdown(dd => dd
         .addOption('none', 'None')
         .addOption('grid', 'Grid')
-        .addOption('graph', 'Graph (5×)')
         .addOption('lines', 'Lines')
         .addOption('dots', 'Dots')
         .addOption('cross', 'Cross')
         .addOption('isometric', 'Isometric')
         .addOption('isodots', 'Iso dots')
-        .setValue(s.bgType || 'none')
+        .setValue(s.bgType === 'graph' ? 'grid' : (s.bgType || 'none'))
         .onChange(async v => { s.bgType = v; await this.save(); }));
     new Setting(e).setName('Grid / line spacing').setDesc('Default 27 ≈ 5 mm squares like real DIN-A4 grid paper (canvas width ≙ A4 landscape).')
       .addSlider(sl => { sl.setLimits(16, 120, 1).setValue(s.bgSize != null ? s.bgSize : 27).setDynamicTooltip();

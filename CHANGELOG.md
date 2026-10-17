@@ -2,6 +2,82 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## Unreleased
+
+### Added
+
+- **Zen mode for the Sketch tab.** A button at the right end of its toolbar
+  lifts the drawing over the whole window — no tab bar, ribbon, sidebars or
+  status bar. Esc or the same button brings them back.
+- **The pen's side button can move the page while held**, as in Krita: hovering
+  or with the nib down, including a Huion whose nib arrives as touch. New action
+  *Move the page while held*, and a *Huion / XP-Pen display* profile that puts it
+  on the side button. With that action, a second side button reported as the
+  middle button counts as the side button too.
+- **No mouse arrow over the nib while a pen draws.** Hovering keeps it, since on
+  a tablet without a screen it is the only way to aim.
+
+- **Galaxy controls.** The slider button in the galaxy's bar opens a panel like
+  Obsidian's graph controls: notes without links, node size, link thickness,
+  names shown, idle turning, and the four forces (center, repel, link force,
+  link distance). Forces reheat the layout live from where it stands. The link
+  length slider moved there from Settings → Galaxy.
+- **Middle mouse button drags a sketch around**: held and moved, it pans the
+  plane or scrolls the page the sketch sits on, like one finger. It never counts
+  as a tap, so double middle-clicks undo nothing.
+- **Galaxy turn speed.** A slider under "Keep turning" in the galaxy panel.
+- **Pin the galaxy and the capture hub to the tab bar**, like the dashboard: Settings → Dashboard →
+  Pinned tabs, or right-click its tab. The icon-only look now hangs on one class
+  (`.nx-pinned-tab`) for every pinnable page.
+- **Galaxy star chart.** The map sits on the same star chart the theme draws
+  behind Obsidian's graph: meridians, rings and an accent glow in the middle.
+
+### Changed
+
+- **Scanned PDFs open at 80% of the note width** instead of 50%, and the size
+  you pick with −/+ is remembered for every PDF (`inkCapture.pdfSizePct`).
+- **The galaxy shows groups, not a ball.** A link now pulls by the less-linked
+  of its two notes, as in d3-force: a hub's many links each pull a little, so
+  the groups around it stay apart. New default forces (center 0.002, repel
+  6000, link 0.2, distance 35), and the camera backs off with a wide map so
+  near notes no longer balloon in 3D.
+- **Hovering a note in the galaxy holds it still** instead of letting it drift
+  out from under the pointer, and the hover label now actually appears.
+- **Big vaults unfold faster:** the layout steps by a time budget per frame
+  instead of one step at a time above 600 notes.
+
+### Removed
+
+- **The `graph` sketch background** (engineering paper). A sketch saved with it
+  shows the plain grid instead.
+
+### Fixed
+
+- **A mindmap fills the Sketch tab** right after a sheet is switched to one,
+  instead of staying boxed at the sheet width with empty strips left and right
+  until the tab was reopened.
+- **A held side button no longer counts as the nib touching down**, which on a
+  Huion switched its nib-as-touch drawing off for the rest of the session.
+- **A touch counts as a Huion nib only straight out of pen hover** (within a
+  second), so a finger on a 2-in-1 whose pen once hovered pans again.
+
+- **A Huion pen on a Linux desktop draws instead of scrolling the sketch.** Under
+  Wayland it hovers as `pen` but touches down as `touch`, which the sketch pad
+  reads as a finger and pans with. On desktop, once a pen has been seen hovering
+  but has never touched down as `pen`, a single touch is taken as its nib. One
+  real pen contact turns that off again, so devices that report properly keep
+  their fingers. The nib carries no pressure, so strokes have an even width.
+  Tablets are unchanged: their pens arrive as `pen`.
+- **The Capture button no longer uploads into nowhere when Ink Capture is off.**
+  It said nothing and left the file unprocessed in the inbox; it now says the
+  module is off and where to turn it on.
+- **Sketch popovers no longer float on after the plugin unloads** (an update or
+  a reload with the paper menu open left it on screen).
+- The 3D/2D buttons now show which mode is active.
+- **The galaxy opened as an empty pane.** Its note-opening method was called
+  `open`, which replaced the view's own `open` that Obsidian uses to start it,
+  so the map was never built. Renamed to `openNote`.
+
 ## 0.35.0 — 2026-10-12
 
 ### Added

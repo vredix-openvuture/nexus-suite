@@ -289,6 +289,7 @@ mixin(NexusSketchSurface, [
   require('./sketch/touch.js'),
   require('./sketch/view.js'),
   require('./sketch/pen.js'),
+  require('./sketch/penpan.js'),
   require('./sketch/live.js'),
   require('./sketch/objects.js'),
   require('./sketch/selection.js'),

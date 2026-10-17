@@ -19,6 +19,10 @@
 
 const BUTTON_BARREL = 2;    // buttons bit 1 (value 2) — the side button
 const BUTTON_ERASER = 32;   // buttons bit 5 (value 32) — the eraser end
+// A pen with two side buttons reports the second one as the middle button
+// (value 4) under Linux — the Huion PW517 for one. It counts as the side button
+// only where that pans: on a Wacom the same value used to do nothing.
+const BUTTON_BARREL_2 = 4;
 
 const DOUBLE_TAP_MS = 320;  // two taps further apart than this are two taps
 const DOUBLE_TAP_R = 24;    // …and further apart than this are aimed at different things
@@ -34,6 +38,7 @@ const PEN_GESTURES = [
 const PEN_ACTIONS = [
   { id: 'none', label: 'Nothing' },
   { id: 'eraseHold', label: 'Erase while held', hold: true },
+  { id: 'panHold', label: 'Move the page while held', hold: true, only: 'barrel' },
   { id: 'eraseToggle', label: 'Switch to the eraser' },
   { id: 'select', label: 'Switch to select' },
   { id: 'undo', label: 'Undo' },
@@ -68,6 +73,11 @@ const PEN_PROFILES = {
     note: 'Side button and eraser end both report normally.',
     map: { barrel: 'select', eraserTip: 'eraseHold', doubleTap: 'none' },
   },
+  huion: {
+    label: 'Huion / XP-Pen display',
+    note: 'Side button moves the page while held, as in Krita. Under Linux the nib arrives without pressure.',
+    map: { barrel: 'panHold', eraserTip: 'none', doubleTap: 'none' },
+  },
 };
 const PROFILE_IDS = Object.keys(PEN_PROFILES);
 
@@ -85,9 +95,10 @@ function resolveMap(profileId, overrides) {
 }
 
 /* Which physical buttons a pointer event reports. */
-function decodeButtons(buttons) {
+function decodeButtons(buttons, countSecondBarrel) {
   const bits = Number(buttons) || 0;
-  return { barrel: (bits & BUTTON_BARREL) !== 0, eraserTip: (bits & BUTTON_ERASER) !== 0 };
+  const barrelBits = countSecondBarrel ? (BUTTON_BARREL | BUTTON_BARREL_2) : BUTTON_BARREL;
+  return { barrel: (bits & barrelBits) !== 0, eraserTip: (bits & BUTTON_ERASER) !== 0 };
 }
 
 /* Two taps count as one double-tap when they are close in time AND in space.

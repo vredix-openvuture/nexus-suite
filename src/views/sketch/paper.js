@@ -250,6 +250,10 @@ class SurfacePaper {
         this.viewX = 0; this.viewY = 0; this.viewW = this.W;
         this._home = { x: this.viewX, y: this.viewY, w: this.viewW };
       }
+      // The sheet's width cap would otherwise stay on the pad and leave the
+      // plane boxed in the middle of the pane until it is reopened.
+      if (this.host && this.host.style) this.host.style.width = '';
+      this._applyPaperWidth();
     } else {
       this.pageZoom = this._pageZoomWanted;
       this.pageScale = 1;

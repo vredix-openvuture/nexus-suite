@@ -92,6 +92,16 @@ it, and switch to 2D when you want the flat picture. A note's size is how many
 links it has, so the hubs of the vault are visible without reading a single
 title.
 
+The slider button in its bar opens the same dials Obsidian's graph has:
+**Filters** (notes without links), **Display** (node size, link thickness, how
+many hub names are shown, idle turning and its speed) and **Forces** (center, repel, link
+force, link distance). A force change reheats the map from where it stands
+instead of unfolding a new one, so you watch it rearrange. A link pulls by the
+less-linked of its two notes, so groups hang off their hubs instead of
+collapsing into one ball, and the map sits on the theme's star chart. Like the dashboard and the capture hub, the galaxy can be
+pinned to the tab bar as an icon (Settings → Dashboard → Pinned tabs, or right-click its tab). Hovering a note holds
+the map still and names it with its link count.
+
 It is a second graph view, not a change to Obsidian's. Obsidian's own is a
 closed core plugin: a plugin cannot add a toggle to it, read its layout or draw
 into it.
@@ -422,6 +432,14 @@ travels with the drawing rather than with the note that lists it.
 There is no close button: closing the tab closes it, and the blank paper
 auto-grow left below the last stroke is trimmed then. The `file-text` button
 switches **this** tab back to the text.
+
+**Zen mode** — the ⤢ button at the right end of the Sketch tab's toolbar — lifts
+the drawing over the whole window: no tab bar, ribbon, sidebars or status bar.
+Esc or the same button brings them back.
+
+With the *Huion / XP-Pen display* pen profile (or the action *Move the page
+while held* on the side button), holding the pen's side button and moving the
+pen drags the page, as in Krita. While a pen draws, the mouse arrow is hidden.
 
 Obsidian's own mobile gestures stop at the **canvas**, not at the view: swipe
 down on the toolbar and the command palette opens as it does anywhere else, and
