@@ -2,6 +2,14 @@
 
 Grouped by what changed for you, not by commit. Newest first.
 
+## 0.36.1 — 2026-10-17
+
+### Fixed
+
+- **A side button pressed while the pen hovers no longer draws.** The press
+  fires a pointerdown with the nib still above the glass, and that started a
+  stroke in the air. Drawing (or erasing) now starts when the nib touches down.
+
 ## 0.36.0 — 2026-10-17
 
 ### Added

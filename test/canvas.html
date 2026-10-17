@@ -712,6 +712,20 @@ async function tapTests() {
     ok('cursor · and gets it back when the stroke ends', !t.host.classList.contains('is-pen-drawing'));
     Object.assign(t._penSession, { hovered: false, reportsContact: false });
 
+    // The other side button while hovering (no panHold): nothing is drawn until the nib touches.
+    const h = makeSurface([], { penMap: { barrel: 'none' } });
+    const hn = h.strokes.length;
+    h._onDown(pen('pointerdown', 100, 100, 4, 1));
+    h._onMove(pen('pointermove', 140, 100, 4));
+    h._onUp(pen('pointerup', 140, 100, 0, 1));
+    eq('hover · a side button above the glass draws nothing', h.strokes.length, hn);
+    h._onDown(pen('pointerdown', 100, 100, 2, 2));
+    h._onMove(pen('pointermove', 120, 100, 3));
+    h._onMove(pen('pointermove', 160, 120, 3));
+    h._onUp(pen('pointerup', 160, 120, 2, 0));
+    eq('hover · and the nib touching down with it held still draws', h.strokes.length, hn + 1);
+    Object.assign(h._penSession, { hovered: false, reportsContact: false });
+
     // A pan that lost its pointer (pen left hover range with the button down) ends on the next plain pen event.
     const u = makeSurface([], { paperType: 'mindmap', penMap: { barrel: 'panHold' } });
     u._onMove(pen('pointermove', 300, 200, 2));

@@ -166,6 +166,9 @@ class SurfacePen {
     }
     if (this.locked) return;                                          // view mode: pen/mouse never draw or erase
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // A side button pressed while the pen hovers fires pointerdown without the
+    // nib touching anything. Drawing starts when the nib does (see _onMove).
+    if (e.pointerType === 'pen' && !(e.buttons & (1 | gestures.BUTTON_ERASER))) { this._penHoverDown = true; return; }
     // Pen wins over fingers: a palm that slipped in as a "pan" gets dropped the
     // moment the pen actually touches down.
     if (this._touches.size) { this._touches.clear(); this._gestMode = null; this._tap = null; }
@@ -236,6 +239,12 @@ class SurfacePen {
       if (isNibDown) penSession.reportsContact = true;
     }
     if (e.pointerType === 'pen' && isNibDown) this._lastPen = performance.now();
+    // The nib touched down while a side button was already held: that is the stroke's start.
+    if (this._penHoverDown && e.pointerType === 'pen' && isNibDown && !this._active && !this._erasing) {
+      this._penHoverDown = false;
+      this._onDown(e);
+      return;
+    }
     if (this._isFinger(e)) { this._touchMove(e); return; }
     if (e.pointerType === 'touch') this._lastPen = performance.now();   // a nib (see _isFinger)
     if (this._erasing) { if (this._areaErase) this._areaEraseMove(this._pt(e)); else this._eraseAt(this._pt(e)); return; }
@@ -282,6 +291,7 @@ class SurfacePen {
     }
   }
   _onUp(e) {
+    if (e.pointerType === 'pen') this._penHoverDown = false;
     this._checkPenButtons(e);   // before the pan check, so a hold action hears its release on time
     if (this._penPan(e)) return;
     if (e.pointerType === 'mouse' && this._middlePanId === e.pointerId) {
