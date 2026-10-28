@@ -1,0 +1,10 @@
+{
+  "id": "nexus-suite",
+  "name": "Nexus Suite",
+  "version": "0.39.0",
+  "minAppVersion": "1.6.0",
+  "description": "One plugin instead of a dozen: dashboard, theme, explorer, folder notes, icons, interface hiding, banners, callouts, columns, typography, properties, tags, kanban, planner, calendar, galaxy, book capture, search, workspaces and vault sync — each module switchable on its own.",
+  "author": "vredix",
+  "authorUrl": "https://github.com/vredix-openvuture",
+  "isDesktopOnly": false
+}
